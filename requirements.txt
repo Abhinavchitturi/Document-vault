@@ -5,6 +5,7 @@ pydantic
 
 # Embeddings + reranking
 sentence-transformers
+transformers
 torch
 
 # Retrieval

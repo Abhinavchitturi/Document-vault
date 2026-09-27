@@ -13,6 +13,13 @@ and build order.
 ```bash
 python -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
+
+# Step 1: download BEIR NQ, take a 100k-passage subset (all gold passages + random
+# distractors), chunk into 400-token windows with 80-token overlap, print samples
+python -m src.ingestion.run --show-samples 5
+# -> data/processed/nq/chunks.jsonl, data/processed/nq/chunk_stats.json
+
+pytest -q
 ```
 
 ## Eval results
