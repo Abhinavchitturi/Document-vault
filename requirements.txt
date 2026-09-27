@@ -1,0 +1,22 @@
+# Core
+fastapi
+uvicorn[standard]
+pydantic
+
+# Embeddings + reranking
+sentence-transformers
+torch
+
+# Retrieval
+rank_bm25
+qdrant-client
+
+# Eval / data
+beir
+numpy
+pandas
+tqdm
+
+# Dev
+pytest
+python-dotenv
