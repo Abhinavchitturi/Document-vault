@@ -264,6 +264,30 @@ class DocumentStore:
             self.documents[document["doc_id"]] = {**document, "owner": self.owner}
             self.chunks.extend(chunks)
 
+    def update_category(self, doc_id: str, category: str, vectors: np.ndarray | None = None) -> dict:
+        """Re-file a document under another type. `vectors` are its chunks' new embeddings
+        (the category is part of the embedded text), in the order of `chunks_of(doc_id)`."""
+        with self._lock:
+            doc = self.documents.get(doc_id)
+            if doc is None:
+                raise KeyError(doc_id)
+            with self.engine.begin() as conn:
+                conn.execute(documents.update().where(documents.c.id == doc_id).values(doc_type=category))
+                chunks = self.chunks_of(doc_id)
+                if vectors is not None and chunks and self.index is not None:
+                    vids = np.array([c["vid"] for c in chunks], dtype=np.int64)
+                    self.index.remove_ids(vids)
+                    self.index.add_with_ids(np.ascontiguousarray(vectors, dtype=np.float32), vids)
+                    self._save_index()
+            doc["category"] = category
+            for c in self.chunks:
+                if c["doc_id"] == doc_id:
+                    c["category"] = category
+            return doc
+
+    def chunks_of(self, doc_id: str) -> list[dict]:
+        return [c for c in self.chunks if c["doc_id"] == doc_id]
+
     def delete(self, doc_id: str) -> bool:
         with self._lock:
             doc = self.documents.get(doc_id)

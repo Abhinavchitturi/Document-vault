@@ -18,7 +18,7 @@ and the privacy decisions.
 |---|---|---|
 | 1 | Core RAG engine | ✅ Upload → parse → chunk → embeddings → FAISS → retrieve → local LLM answer with citations |
 | 2 | Document metadata | ✅ PostgreSQL: `users`, `documents`, `document_chunks`; every document has an owner |
-| 3 | Web application | 🟡 Chat page (streaming answers, follow-ups, document library, upload); React + Next.js to come |
+| 3 | Web application | ✅ React + Next.js: Login, Dashboard, Chat, Documents, Upload, Settings |
 | 4 | OCR | ✅ Tesseract for photos and scanned PDFs |
 | 5 | Better retrieval (BM25 + vector) | 🟡 Vector search and evaluation harness; hybrid to come |
 | 6–13 | Auth, mobile, classification, expiry, reminders, security, sharing, deployment | ⏳ |
@@ -51,6 +51,14 @@ Optional, for photos and scanned PDFs:
 ```bash
 brew install tesseract
 ```
+The web app (built once, and again after pulling changes to `frontend/`):
+```bash
+brew install node
+cd frontend
+npm install
+npm run build
+cd ..
+```
 The first run also downloads the Arctic Embed embedding model (~440 MB) from Hugging Face; after
 that everything works offline.
 
@@ -58,15 +66,25 @@ that everything works offline.
 ```bash
 python -m backend.api.app
 ```
-Then open http://127.0.0.1:8000.
-It works like a chatbot: type a question, press Enter, and the answer is written out as the
-model generates it, with small numbered links to the documents it used. Click one to see the
-page with the passage lightly highlighted and the answer itself (amounts, dates, policy numbers)
-strongly highlighted where it appears; **Open original** opens the untouched file. Ask follow-ups ("and when is it due?") in the same chat; **New chat**
-starts over. Chats aren't saved: refreshing the page clears them. Add documents in
-**Your documents** (drag and drop).
+Then open http://127.0.0.1:8000. One process serves both the pages and the API; Node is only
+needed to build the pages.
 
-- Another local model: `python -m backend.api.app --llm-model gemma2:9b` (after `ollama pull gemma2:9b`)
+| Page | What it's for |
+|---|---|
+| **Login** | Continue as the vault's owner. Real sign-in (passwords, one account per family member) is Phase 6; until then this screen is a convenience, not security. |
+| **Dashboard** | Document counts by type, recently added, a quick "ask" box, and whether the assistant and OCR are ready. |
+| **Chat** | Ask like a chatbot: answers stream in with numbered sources. Click one to see the page with the passage lightly highlighted and the answer itself (amounts, dates, policy numbers) strongly highlighted; **Open original** opens the untouched file. Follow-ups work; the chat is kept while you switch pages and forgotten when you close the tab. |
+| **Documents** | Every document, filterable by type and searchable by name. Change a document's type if auto-detect got it wrong, view it, open the original, or remove it. |
+| **Upload** | Drag and drop PDFs, Word files, text or photos; choose a type or let it detect one. |
+| **Settings** | Switch the answer model (any model you've downloaded in Ollama), theme, and where your data lives. |
+
+The pages load nothing from the internet: the server sends a Content-Security-Policy that
+only allows this computer.
+
+Working on the pages: run `python -m backend.api.app` and, in another terminal,
+`cd frontend && npm run dev`, then open http://localhost:3000 (it forwards `/api` to :8000).
+
+- Another local model: choose it in **Settings**, or start with `--llm-model gemma3:12b` (after `ollama pull gemma3:12b`)
 - If Ollama isn't running, the header shows **Assistant offline**, and replies say how to start it and point to the closest line in your documents.
 
 Import a whole folder instead of uploading one by one. Subfolders named `insurance/`,
@@ -158,14 +176,15 @@ Layout:
 | `backend/retriever/` | Question → passages (Phase 5 adds BM25 here) |
 | `backend/llm/` | Local Ollama client and the answer-with-citations prompt |
 | `backend/viewer/` | Finds the passage and the answer's facts on a page (PDF boxes, Word/text spans) |
-| `backend/api/` | FastAPI app and the web page |
+| `backend/api/` | FastAPI app: the API, and serving the built web app |
+| `frontend/` | Next.js web app (React, TypeScript), built to static files in `frontend/out/` |
 | `backend/eval/` | Scoring on the sample questions; `compare_llms.py` ranks local LLMs |
 
 ## Tests
 ```bash
 pytest -q
 ```
-65 tests. They use a fake embedder and a fake LLM, so they run in a few seconds without
+71 tests. They use a fake embedder and a fake LLM, so they run in a few seconds without
 downloading models or running Ollama. By default they use SQLite; to run them against
 PostgreSQL (each test gets a throwaway database):
 ```bash

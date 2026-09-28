@@ -1,9 +1,12 @@
 """Secure Digital Document Vault: web API and page.
 
 Endpoints:
-    GET    /                              the web page
+    GET    /                              the web app (frontend/out, built with `npm run build`)
     GET    /api/info                      library size, categories, whether OCR is available
     GET    /api/documents                 all documents in the library
+    PATCH  /api/documents/{id}            change a document's type
+    GET    /api/settings                  owner, models, where data lives
+    POST   /api/settings                  switch the answer model (one already downloaded in Ollama)
     POST   /api/documents                 upload one or more files (form fields: files, category)
     GET    /api/documents/{id}/file       open the original file
     GET    /api/documents/{id}/pages/{n}/image       one PDF page as a PNG
@@ -51,7 +54,20 @@ from backend.parser.extract import SUPPORTED_SUFFIXES, OcrUnavailableError, Unsu
 from backend.upload.ingest import EmbedderLike, EmptyDocumentError, ingest_file
 from backend.vector_store.store import DocumentStore
 
-STATIC_DIR = Path(__file__).parent / "static"
+FRONTEND_DIR = Path(__file__).resolve().parents[2] / "frontend" / "out"
+
+# The page may only talk to this server: no scripts, fonts, images or requests from anywhere
+# else. Applied to HTML pages only (a strict policy can break the browser's built-in PDF viewer).
+CSP = ("default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; "
+       "img-src 'self' data: blob:; connect-src 'self'; font-src 'self'; object-src 'none'; "
+       "base-uri 'self'; form-action 'self'; frame-ancestors 'none'")
+
+NOT_BUILT = """<!doctype html><meta charset="utf-8"><title>Document Vault</title>
+<body style="font:16px/1.6 -apple-system,sans-serif;max-width:560px;margin:10vh auto;padding:0 16px">
+<h1>Almost there</h1><p>The web app hasn't been built yet. In a terminal, from the project folder:</p>
+<pre style="background:#f1f2f7;padding:12px;border-radius:8px">cd frontend
+npm install
+npm run build</pre><p>Then restart <code>python -m backend.api.app</code> and reload this page.</p></body>"""
 MAX_UPLOAD_BYTES = 50 * 1024 * 1024
 
 logger = logging.getLogger("api")
@@ -72,6 +88,14 @@ class ChatRequest(BaseModel):
     history: list[ChatTurn] = Field(default_factory=list, max_length=20)
     category: str | None = None
     k: int = Field(5, ge=1, le=10)
+
+
+class CategoryUpdate(BaseModel):
+    category: str
+
+
+class SettingsUpdate(BaseModel):
+    llm_model: str = Field(..., min_length=1, max_length=200)
 
 
 class HighlightRequest(BaseModel):
@@ -106,13 +130,26 @@ def _llm_status(llm) -> dict:
     return {"ready": ready, "message": message}
 
 
-def create_app(store: DocumentStore, embedder: EmbedderLike, tokenizer, llm: LLM | None = None) -> FastAPI:
-    app = FastAPI(title="Secure Digital Document Vault")
+def create_app(
+    store: DocumentStore,
+    embedder: EmbedderLike,
+    tokenizer,
+    llm: LLM | None = None,
+    frontend_dir: Path | None = FRONTEND_DIR,
+    database_label: str = "",
+) -> FastAPI:
+    app = FastAPI(title="Secure Digital Document Vault", docs_url=None, redoc_url=None, openapi_url=None)
     retriever = Retriever(store, embedder)
 
-    @app.get("/", include_in_schema=False)
-    def index() -> FileResponse:
-        return FileResponse(STATIC_DIR / "index.html")
+    @app.middleware("http")
+    async def security_headers(request, call_next):
+        response = await call_next(request)
+        response.headers.setdefault("X-Content-Type-Options", "nosniff")
+        response.headers.setdefault("Referrer-Policy", "no-referrer")
+        response.headers.setdefault("X-Frame-Options", "DENY")
+        if response.headers.get("content-type", "").startswith("text/html"):
+            response.headers.setdefault("Content-Security-Policy", CSP)
+        return response
 
     @app.get("/api/info")
     def info() -> dict:
@@ -209,6 +246,47 @@ def create_app(store: DocumentStore, embedder: EmbedderLike, tokenizer, llm: LLM
             raise HTTPException(404, str(e)) from e
         return asdict(result)
 
+    @app.patch("/api/documents/{doc_id}")
+    def update_document(doc_id: str, req: CategoryUpdate) -> dict:
+        if req.category not in CATEGORIES:
+            raise HTTPException(400, f"category must be one of {CATEGORIES}")
+        doc = store.get(doc_id)
+        if doc is None:
+            raise HTTPException(404, "document not found")
+        from backend.upload.ingest import passage_texts
+
+        chunks = [{**c, "category": req.category} for c in store.chunks_of(doc_id)]
+        vectors = embedder.encode_passages(passage_texts(chunks)) if chunks else None
+        return _public(store.update_category(doc_id, req.category, vectors))
+
+    def settings_view() -> dict:
+        list_models = getattr(llm, "list_models", None)
+        return {
+            "owner": store.owner,
+            "llm_model": getattr(llm, "model", None) if llm else None,
+            "llm_models": list_models() if list_models else [],
+            "llm_status": _llm_status(llm),
+            "embedding_model": embedder.model_name,
+            "database": database_label or "SQLite file in the vault folder",
+            "index_dir": str(store.root),
+            "ocr_available": ocr_available(),
+        }
+
+    @app.get("/api/settings")
+    def get_settings() -> dict:
+        return settings_view()
+
+    @app.post("/api/settings")
+    def save_settings(req: SettingsUpdate) -> dict:
+        if llm is None or not hasattr(llm, "model"):
+            raise HTTPException(400, "Answers are turned off; start the app without --no-llm to choose a model.")
+        installed = llm.list_models() if hasattr(llm, "list_models") else []
+        if req.llm_model not in installed:
+            raise HTTPException(400, f"{req.llm_model} isn't downloaded. Run: ollama pull {req.llm_model}")
+        llm.model = req.llm_model
+        logger.info("Answer model switched to %s", req.llm_model)
+        return settings_view()
+
     @app.delete("/api/documents/{doc_id}")
     def delete(doc_id: str) -> dict:
         if not store.delete(doc_id):
@@ -301,6 +379,15 @@ def create_app(store: DocumentStore, embedder: EmbedderLike, tokenizer, llm: LLM
             "took_ms": round((time.perf_counter() - t0) * 1000, 1),
         }
 
+    if frontend_dir and (frontend_dir / "index.html").exists():
+        from fastapi.staticfiles import StaticFiles
+
+        app.mount("/", StaticFiles(directory=frontend_dir, html=True), name="web")  # after the API routes
+    else:
+        @app.get("/", include_in_schema=False)
+        def not_built() -> Response:
+            return Response(NOT_BUILT, media_type="text/html")
+
     return app
 
 
@@ -343,7 +430,10 @@ def main() -> None:
         logger.warning("Tesseract not found: photos and scanned PDFs can't be read. macOS: brew install tesseract")
 
     llm = None if args.no_llm else OllamaLLM(args.llm_model or DEFAULT_LLM)
-    app = create_app(store, embedder, HFTokenizer(embedder.model_name), llm)
+    from sqlalchemy.engine import make_url
+
+    db_label = make_url(database_url(args.database_url)).render_as_string(hide_password=True)
+    app = create_app(store, embedder, HFTokenizer(embedder.model_name), llm, database_label=db_label)
     logger.info("Vault for %s: %d documents. Answers: %s. Open http://127.0.0.1:%d",
                 store.owner, len(store.documents), llm.name if llm else "off", args.port)
     uvicorn.run(app, host="127.0.0.1", port=args.port)

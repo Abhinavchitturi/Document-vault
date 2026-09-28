@@ -162,3 +162,9 @@ def test_ollama_streams_pieces(fake_ollama):
     assert "".join(pieces) == "It expires on 14 March 2027 [2]." and len(pieces) > 1
     sent = fake_ollama.requests[-1]
     assert sent["stream"] is True and [m["role"] for m in sent["messages"]] == ["system", "user", "user"]
+
+
+def test_ollama_lists_downloaded_models(fake_ollama):
+    host = f"http://127.0.0.1:{fake_ollama.server_port}"
+    assert OllamaLLM(host=host).list_models() == ["gemma3:latest", "llama3.1:8b"]
+    assert OllamaLLM(host="http://127.0.0.1:9").list_models() == []
