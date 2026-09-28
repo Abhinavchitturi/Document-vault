@@ -31,7 +31,7 @@ import faiss
 import numpy as np
 from sqlalchemy import delete, func, insert, select
 
-from backend.database.db import connect
+from backend.database.db import connect, fallback_owner
 from backend.database.schema import document_chunks, documents, users, vault_meta
 
 
@@ -49,14 +49,14 @@ def _default_url(root: Path) -> str:
 
 
 class DocumentStore:
-    def __init__(self, root: str | Path, database_url: str | None = None, owner: str = "family"):
+    def __init__(self, root: str | Path, database_url: str | None = None, owner: str | None = None):
         self.root = Path(root)
         self.files_dir = self.root / "files"
         self.files_dir.mkdir(parents=True, exist_ok=True)
         self.engine = connect(database_url or _default_url(self.root))
         self._lock = threading.RLock()
-        self.owner = owner
-        self.owner_id = self._ensure_user(owner)
+        self.owner = owner or self._existing_owner() or fallback_owner()
+        self.owner_id = self._ensure_user(self.owner)
         self.documents: dict[str, dict] = {}  # this owner's documents, cached
         self.chunks: list[dict] = []  # this owner's chunks, cached for search
         self.index: faiss.Index | None = None
@@ -65,6 +65,27 @@ class DocumentStore:
         self._load()
 
     # ---------- database ----------
+
+    def _existing_owner(self) -> str | None:
+        """The vault's owner when it has exactly one, so a renamed owner is remembered."""
+        with self.engine.connect() as conn:
+            names = conn.execute(select(users.c.name).limit(2)).scalars().all()
+        return names[0] if len(names) == 1 else None
+
+    def rename_owner(self, new_name: str) -> str:
+        """Rename this vault's owner; their documents stay theirs."""
+        new_name = " ".join(new_name.split())
+        if not 1 <= len(new_name) <= 60:
+            raise ValueError("the name must be 1 to 60 characters")
+        with self._lock, self.engine.begin() as conn:
+            taken = conn.execute(select(users.c.id).where(users.c.name == new_name, users.c.id != self.owner_id)).scalar()
+            if taken is not None:
+                raise ValueError(f"{new_name!r} is already another person in this vault")
+            conn.execute(users.update().where(users.c.id == self.owner_id).values(name=new_name))
+        self.owner = new_name
+        for doc in self.documents.values():
+            doc["owner"] = new_name
+        return new_name
 
     def _ensure_user(self, name: str) -> int:
         with self.engine.begin() as conn:
@@ -263,6 +284,30 @@ class DocumentStore:
             self.model = model
             self.documents[document["doc_id"]] = {**document, "owner": self.owner}
             self.chunks.extend(chunks)
+
+    def update_category(self, doc_id: str, category: str, vectors: np.ndarray | None = None) -> dict:
+        """Re-file a document under another type. `vectors` are its chunks' new embeddings
+        (the category is part of the embedded text), in the order of `chunks_of(doc_id)`."""
+        with self._lock:
+            doc = self.documents.get(doc_id)
+            if doc is None:
+                raise KeyError(doc_id)
+            with self.engine.begin() as conn:
+                conn.execute(documents.update().where(documents.c.id == doc_id).values(doc_type=category))
+                chunks = self.chunks_of(doc_id)
+                if vectors is not None and chunks and self.index is not None:
+                    vids = np.array([c["vid"] for c in chunks], dtype=np.int64)
+                    self.index.remove_ids(vids)
+                    self.index.add_with_ids(np.ascontiguousarray(vectors, dtype=np.float32), vids)
+                    self._save_index()
+            doc["category"] = category
+            for c in self.chunks:
+                if c["doc_id"] == doc_id:
+                    c["category"] = category
+            return doc
+
+    def chunks_of(self, doc_id: str) -> list[dict]:
+        return [c for c in self.chunks if c["doc_id"] == doc_id]
 
     def delete(self, doc_id: str) -> bool:
         with self._lock:

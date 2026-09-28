@@ -32,9 +32,17 @@ def database_url(cli_value: str | None = None) -> str:
     return cli_value or os.environ.get("VAULT_DATABASE_URL") or DEFAULT_URL
 
 
-def default_owner(cli_value: str | None = None) -> str:
-    """Who owns uploaded documents until Phase 6 adds login: --owner, VAULT_OWNER, or the computer's user name."""
-    return cli_value or os.environ.get("VAULT_OWNER") or getpass.getuser() or "family"
+def default_owner(cli_value: str | None = None) -> str | None:
+    """An explicitly chosen owner (--owner, then VAULT_OWNER), or None to let the vault decide:
+    its existing owner if it has exactly one, otherwise the computer's user name."""
+    return cli_value or os.environ.get("VAULT_OWNER") or None
+
+
+def fallback_owner() -> str:
+    try:
+        return getpass.getuser() or "family"
+    except Exception:  # no user name available (some containers)
+        return "family"
 
 
 def connect(url: str) -> Engine:

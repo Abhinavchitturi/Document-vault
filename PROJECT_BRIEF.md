@@ -194,7 +194,7 @@ before it's kept. The before/after numbers are the point.
 |---|---|---|
 | 1 Core RAG | ✅ Upload, PDF/Word/text parsing, page-aware chunking, Arctic Embed embeddings, FAISS, top-k retrieval, local LLM answers with citations, `backend/` layout | Baseline scores on the samples |
 | 2 Metadata | ✅ PostgreSQL tables `users`, `documents`, `document_chunks` (+ `vault_meta`); owner on every document; per-owner search and duplicate detection; automatic migration from the old JSON vault; source pages shown with the answer highlighted | Highlighting on scanned pages (needs OCR word positions) |
-| 3 Web app | Chat page: streaming answers with citations, follow-up questions, library by category, upload | React + Next.js, login |
+| 3 Web app | ✅ React + Next.js (static export served by FastAPI): Login (owner confirmation), Dashboard, Chat, Documents (filter, re-file, view), Upload, Settings (switch local model, theme); strict CSP, nothing loaded from the internet | Real login is Phase 6 |
 | 4 OCR | Tesseract for photos and scanned PDFs | PaddleOCR comparison (optional) |
 | 5 Retrieval | Vector search, category filter, evaluation harness | BM25 + fusion, reranking |
 | 8 Classification | Keyword-based guess (insurance/warranty/bill/property/other) | ML/LLM classifier, more types |

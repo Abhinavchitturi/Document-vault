@@ -38,6 +38,14 @@ class OllamaLLM:
     def name(self) -> str:
         return f"ollama/{self.model}"
 
+    def list_models(self) -> list[str]:
+        """Models downloaded into Ollama on this computer ([] if Ollama isn't running)."""
+        try:
+            with urllib.request.urlopen(f"{self.host}/api/tags", timeout=2) as response:
+                return sorted(m.get("name", "") for m in json.loads(response.read()).get("models", []) if m.get("name"))
+        except (urllib.error.URLError, ConnectionError, TimeoutError, ValueError):
+            return []
+
     def status(self) -> tuple[bool, str]:
         """Quick check (no generation): is Ollama running and is the model downloaded?"""
         try:
