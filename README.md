@@ -102,6 +102,15 @@ Where things live:
   Change it under **Settings → Your name**; the vault remembers it and your documents stay
   yours. `--owner` or `VAULT_OWNER` pick an owner explicitly.
 
+If the app says it can't connect to the database, it prints PostgreSQL's own reason and the
+commands that fix it. The common one after renaming your Mac user is
+`role "<new name>" does not exist`: Homebrew's PostgreSQL only has a login for the name you had
+when you installed it, so create one for the new name (run once, using your old name):
+```bash
+psql -U OLDNAME -d postgres -c 'CREATE ROLE "NEWNAME" WITH LOGIN SUPERUSER;'
+psql -U OLDNAME -d postgres -c 'ALTER DATABASE vault OWNER TO "NEWNAME";'
+```
+
 A vault created before Phase 2 (`documents.json` in `data/index/`) is moved into the database
 automatically the first time the app starts. To reset everything: `dropdb vault && createdb vault`
 and delete `data/index/`.
@@ -185,7 +194,7 @@ Layout:
 ```bash
 pytest -q
 ```
-72 tests. They use a fake embedder and a fake LLM, so they run in a few seconds without
+76 tests. They use a fake embedder and a fake LLM, so they run in a few seconds without
 downloading models or running Ollama. By default they use SQLite; to run them against
 PostgreSQL (each test gets a throwaway database):
 ```bash
