@@ -17,13 +17,13 @@ from pathlib import Path
 
 from src.ingestion.chunker import DEFAULT_TOKENIZER, HFTokenizer, RegexTokenizer, chunk_documents
 from src.ingestion.download import download_beir_dataset
-from src.ingestion.loader import load_qrels, load_queries, select_subset
+from src.ingestion.loader import fix_encoding, load_qrels, load_queries, select_subset
 
 logger = logging.getLogger("ingestion")
 
 
-def write_chunks(chunks, path: Path) -> dict:
-    """Write chunks as JSONL and return summary stats."""
+def write_chunks(chunks, path: Path) -> tuple[dict, set[str]]:
+    """Write chunks as JSONL. Returns summary stats and the ids of chunked docs."""
     path.parent.mkdir(parents=True, exist_ok=True)
     n_tokens, per_doc = [], {}
     with open(path, "w", encoding="utf-8") as f:
@@ -33,7 +33,7 @@ def write_chunks(chunks, path: Path) -> dict:
             per_doc[chunk.doc_id] = chunk.num_chunks
     if not n_tokens:
         raise RuntimeError("no chunks produced; is the corpus empty?")
-    return {
+    stats = {
         "num_docs": len(per_doc),
         "num_chunks": len(n_tokens),
         "multi_chunk_docs": sum(1 for n in per_doc.values() if n > 1),
@@ -44,6 +44,7 @@ def write_chunks(chunks, path: Path) -> dict:
             "max": max(n_tokens),
         },
     }
+    return stats, set(per_doc)
 
 
 def show_samples(chunks_path: Path, n: int, seed: int = 0) -> None:
@@ -93,13 +94,30 @@ def main() -> None:
     qrels = load_qrels(dataset_dir, args.split)
     logger.info("Loaded %d queries, %d with %s qrels", len(queries), len(qrels), args.split)
 
-    docs = select_subset(dataset_dir, qrels, args.max_docs or None, seed=args.seed)
+    docs = fix_encoding(select_subset(dataset_dir, qrels, args.max_docs or None, seed=args.seed))
     tokenizer = RegexTokenizer() if args.tokenizer == "regex" else HFTokenizer(args.tokenizer)
     chunks = chunk_documents(docs, tokenizer, f"beir/{args.dataset}", args.chunk_size, args.overlap)
 
     out_dir = Path(args.out_dir) / args.dataset
     chunks_path = out_dir / "chunks.jsonl"
-    stats = write_chunks(chunks, chunks_path)
+    stats, chunked_ids = write_chunks(chunks, chunks_path)
+
+    # Docs with no tokens (empty text) produce no chunks and can never be retrieved.
+    # If any of them are gold passages, those queries are unanswerable; surface that.
+    relevant_ids = {d for rels in qrels.values() for d, score in rels.items() if score > 0}
+    unchunked = [d.doc_id for d in docs if d.doc_id not in chunked_ids]
+    unchunked_relevant = [d for d in unchunked if d in relevant_ids]
+    if unchunked:
+        logger.warning("%d docs produced no chunks (empty text), e.g. %s", len(unchunked), unchunked[:5])
+    if unchunked_relevant:
+        logger.warning("%d of them are qrels-relevant: %s", len(unchunked_relevant), unchunked_relevant[:10])
+    stats = {
+        "subset_docs": len(docs),
+        "relevant_docs_in_subset": sum(1 for d in docs if d.doc_id in relevant_ids),
+        **stats,
+        "docs_without_chunks": len(unchunked),
+        "relevant_docs_without_chunks": len(unchunked_relevant),
+    }
     stats.update(
         dataset=args.dataset,
         max_docs=args.max_docs,

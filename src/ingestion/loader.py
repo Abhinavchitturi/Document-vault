@@ -15,7 +15,9 @@ import random
 from collections import defaultdict
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Iterator
+from typing import Iterable, Iterator
+
+import ftfy
 
 logger = logging.getLogger(__name__)
 
@@ -98,3 +100,12 @@ def select_subset(
         logger.warning("%d qrels-relevant doc ids were not found in the corpus", missing)
     logger.info("Subset: %d relevant + %d distractor docs", len(relevant), len(reservoir))
     return relevant + reservoir
+
+
+def fix_encoding(docs: Iterable[Document]) -> list[Document]:
+    """Repair mojibake in the BEIR NQ source text (e.g. "â€“" -> "–").
+
+    Some NQ passages were double-encoded upstream. Left alone, those byte
+    garbles become junk tokens for both BM25 and the embedding model.
+    """
+    return [Document(d.doc_id, ftfy.fix_text(d.title), ftfy.fix_text(d.text)) for d in docs]

@@ -19,6 +19,7 @@ from src.ingestion.loader import Document
 
 DEFAULT_TOKENIZER = "BAAI/bge-small-en-v1.5"
 MODEL_MAX_TOKENS = 510  # 512 minus [CLS] and [SEP]
+MAX_SNAP_TOKENS = 32  # how far a chunk boundary may move to land between words
 
 
 class SpanTokenizer(Protocol):
@@ -83,12 +84,13 @@ def chunk_document(
     chunk_size: int = 400,
     overlap: int = 80,
 ) -> list[Chunk]:
-    """Split one document into overlapping windows of `chunk_size` tokens.
+    """Split one document into overlapping windows of up to `chunk_size` tokens.
 
-    Consecutive chunks share `overlap` tokens. A document at or under
-    `chunk_size` tokens becomes a single chunk. If the final window would be a
-    short tail (< overlap new tokens), it is folded into the previous window
-    instead of emitted as a near-duplicate fragment.
+    Consecutive chunks share about `overlap` tokens. Window boundaries are moved
+    back to the nearest whitespace so no chunk starts or ends mid-word. A
+    document at or under `chunk_size` tokens becomes a single chunk. If the
+    final window would be a short tail (< overlap new tokens), it is folded into
+    the previous window instead of emitted as a near-duplicate fragment.
     """
     if not 0 <= overlap < chunk_size:
         raise ValueError("need 0 <= overlap < chunk_size")
@@ -99,15 +101,31 @@ def chunk_document(
     if not spans:
         return []
 
-    stride = chunk_size - overlap
+    n = len(spans)
+
+    def is_word_start(i: int) -> bool:
+        # A cut before token i is clean only if whitespace separates it from
+        # token i-1; otherwise we'd split a word ("dec" | "##livity") or detach
+        # punctuation from it.
+        return i == 0 or i >= n or spans[i][0] > spans[i - 1][1]
+
+    def snap_back(i: int, lo: int) -> int:
+        """Move boundary i left to the nearest word start (not below lo)."""
+        j = i
+        while j > lo and not is_word_start(j) and i - j < MAX_SNAP_TOKENS:
+            j -= 1
+        return j if is_word_start(j) else i
+
     windows: list[tuple[int, int]] = []  # token index ranges [start, end)
     start = 0
     while True:
-        end = min(start + chunk_size, len(spans))
+        end = min(start + chunk_size, n)
+        if end < n:
+            end = snap_back(end, lo=start + 1)
         windows.append((start, end))
-        if end == len(spans):
+        if end == n:
             break
-        start += stride
+        start = snap_back(max(end - overlap, start + 1), lo=start + 1)
     # Fold a tiny trailing window into its predecessor, as long as the merged
     # window still fits the embedding model.
     if (

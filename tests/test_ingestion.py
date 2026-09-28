@@ -3,7 +3,7 @@ import json
 import pytest
 
 from src.ingestion.chunker import RegexTokenizer, chunk_document
-from src.ingestion.loader import Document, load_qrels, select_subset
+from src.ingestion.loader import Document, fix_encoding, load_qrels, select_subset
 
 TOK = RegexTokenizer()
 
@@ -40,6 +40,31 @@ def test_short_tail_is_folded_into_previous_chunk():
     assert [c.n_tokens for c in chunks] == [100, 105]
 
 
+class PieceTokenizer:
+    """Splits every word into 3-char pieces, like WordPiece does for rare words."""
+
+    name = "pieces"
+
+    def spans(self, text):
+        out = []
+        for word in RegexTokenizer().spans(text):
+            for s in range(word[0], word[1], 3):
+                out.append((s, min(s + 3, word[1])))
+        return out
+
+
+def test_chunks_never_split_a_word():
+    # Each 9-char word is 3 tokens, so raw 100-token windows would cut mid-word.
+    doc = Document("d1", "T", " ".join(f"word{i:05d}" for i in range(120)))
+    chunks = chunk_document(doc, PieceTokenizer(), "beir/nq", chunk_size=100, overlap=20)
+    assert len(chunks) > 1
+    words = set(doc.text.split())
+    for c in chunks:
+        assert set(c.text.split()) <= words  # every word in every chunk is whole
+        assert c.n_tokens <= 100
+    assert chunks[-1].end_char == len(doc.text)
+
+
 def test_rejects_bad_params():
     with pytest.raises(ValueError):
         chunk_document(make_doc(10), TOK, "s", chunk_size=100, overlap=100)
@@ -60,3 +85,9 @@ def test_subset_keeps_all_relevant_docs(tmp_path):
     assert {"doc7", "doc93"} <= set(ids)
     with pytest.raises(ValueError):
         select_subset(tmp_path, qrels, max_docs=1)
+
+
+def test_fix_encoding_repairs_mojibake():
+    [doc] = fix_encoding([Document("d1", "Caf\u00c3\u00a9", "monarchies \u00e2\u20ac\u201c a federal")])
+    assert doc.title == "Caf\u00e9"
+    assert doc.text == "monarchies \u2013 a federal"
