@@ -28,3 +28,20 @@ class FakeEmbedder:
 
     def encode_queries(self, texts):
         return np.stack([self._vec(t) for t in texts])
+
+
+class FakeLLM:
+    """Returns a canned answer and records what it was asked."""
+
+    name = "fake/llm"
+
+    def __init__(self, reply="The answer is in the first passage [1].", error=None):
+        self.reply, self.error = reply, error
+        self.calls, self.last_system, self.last_prompt = 0, None, None
+
+    def generate(self, system, prompt):
+        self.calls += 1
+        self.last_system, self.last_prompt = system, prompt
+        if self.error:
+            raise self.error
+        return self.reply

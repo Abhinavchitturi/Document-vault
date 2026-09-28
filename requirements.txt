@@ -3,11 +3,15 @@ fastapi
 uvicorn[standard]
 python-multipart  # file uploads
 
-# Embeddings (and later, reranking)
+# Embeddings and vector search (all run on this computer)
 sentence-transformers
 transformers
 torch
 numpy
+faiss-cpu
+
+# Answers come from a local model served by Ollama (https://ollama.com), a separate
+# app, not a Python package: install it, then `ollama pull llama3.1:8b`.
 
 # Reading documents
 pypdfium2      # PDF text + rendering scanned pages for OCR

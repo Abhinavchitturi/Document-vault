@@ -1,4 +1,4 @@
-"""Family Documents Assistant: web API and page.
+"""Secure Digital Document Vault: web API and page.
 
 Endpoints:
     GET    /                              the web page
@@ -8,9 +8,14 @@ Endpoints:
     GET    /api/documents/{id}/file       open the original file
     DELETE /api/documents/{id}            remove a document and its search data
     GET    /api/search?q=...&category=... best-matching passage per document
+    POST   /api/ask                       answer from the local LLM, with the cited passages
 
 Usage:
-    python -m src.api.app                 # then open http://127.0.0.1:8000
+    python -m backend.api.app                 # then open http://127.0.0.1:8000
+    python -m backend.api.app --llm-model gemma2:9b
+
+Answers come from a local model through Ollama (see backend/llm/ollama.py); if
+Ollama isn't running, search still works and the page says how to start it.
 
 The server listens on 127.0.0.1 only: the library holds personal documents and
 there is no login, so it must not be exposed to a network.
@@ -27,11 +32,16 @@ from pathlib import Path
 
 from fastapi import FastAPI, File, Form, HTTPException, Query, UploadFile
 from fastapi.responses import FileResponse
+from pydantic import BaseModel, Field
 
-from src.ingestion.categories import CATEGORIES
-from src.ingestion.extract import SUPPORTED_SUFFIXES, OcrUnavailableError, UnsupportedFileError, ocr_available
-from src.ingestion.ingest import EmbedderLike, EmptyDocumentError, ingest_file
-from src.retrieval.document_store import DocumentStore
+from backend.llm.answer import LLM, answer_question
+from backend.llm.ollama import LLMUnavailableError
+from backend.retriever.retriever import Retriever
+
+from backend.parser.categories import CATEGORIES
+from backend.parser.extract import SUPPORTED_SUFFIXES, OcrUnavailableError, UnsupportedFileError, ocr_available
+from backend.upload.ingest import EmbedderLike, EmptyDocumentError, ingest_file
+from backend.vector_store.store import DocumentStore
 
 STATIC_DIR = Path(__file__).parent / "static"
 MAX_UPLOAD_BYTES = 50 * 1024 * 1024
@@ -44,8 +54,27 @@ def _public(doc: dict) -> dict:
     return {k: v for k, v in doc.items() if k not in ("sha256", "stored_as")}
 
 
-def create_app(store: DocumentStore, embedder: EmbedderLike, tokenizer) -> FastAPI:
-    app = FastAPI(title="Family Documents Assistant")
+class AskRequest(BaseModel):
+    question: str = Field(..., min_length=1, max_length=500)
+    category: str | None = None
+    k: int = Field(5, ge=1, le=10)  # passages given to the LLM
+
+
+def _passage(chunk: dict, score: float, rank: int) -> dict:
+    return {
+        "rank": rank,
+        "score": round(score, 4),
+        "doc_id": chunk["doc_id"],
+        "filename": chunk["filename"],
+        "category": chunk["category"],
+        "page": chunk["page"],
+        "text": chunk["text"],
+    }
+
+
+def create_app(store: DocumentStore, embedder: EmbedderLike, tokenizer, llm: LLM | None = None) -> FastAPI:
+    app = FastAPI(title="Secure Digital Document Vault")
+    retriever = Retriever(store, embedder)
 
     @app.get("/", include_in_schema=False)
     def index() -> FileResponse:
@@ -56,6 +85,7 @@ def create_app(store: DocumentStore, embedder: EmbedderLike, tokenizer) -> FastA
         counts = Counter(d["category"] for d in store.documents.values())
         return {
             "model": embedder.model_name,
+            "llm": llm.name if llm else None,
             "num_documents": len(store.documents),
             "num_chunks": len(store.chunks),
             "categories": {c: counts.get(c, 0) for c in CATEGORIES},
@@ -130,25 +160,38 @@ def create_app(store: DocumentStore, embedder: EmbedderLike, tokenizer) -> FastA
         if category and category not in CATEGORIES:
             raise HTTPException(400, f"category must be one of {CATEGORIES}")
         t0 = time.perf_counter()
-        hits = store.search(embedder.encode_queries([q])[0], top_k=k, category=category or None)
+        hits = retriever.documents(q, top_k=k, category=category or None)
         took_ms = (time.perf_counter() - t0) * 1000
         return {
             "question": q,
             "category": category,
             "method": "vector",
             "took_ms": round(took_ms, 1),
-            "results": [
-                {
-                    "rank": i + 1,
-                    "score": round(score, 4),
-                    "doc_id": chunk["doc_id"],
-                    "filename": chunk["filename"],
-                    "category": chunk["category"],
-                    "page": chunk["page"],
-                    "text": chunk["text"],
-                }
-                for i, (chunk, score) in enumerate(hits)
-            ],
+            "results": [_passage(chunk, score, i + 1) for i, (chunk, score) in enumerate(hits)],
+        }
+
+    @app.post("/api/ask")
+    def ask(req: AskRequest) -> dict:
+        if req.category and req.category not in CATEGORIES:
+            raise HTTPException(400, f"category must be one of {CATEGORIES}")
+        if llm is None:
+            raise HTTPException(503, "No local LLM is configured. Start the app without --no-llm.")
+        t0 = time.perf_counter()
+        hits = retriever.context(req.question, top_k=req.k, category=req.category or None)
+        retrieval_ms = (time.perf_counter() - t0) * 1000
+        try:
+            answer = answer_question(req.question, [chunk for chunk, _ in hits], llm)
+        except LLMUnavailableError as e:
+            raise HTTPException(503, str(e)) from e
+        return {
+            "question": req.question,
+            "answer": answer.text,
+            "found": answer.found,
+            "citations": answer.citations,
+            "sources": [_passage(chunk, score, i + 1) for i, (chunk, score) in enumerate(hits)],
+            "llm": llm.name,
+            "retrieval_ms": round(retrieval_ms, 1),
+            "took_ms": round((time.perf_counter() - t0) * 1000, 1),
         }
 
     return app
@@ -159,15 +202,19 @@ def main() -> None:
     parser.add_argument("--index-dir", default="data/index")
     parser.add_argument("--model", default=None, help="embedding model (default: bge-small-en-v1.5)")
     parser.add_argument("--device", default=None, help="cuda / mps / cpu; default picks automatically")
+    parser.add_argument("--llm-model", default=None, help="local Ollama model (default: llama3.1:8b)")
+    parser.add_argument("--no-llm", action="store_true", help="search only, no answers")
     parser.add_argument("--port", type=int, default=8000)
     args = parser.parse_args()
 
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
     import uvicorn
 
-    from src.ingestion.chunker import HFTokenizer
-    from src.ingestion.ingest import passage_texts
-    from src.retrieval.embedder import DEFAULT_MODEL, Embedder
+    from backend.chunker.chunker import HFTokenizer
+    from backend.embeddings.embedder import DEFAULT_MODEL, Embedder
+    from backend.llm.ollama import DEFAULT_MODEL as DEFAULT_LLM
+    from backend.llm.ollama import OllamaLLM
+    from backend.upload.ingest import passage_texts
 
     embedder = Embedder(args.model or DEFAULT_MODEL, device=args.device)
     store = DocumentStore(args.index_dir)
@@ -177,8 +224,10 @@ def main() -> None:
     if not ocr_available():
         logger.warning("Tesseract not found: photos and scanned PDFs can't be read. macOS: brew install tesseract")
 
-    app = create_app(store, embedder, HFTokenizer(embedder.model_name))
-    logger.info("Library: %d documents. Open http://127.0.0.1:%d", len(store.documents), args.port)
+    llm = None if args.no_llm else OllamaLLM(args.llm_model or DEFAULT_LLM)
+    app = create_app(store, embedder, HFTokenizer(embedder.model_name), llm)
+    logger.info("Vault: %d documents. Answers: %s. Open http://127.0.0.1:%d",
+                len(store.documents), llm.name if llm else "off", args.port)
     uvicorn.run(app, host="127.0.0.1", port=args.port)
 
 

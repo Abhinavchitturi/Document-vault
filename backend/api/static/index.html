@@ -3,11 +3,8 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Family Documents</title>
+<title>Document Vault</title>
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%234f46e5'/%3E%3Cpath d='M9 8h9l5 5v11a1 1 0 0 1-1 1H9a1 1 0 0 1-1-1V9a1 1 0 0 1 1-1z' fill='none' stroke='white' stroke-width='2.2' stroke-linejoin='round'/%3E%3C/svg%3E">
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
 <style>
   :root {
     --bg: #f6f7fb; --bg-glow: #e8e9ff; --surface: #ffffff; --surface-2: #f1f2f7;
@@ -54,7 +51,7 @@
     background: radial-gradient(1200px 480px at 60% -140px, var(--bg-glow), transparent 70%), var(--bg);
     background-repeat: no-repeat; background-color: var(--bg);
     color: var(--text); min-height: 100vh;
-    font: 15px/1.55 Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    font: 15px/1.55 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
     -webkit-font-smoothing: antialiased;
   }
   button, input, select { font: inherit; color: inherit; }
@@ -95,7 +92,7 @@
   .search > svg { color: var(--faint); flex: none; }
   .search input { flex: 1; min-width: 0; border: 0; outline: 0; background: transparent; padding: 10px 4px; font-size: 16px; }
   .search input::placeholder { color: var(--faint); }
-  kbd { font: 500 12px/1 Inter, sans-serif; color: var(--faint); border: 1px solid var(--border); border-bottom-width: 2px;
+  kbd { font: 500 12px/1 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; color: var(--faint); border: 1px solid var(--border); border-bottom-width: 2px;
         border-radius: 6px; padding: 3px 6px; }
   .btn-primary { border: 0; border-radius: 11px; padding: 10px 18px; font-weight: 600; color: var(--on-accent);
                  background: linear-gradient(135deg, var(--accent), var(--accent-2)); }
@@ -122,7 +119,30 @@
 
   .hit { background: var(--surface); border: 1px solid var(--border); border-radius: 14px; padding: 16px 18px; margin-bottom: 10px;
          animation: rise .25s ease both; }
-  .hit:first-child { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
+  .hit.top { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
+  .hit.flash { animation: flash 1.2s ease; }
+  .src-num { flex: none; min-width: 24px; height: 24px; padding: 0 6px; border-radius: 7px; display: grid; place-items: center;
+             font-size: 12px; font-weight: 700; background: var(--surface-2); color: var(--muted); font-variant-numeric: tabular-nums; }
+  .hit.top .src-num { background: var(--accent-soft); color: var(--accent); }
+
+  .answer { background: var(--surface); border: 1px solid var(--border); border-radius: 16px; padding: 18px 20px; margin-bottom: 18px;
+            box-shadow: var(--shadow); position: relative; overflow: hidden; animation: rise .25s ease both; }
+  .answer::before { content: ""; position: absolute; inset: 0 auto 0 0; width: 4px; background: linear-gradient(180deg, var(--accent), var(--accent-2)); }
+  .answer-head { display: flex; align-items: center; gap: 8px; font-size: 12px; font-weight: 600; color: var(--muted);
+                 text-transform: uppercase; letter-spacing: .05em; margin-bottom: 8px; }
+  .answer-head .llm { margin-left: auto; text-transform: none; letter-spacing: 0; font-weight: 500; color: var(--faint); }
+  .answer-text { font-size: 17px; line-height: 1.55; margin: 0; }
+  .answer.not-found .answer-text { color: var(--muted); }
+  .cite { border: 0; border-radius: 6px; padding: 0 6px; margin: 0 1px; font-size: 12px; font-weight: 700; vertical-align: 2px;
+          background: var(--accent-soft); color: var(--accent); }
+  .cite:hover { background: var(--accent); color: var(--on-accent); }
+  .answer .skeleton-line { height: 12px; border-radius: 6px; margin: 10px 0;
+          background: linear-gradient(90deg, var(--surface-2) 25%, var(--border) 50%, var(--surface-2) 75%);
+          background-size: 200% 100%; animation: shimmer 1.2s infinite linear; }
+  .llm-off { display: flex; gap: 10px; align-items: flex-start; background: var(--warn-soft); color: var(--warn);
+             border-radius: 12px; padding: 12px 14px; margin-bottom: 14px; font-size: 14px; }
+  .llm-off svg { flex: none; margin-top: 2px; }
+  .sources-label { font-size: 12px; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: .05em; margin: 4px 2px 10px; }
   .hit-head { display: flex; align-items: flex-start; gap: 12px; margin-bottom: 10px; }
   .file-icon { flex: none; width: 36px; height: 36px; border-radius: 10px; display: grid; place-items: center; }
   .hit-title { min-width: 0; flex: 1; }
@@ -198,6 +218,7 @@
   @keyframes rise { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
   @keyframes shimmer { from { background-position: 200% 0; } to { background-position: -200% 0; } }
   @keyframes spin { to { transform: rotate(360deg); } }
+  @keyframes flash { 0%, 100% { box-shadow: 0 0 0 0 transparent; } 30% { box-shadow: 0 0 0 5px var(--accent-soft); } }
   @media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation: none !important; transition: none !important; } }
 </style>
 </head>
@@ -207,7 +228,7 @@
     <span class="logo" aria-hidden="true">
       <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linejoin="round"><path d="M6 3h8l5 5v12a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1z"/><path d="M14 3v5h5"/></svg>
     </span>
-    Family Documents
+    Document Vault
   </div>
   <div class="spacer"></div>
   <span class="pill privacy"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg>Stays on this computer</span>
@@ -478,8 +499,9 @@ function previewStart(text, re) {
 }
 const displayName = (name) => name.replace(/_/g, "_​");  // let long file names wrap at underscores
 
-function renderHit(h, maxScore, terms) {
-  const card = el("article", "hit");
+function renderHit(h, maxScore, terms, { number = null, top = false } = {}) {
+  const card = el("article", top ? "hit top" : "hit");
+  if (number) card.id = `src-${number}`;
   const head = el("div", "hit-head");
   const title = el("div", "hit-title");
   const sub = el("div", "sub");
@@ -489,7 +511,7 @@ function renderHit(h, maxScore, terms) {
   const bar = el("div", "bar"), fill = el("span");
   fill.style.width = `${Math.max(4, Math.min(100, (h.score / maxScore) * 100))}%`;
   bar.append(fill); score.append(bar);
-  head.append(fileIcon(h.category), title, score);
+  head.append(...(number ? [el("span", "src-num", String(number))] : []), fileIcon(h.category), title, score);
 
   const re = termRegex(terms);
   const start = previewStart(h.text, re);
@@ -528,39 +550,113 @@ function skeletons(n) {
 
 function emptyLibraryNotice() {
   const n = el("div", "notice");
-  n.append(el("h3", null, "Your library is empty"),
-    el("p", null, "Upload documents in the library panel, or try the app first with the fictional sample documents:"),
-    el("code", null, "python -m src.ingestion.ingest samples/documents"));
+  n.append(el("h3", null, "Your vault is empty"),
+    el("p", null, "Upload documents in the panel on the right, or try it first with the fictional sample PDFs:"),
+    el("code", null, "python -m backend.upload.ingest samples/pdfs"));
   return n;
 }
 
+/* ---------- answer (local LLM) ---------- */
+function answerSkeleton() {
+  const card = el("section", "answer");
+  const head = el("div", "answer-head", "Answer");
+  card.append(head);
+  ["92%", "70%"].forEach((w) => { const line = el("div", "skeleton-line"); line.style.width = w; card.append(line); });
+  return card;
+}
+
+function flashSource(n) {
+  const target = $(`src-${n}`);
+  if (!target) return;
+  target.scrollIntoView({ behavior: "smooth", block: "center" });
+  target.classList.remove("flash"); void target.offsetWidth; target.classList.add("flash");
+}
+
+function renderAnswer(data) {
+  const card = el("section", data.found ? "answer" : "answer not-found");
+  const head = el("div", "answer-head");
+  head.append("Answer", el("span", "llm", `${data.llm} · on this computer · ${(data.took_ms / 1000).toFixed(1)} s`));
+  const p = el("p", "answer-text");
+  // Turn "[2]" into a button that jumps to source 2; everything else stays plain text.
+  const parts = data.answer.split(/\[(\d+)\]/);
+  parts.forEach((part, i) => {
+    if (i % 2 === 0) { if (part) p.append(part); return; }
+    const n = Number(part);
+    if (n < 1 || n > data.sources.length) { p.append(`[${part}]`); return; }
+    const b = el("button", "cite", part);
+    b.type = "button"; b.title = `Source ${n}`; b.onclick = () => flashSource(n);
+    p.append(b);
+  });
+  card.append(head, p);
+  return card;
+}
+
+function llmOffNotice(message) {
+  const box = el("div", "llm-off");
+  box.append(svg(ICON.warn), el("span", null, `${message} Showing the matching passages instead.`));
+  return box;
+}
+
+async function searchOnly(q, prefix = []) {
+  const params = new URLSearchParams({ q, k: "5" });
+  if (activeCategory) params.set("category", activeCategory);
+  const res = await fetch(`/api/search?${params}`);
+  const data = await res.json();
+  if (!res.ok) throw new Error(typeof data.detail === "string" ? data.detail : res.statusText);
+  const where = activeCategory ? `in ${CAT_LABEL[activeCategory].toLowerCase()}` : "across all documents";
+  $("status").replaceChildren(
+    el("span", null, `${data.results.length} best ${data.results.length === 1 ? "match" : "matches"} ${where}`),
+    el("span", "dot", "·"), el("span", null, `${data.took_ms} ms`),
+  );
+  if (!data.results.length) {
+    $("results").replaceChildren(...prefix, el("div", "notice", "No documents in this category yet."));
+    return;
+  }
+  const maxScore = Math.max(...data.results.map((r) => r.score));
+  const terms = queryTerms(data.question);
+  $("results").replaceChildren(...prefix, ...data.results.map((h, i) => renderHit(h, maxScore, terms, { top: i === 0 })));
+}
+
+let askSeq = 0;  // ignore answers to questions the user has already replaced
 async function runSearch() {
   const q = $("q").value.trim();
   if (!q) { $("q").focus(); return; }
   if (info && info.num_documents === 0) { $("status").replaceChildren(); $("results").replaceChildren(emptyLibraryNotice()); return; }
-  const params = new URLSearchParams({ q, k: "5" });
-  if (activeCategory) params.set("category", activeCategory);
-  $("status").textContent = "Searching…";
-  $("results").replaceChildren(...skeletons(3));
+  const seq = ++askSeq;
+  $("status").textContent = "Reading your documents…";
+  $("results").replaceChildren(answerSkeleton(), ...skeletons(2));
   try {
-    const res = await fetch(`/api/search?${params}`);
-    const data = await res.json();
-    if (!res.ok) throw new Error(typeof data.detail === "string" ? data.detail : res.statusText);
-    const where = activeCategory ? `in ${CAT_LABEL[activeCategory].toLowerCase()}` : "across all documents";
-    $("status").replaceChildren(
-      el("span", null, `${data.results.length} best ${data.results.length === 1 ? "match" : "matches"} ${where}`),
-      el("span", "dot", "·"), el("span", null, `${data.took_ms} ms`),
-    );
-    if (!data.results.length) {
-      $("results").replaceChildren(el("div", "notice", "No documents in this category yet."));
+    if (!info || !info.llm) {
+      await searchOnly(q, info ? [llmOffNotice("Answers are turned off (the app was started with --no-llm).")] : []);
       return;
     }
-    const maxScore = Math.max(...data.results.map((r) => r.score));
-    const terms = queryTerms(data.question);
-    $("results").replaceChildren(...data.results.map((h) => renderHit(h, maxScore, terms)));
+    const res = await fetch("/api/ask", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ question: q, category: activeCategory || null, k: 5 }),
+    });
+    const data = await res.json();
+    if (seq !== askSeq) return;
+    if (res.status === 503) { await searchOnly(q, [llmOffNotice(data.detail)]); return; }
+    if (!res.ok) throw new Error(typeof data.detail === "string" ? data.detail : res.statusText);
+    const where = activeCategory ? `in ${CAT_LABEL[activeCategory].toLowerCase()}` : "across all documents";
+    $("status").replaceChildren(el("span", null, `Answered from ${data.sources.length} passages ${where}`));
+    if (!data.sources.length) {
+      $("results").replaceChildren(renderAnswer(data));
+      return;
+    }
+    const maxScore = Math.max(...data.sources.map((r) => r.score));
+    const terms = queryTerms(q);
+    const cited = new Set(data.citations);
+    $("results").replaceChildren(
+      renderAnswer(data),
+      el("p", "sources-label", "Sources"),
+      ...data.sources.map((h, i) => renderHit(h, maxScore, terms, { number: i + 1, top: cited.has(i + 1) })),
+    );
   } catch (e) {
+    if (seq !== askSeq) return;
     $("status").replaceChildren();
-    $("results").replaceChildren(el("div", "notice error-text", `Search failed: ${e.message}`));
+    $("results").replaceChildren(el("div", "notice error-text", `Something went wrong: ${e.message}`));
   }
 }
 

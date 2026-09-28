@@ -2,9 +2,9 @@ import docx
 import pytest
 from PIL import Image
 
-from src.ingestion import extract
-from src.ingestion.categories import guess_category
-from src.ingestion.extract import OcrUnavailableError, UnsupportedFileError, clean_text, extract_pages
+from backend.parser import extract
+from backend.parser.categories import guess_category
+from backend.parser.extract import OcrUnavailableError, UnsupportedFileError, clean_text, extract_pages
 from tests.pdf_helper import make_pdf
 
 

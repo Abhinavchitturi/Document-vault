@@ -3,9 +3,16 @@
 bge and e5 are asymmetric retrievers: queries and passages are encoded with
 different prefixes, and leaving the query prefix off measurably hurts recall.
 Vectors are L2-normalized so cosine similarity is a plain dot product.
+
+The model runs on this computer. It is downloaded from Hugging Face once; after
+that `prefer_offline` switches the Hugging Face libraries to offline mode so
+starting the vault makes no network requests at all.
 """
 
 from __future__ import annotations
+
+import os
+from pathlib import Path
 
 import numpy as np
 
@@ -33,8 +40,29 @@ def format_passage(title: str, text: str, with_title: bool = True) -> str:
     return f"{title} {text}" if with_title and title else text
 
 
+def _hf_cache_dir() -> Path:
+    if os.environ.get("HF_HUB_CACHE"):
+        return Path(os.environ["HF_HUB_CACHE"])
+    return Path(os.environ.get("HF_HOME", Path.home() / ".cache" / "huggingface")) / "hub"
+
+
+def prefer_offline(model_name: str) -> bool:
+    """If `model_name` is already downloaded, forbid Hugging Face network access.
+
+    Must run before transformers / sentence-transformers are imported, since they
+    read these settings at import time. Returns True if offline mode was enabled.
+    """
+    snapshots = _hf_cache_dir() / f"models--{model_name.replace('/', '--')}" / "snapshots"
+    if snapshots.is_dir() and any(snapshots.iterdir()):
+        os.environ["HF_HUB_OFFLINE"] = "1"
+        os.environ["TRANSFORMERS_OFFLINE"] = "1"
+        return True
+    return False
+
+
 class Embedder:
     def __init__(self, model_name: str = DEFAULT_MODEL, device: str | None = None, batch_size: int = 64):
+        prefer_offline(model_name)
         from sentence_transformers import SentenceTransformer
 
         self.model_name = model_name
