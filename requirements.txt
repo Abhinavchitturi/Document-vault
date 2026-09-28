@@ -16,6 +16,7 @@ qdrant-client
 beir
 numpy
 pandas
+ftfy
 tqdm
 
 # Dev
