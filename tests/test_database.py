@@ -122,3 +122,27 @@ def test_database_must_be_local_and_reachable(tmp_path, monkeypatch):
         connect("postgresql+psycopg://nobody@localhost:9/vault")  # nothing listens on port 9
     monkeypatch.setenv("VAULT_OWNER", "kavya")
     assert default_owner() == "kavya" and default_owner("arjun") == "arjun"
+
+
+
+class _PgError(Exception):
+    pass
+
+
+@pytest.mark.parametrize("server_says,expected", [
+    ('connection failed: FATAL:  role "Abhinav" does not exist',
+     ['PostgreSQL says: role "Abhinav" does not exist', 'CREATE ROLE "Abhinav" WITH LOGIN SUPERUSER', "OLDNAME@localhost/vault"]),
+    ('connection failed: FATAL:  database "vault" does not exist', ["createdb vault"]),
+    ("connection failed: Connection refused\n\tIs the server running?", ["brew services start postgresql@16"]),
+    ('FATAL:  password authentication failed for user "x"', ["user name or password"]),
+])
+def test_connection_errors_say_what_is_wrong_and_how_to_fix_it(server_says, expected):
+    from sqlalchemy.engine import make_url
+    from sqlalchemy.exc import OperationalError
+
+    from backend.database.db import explain_connection_error
+
+    message = explain_connection_error(make_url("postgresql+psycopg://localhost/vault"),
+                                       OperationalError("connect", {}, _PgError(server_says)))
+    for text in expected:
+        assert text in message, (text, message)
