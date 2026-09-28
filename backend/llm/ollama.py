@@ -50,19 +50,21 @@ class OllamaLLM:
             return False, f"The model {self.model} isn't downloaded yet. In a terminal, run: ollama pull {self.model}"
         return True, f"Answers ready ({self.model}, on this computer)"
 
-    def generate(self, system: str, prompt: str) -> str:
+    def _messages(self, system: str, prompt: str, history: list[dict] | None) -> list[dict]:
+        return [{"role": "system", "content": system}, *(history or []), {"role": "user", "content": prompt}]
+
+    def _open(self, messages: list[dict], stream: bool):
         body = {
             "model": self.model,
-            "messages": [{"role": "system", "content": system}, {"role": "user", "content": prompt}],
-            "stream": False,
+            "messages": messages,
+            "stream": stream,
             "options": {"temperature": 0},  # the same question should get the same answer
         }
         request = urllib.request.Request(
             f"{self.host}/api/chat", data=json.dumps(body).encode(), headers={"Content-Type": "application/json"}
         )
         try:
-            with urllib.request.urlopen(request, timeout=self.timeout) as response:
-                return json.loads(response.read())["message"]["content"].strip()
+            return urllib.request.urlopen(request, timeout=self.timeout)
         except urllib.error.HTTPError as e:
             detail = e.read().decode(errors="replace")
             if e.code == 404 or "not found" in detail.lower():
@@ -74,3 +76,22 @@ class OllamaLLM:
             raise LLMUnavailableError(
                 "Can't reach Ollama on this computer. Open the Ollama app (or run `ollama serve`) and try again."
             ) from e
+
+    def generate(self, system: str, prompt: str, history: list[dict] | None = None) -> str:
+        with self._open(self._messages(system, prompt, history), stream=False) as response:
+            return json.loads(response.read())["message"]["content"].strip()
+
+    def stream(self, system: str, prompt: str, history: list[dict] | None = None):
+        """Yield the answer piece by piece as the model writes it (like a chatbot)."""
+        with self._open(self._messages(system, prompt, history), stream=True) as response:
+            for line in response:  # Ollama streams one JSON object per line
+                if not line.strip():
+                    continue
+                event = json.loads(line)
+                if event.get("error"):
+                    raise LLMUnavailableError(f"Ollama error: {event['error']}")
+                piece = event.get("message", {}).get("content", "")
+                if piece:
+                    yield piece
+                if event.get("done"):
+                    return

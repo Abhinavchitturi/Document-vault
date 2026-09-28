@@ -12,6 +12,7 @@
     --accent: #4f46e5; --accent-2: #7c3aed; --accent-soft: #eef0ff; --on-accent: #ffffff;
     --good: #15803d; --good-soft: #e7f6ec; --warn: #a16207; --warn-soft: #fdf4dc; --bad: #b42318; --bad-soft: #fdeceb;
     --mark: #fff1b8; --shadow: 0 1px 2px rgba(20, 21, 26, .04), 0 6px 20px rgba(20, 21, 26, .06);
+    --user-bubble: #4f46e5; --on-user-bubble: #ffffff;
     --c-insurance: #2563eb; --c-insurance-soft: #e8efff;
     --c-warranty: #15803d; --c-warranty-soft: #e7f6ec;
     --c-bill: #b45309; --c-bill-soft: #fdf1e3;
@@ -25,6 +26,7 @@
       --accent: #8b85ff; --accent-2: #b38cff; --accent-soft: #23214a; --on-accent: #0d0e12;
       --good: #6ee7a0; --good-soft: #10291b; --warn: #f5c46b; --warn-soft: #2e230c; --bad: #ff9b90; --bad-soft: #33130f;
       --mark: #4a3f10; --shadow: 0 1px 2px rgba(0, 0, 0, .3), 0 6px 20px rgba(0, 0, 0, .35);
+      --user-bubble: #3a36a8; --on-user-bubble: #ffffff;
       --c-insurance: #8fb3ff; --c-insurance-soft: #16223d;
       --c-warranty: #6ee7a0; --c-warranty-soft: #10291b;
       --c-bill: #f5b36b; --c-bill-soft: #2e1f0c;
@@ -38,6 +40,7 @@
     --accent: #8b85ff; --accent-2: #b38cff; --accent-soft: #23214a; --on-accent: #0d0e12;
     --good: #6ee7a0; --good-soft: #10291b; --warn: #f5c46b; --warn-soft: #2e230c; --bad: #ff9b90; --bad-soft: #33130f;
     --mark: #4a3f10; --shadow: 0 1px 2px rgba(0, 0, 0, .3), 0 6px 20px rgba(0, 0, 0, .35);
+    --user-bubble: #3a36a8; --on-user-bubble: #ffffff;
     --c-insurance: #8fb3ff; --c-insurance-soft: #16223d;
     --c-warranty: #6ee7a0; --c-warranty-soft: #10291b;
     --c-bill: #f5b36b; --c-bill-soft: #2e1f0c;
@@ -48,156 +51,149 @@
   * { box-sizing: border-box; }
   html, body { margin: 0; }
   body {
-    background: radial-gradient(1200px 480px at 60% -140px, var(--bg-glow), transparent 70%), var(--bg);
-    background-repeat: no-repeat; background-color: var(--bg);
-    color: var(--text); min-height: 100vh;
+    background: radial-gradient(1200px 480px at 50% -160px, var(--bg-glow), transparent 70%), var(--bg);
+    background-repeat: no-repeat; background-color: var(--bg); color: var(--text);
     font: 15px/1.55 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-    -webkit-font-smoothing: antialiased;
+    -webkit-font-smoothing: antialiased; min-height: 100vh;
   }
-  button, input, select { font: inherit; color: inherit; }
+  button, input, select, textarea { font: inherit; color: inherit; }
   button { cursor: pointer; }
   a { color: var(--accent); }
   :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
   [hidden] { display: none !important; }
 
   /* Top bar */
-  .topbar { max-width: 1180px; margin: 0 auto; padding: 16px; display: flex; align-items: center; gap: 12px; }
-  .brand { display: flex; align-items: center; gap: 10px; font-weight: 700; letter-spacing: -.01em; }
+  .topbar { width: 100%; max-width: 1280px; margin: 0 auto; padding: 14px 16px; display: flex; align-items: center; gap: 10px; }
+  .brand { display: flex; align-items: center; gap: 10px; font-weight: 700; letter-spacing: -.01em; white-space: nowrap; }
   .logo { width: 30px; height: 30px; border-radius: 9px; display: grid; place-items: center; color: #fff;
           background: linear-gradient(135deg, var(--accent), var(--accent-2)); }
   .spacer { flex: 1; }
   .pill { font-size: 12px; font-weight: 500; color: var(--muted); background: var(--surface); border: 1px solid var(--border);
-          padding: 4px 10px; border-radius: 999px; white-space: nowrap; display: inline-flex; align-items: center; gap: 5px; }
-  .icon-btn { width: 34px; height: 34px; border-radius: 10px; border: 1px solid var(--border); background: var(--surface);
-              display: inline-grid; place-items: center; color: var(--muted); flex: none; }
-  .icon-btn:hover { color: var(--text); border-color: var(--faint); }
-  @media (max-width: 520px) { .pill.privacy { display: none; } }
-
-  /* Layout */
-  .layout { max-width: 1180px; margin: 0 auto; padding: 0 16px 80px; display: grid; gap: 24px;
-            grid-template-columns: minmax(0, 1fr) 340px; align-items: start; }
-  @media (max-width: 960px) { .layout { grid-template-columns: minmax(0, 1fr); } }
-
-  /* Search column */
-  .hero { padding: 36px 0 8px; }
-  .hero h1 { font-size: clamp(26px, 4.4vw, 38px); line-height: 1.12; letter-spacing: -.03em; margin: 0 0 8px; font-weight: 700; }
-  .hero h1 .grad { background: linear-gradient(90deg, var(--accent), var(--accent-2)); -webkit-background-clip: text;
-                   background-clip: text; color: transparent; }
-  .hero p { color: var(--muted); margin: 0; max-width: 600px; }
-
-  .search { display: flex; align-items: center; gap: 8px; background: var(--surface); border: 1px solid var(--border);
-            border-radius: 16px; padding: 6px 6px 6px 16px; box-shadow: var(--shadow); margin-top: 24px;
-            transition: border-color .15s, box-shadow .15s; }
-  .search:focus-within { border-color: var(--accent); box-shadow: 0 0 0 4px var(--accent-soft), var(--shadow); }
-  .search > svg { color: var(--faint); flex: none; }
-  .search input { flex: 1; min-width: 0; border: 0; outline: 0; background: transparent; padding: 10px 4px; font-size: 16px; }
-  .search input::placeholder { color: var(--faint); }
-  kbd { font: 500 12px/1 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; color: var(--faint); border: 1px solid var(--border); border-bottom-width: 2px;
-        border-radius: 6px; padding: 3px 6px; }
-  .btn-primary { border: 0; border-radius: 11px; padding: 10px 18px; font-weight: 600; color: var(--on-accent);
-                 background: linear-gradient(135deg, var(--accent), var(--accent-2)); }
-  .btn-primary:hover { filter: brightness(1.08); }
-  @media (max-width: 520px) { .search kbd { display: none; } .search .btn-primary { padding: 10px 14px; } }
-
-  .filters { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 14px; }
-  .filter { border: 1px solid var(--border); background: var(--surface); border-radius: 999px; padding: 5px 12px;
-            font-size: 13px; font-weight: 500; color: var(--muted); display: inline-flex; gap: 6px; align-items: center; }
-  .filter .count { font-size: 11px; color: var(--faint); font-variant-numeric: tabular-nums; }
-  .filter[aria-pressed="true"] { background: var(--text); border-color: var(--text); color: var(--bg); }
-  .filter[aria-pressed="true"] .count { color: inherit; opacity: .7; }
-  .filter:disabled { opacity: .45; cursor: not-allowed; }
-
-  .examples { margin-top: 22px; }
-  .section-label { font-size: 12px; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: .05em; margin: 0 0 10px; }
-  .chips { display: flex; flex-wrap: wrap; gap: 8px; }
-  .chip { border: 1px solid var(--border); background: var(--surface); border-radius: 999px; padding: 7px 14px; font-size: 13px;
-          text-align: left; transition: border-color .15s, transform .15s; }
-  .chip:hover { border-color: var(--accent); transform: translateY(-1px); }
-
-  #status { margin: 24px 2px 12px; font-size: 13px; color: var(--muted); min-height: 1.4em; display: flex; gap: 8px; flex-wrap: wrap; }
-  #status .dot { color: var(--faint); }
-
-  .hit { background: var(--surface); border: 1px solid var(--border); border-radius: 14px; padding: 16px 18px; margin-bottom: 10px;
-         animation: rise .25s ease both; }
-  .hit.top { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
-  .hit.flash { animation: flash 1.2s ease; }
-  .src-num { flex: none; min-width: 24px; height: 24px; padding: 0 6px; border-radius: 7px; display: grid; place-items: center;
-             font-size: 12px; font-weight: 700; background: var(--surface-2); color: var(--muted); font-variant-numeric: tabular-nums; }
-  .hit.top .src-num { background: var(--accent-soft); color: var(--accent); }
-
-  .answer { background: var(--surface); border: 1px solid var(--border); border-radius: 16px; padding: 18px 20px; margin-bottom: 18px;
-            box-shadow: var(--shadow); position: relative; overflow: hidden; animation: rise .25s ease both; }
-  .answer::before { content: ""; position: absolute; inset: 0 auto 0 0; width: 4px; background: linear-gradient(180deg, var(--accent), var(--accent-2)); }
-  .answer-head { display: flex; align-items: center; gap: 8px; font-size: 12px; font-weight: 600; color: var(--muted);
-                 text-transform: uppercase; letter-spacing: .05em; margin-bottom: 8px; }
-  .answer-head .llm { margin-left: auto; text-transform: none; letter-spacing: 0; font-weight: 500; color: var(--faint); }
-  .answer-text { font-size: 17px; line-height: 1.55; margin: 0; }
-  .answer.not-found .answer-text { color: var(--muted); }
-  .cite { border: 0; border-radius: 6px; padding: 0 6px; margin: 0 1px; font-size: 12px; font-weight: 700; vertical-align: 2px;
-          background: var(--accent-soft); color: var(--accent); }
-  .cite:hover { background: var(--accent); color: var(--on-accent); }
-  .answer .skeleton-line { height: 12px; border-radius: 6px; margin: 10px 0;
-          background: linear-gradient(90deg, var(--surface-2) 25%, var(--border) 50%, var(--surface-2) 75%);
-          background-size: 200% 100%; animation: shimmer 1.2s infinite linear; }
-  .llm-off { display: flex; gap: 10px; align-items: flex-start; background: var(--warn-soft); color: var(--warn);
-             border-radius: 12px; padding: 12px 14px; margin-bottom: 14px; font-size: 14px; }
-  .llm-off svg { flex: none; margin-top: 2px; }
-  .llm-off code { background: rgba(0,0,0,.06); }
-  .setup { margin-top: 14px; }
+          padding: 4px 10px; border-radius: 999px; white-space: nowrap; display: inline-flex; align-items: center; gap: 6px; }
   .pill .dot-s { width: 7px; height: 7px; border-radius: 50%; background: var(--faint); }
   .pill.ready .dot-s { background: var(--good); }
   .pill.not-ready { color: var(--warn); border-color: var(--warn); }
   .pill.not-ready .dot-s { background: var(--warn); }
-  .answer.extract::before { background: var(--faint); }
-  .answer-text mark { background: var(--mark); color: inherit; border-radius: 3px; padding: 0 1px; }
-  .answer .source-line { margin-top: 8px; font-size: 13px; color: var(--muted); }
-  .sources-label { font-size: 12px; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: .05em; margin: 4px 2px 10px; }
-  .hit-head { display: flex; align-items: flex-start; gap: 12px; margin-bottom: 10px; }
-  .file-icon { flex: none; width: 36px; height: 36px; border-radius: 10px; display: grid; place-items: center; }
-  .hit-title { min-width: 0; flex: 1; }
-  .hit-title .name { font-weight: 600; display: block; overflow-wrap: anywhere; line-height: 1.3; }
-  .hit-title .sub { font-size: 12px; color: var(--muted); display: flex; gap: 6px; align-items: center; flex-wrap: wrap; margin-top: 3px; }
-  .badge { font-size: 11px; font-weight: 600; padding: 2px 8px; border-radius: 999px; text-transform: capitalize; }
-  .score { flex: none; width: 88px; text-align: right; font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums; }
-  .bar { height: 4px; border-radius: 4px; background: var(--surface-2); margin-top: 4px; overflow: hidden; }
-  .bar span { display: block; height: 100%; border-radius: 4px; background: linear-gradient(90deg, var(--accent), var(--accent-2)); }
-  .text { margin: 0; white-space: pre-line; overflow-wrap: anywhere; }
-  .text.clamped { display: -webkit-box; -webkit-line-clamp: 6; -webkit-box-orient: vertical; overflow: hidden; }
-  .text mark { background: var(--mark); color: inherit; border-radius: 3px; padding: 0 1px; }
-  .hit-actions { display: flex; gap: 14px; margin-top: 10px; align-items: center; flex-wrap: wrap; }
-  .link-btn { border: 0; background: none; padding: 0; color: var(--accent); font-size: 13px; font-weight: 600;
-              display: inline-flex; gap: 6px; align-items: center; text-decoration: none; }
-  .link-btn:hover { text-decoration: underline; }
-  @media (max-width: 520px) { .score { width: 60px; } .hit { padding: 14px; } }
+  .btn { border: 1px solid var(--border); background: var(--surface); border-radius: 10px; padding: 6px 12px; font-size: 13px;
+         font-weight: 600; display: inline-flex; align-items: center; gap: 6px; color: var(--text); white-space: nowrap; }
+  .btn:hover { border-color: var(--faint); }
+  .icon-btn { width: 34px; height: 34px; border-radius: 10px; border: 1px solid var(--border); background: var(--surface);
+              display: inline-grid; place-items: center; color: var(--muted); flex: none; }
+  .icon-btn:hover { color: var(--text); border-color: var(--faint); }
+  #docs-toggle { display: none; }
+  @media (max-width: 1020px) { #docs-toggle { display: inline-flex; } }
+  @media (max-width: 560px) { .pill.privacy, .btn .label { display: none; } .brand .name { display: none; } }
 
-  .notice { background: var(--surface); border: 1px dashed var(--border); border-radius: 14px; padding: 28px 20px; text-align: center; color: var(--muted); }
-  .notice h3 { color: var(--text); margin: 0 0 6px; font-size: 16px; }
-  .notice p { margin: 0 0 12px; }
-  code { background: var(--surface-2); padding: 2px 6px; border-radius: 6px; font-size: 12px; overflow-wrap: anywhere; }
-  .error-text { color: var(--bad); }
+  /* Layout */
+  .layout { width: 100%; max-width: 1280px; margin: 0 auto; padding: 0 16px; display: grid; gap: 24px;
+            grid-template-columns: minmax(0, 1fr) 330px; align-items: start; }
+  @media (max-width: 1020px) { .layout { grid-template-columns: minmax(0, 1fr); } }
 
-  .skeleton { background: var(--surface); border: 1px solid var(--border); border-radius: 14px; padding: 18px; margin-bottom: 10px; }
-  .skeleton div { height: 10px; border-radius: 6px; margin: 8px 0;
-                  background: linear-gradient(90deg, var(--surface-2) 25%, var(--border) 50%, var(--surface-2) 75%);
-                  background-size: 200% 100%; animation: shimmer 1.2s infinite linear; }
+  /* Chat column */
+  .chat { display: flex; flex-direction: column; min-height: calc(100vh - 62px); max-width: 780px; width: 100%; margin: 0 auto; }
+  .thread { flex: 1; padding: 8px 0 24px; }
 
-  /* Library column */
-  .library { position: sticky; top: 16px; margin-top: 36px; background: var(--surface); border: 1px solid var(--border);
-             border-radius: 18px; box-shadow: var(--shadow); overflow: hidden; }
-  @media (max-width: 960px) { .library { position: static; margin-top: 8px; } }
-  .library-head { display: flex; align-items: center; justify-content: space-between; padding: 16px 18px 0; }
-  .library-head h2 { margin: 0; font-size: 16px; }
+  .welcome { text-align: center; padding: 7vh 4px 24px; }
+  .welcome .big-logo { width: 52px; height: 52px; border-radius: 16px; display: inline-grid; place-items: center; color: #fff;
+                       background: linear-gradient(135deg, var(--accent), var(--accent-2)); box-shadow: var(--shadow); }
+  .welcome h1 { font-size: clamp(24px, 4vw, 32px); letter-spacing: -.02em; margin: 18px 0 6px; }
+  .welcome p { color: var(--muted); margin: 0 auto 22px; max-width: 520px; }
+  .suggestions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; max-width: 620px; margin: 0 auto; text-align: left; }
+  @media (max-width: 560px) { .suggestions { grid-template-columns: 1fr; } }
+  .suggestion { border: 1px solid var(--border); background: var(--surface); border-radius: 14px; padding: 12px 14px; font-size: 14px;
+                text-align: left; transition: border-color .15s, transform .15s; }
+  .suggestion:hover { border-color: var(--accent); transform: translateY(-1px); }
+  .suggestion small { display: block; color: var(--faint); font-size: 12px; margin-bottom: 2px; text-transform: capitalize; }
+
+  .setup { display: flex; gap: 10px; align-items: flex-start; background: var(--warn-soft); color: var(--warn);
+           border-radius: 12px; padding: 12px 14px; margin: 0 auto 16px; font-size: 14px; text-align: left; max-width: 620px; }
+  .setup svg { flex: none; margin-top: 2px; }
+
+  .msg { display: flex; gap: 12px; margin: 18px 0; animation: rise .2s ease both; }
+  .msg.user { justify-content: flex-end; }
+  .msg.user .bubble { background: var(--user-bubble); color: var(--on-user-bubble); border-radius: 18px 18px 4px 18px;
+                      padding: 10px 16px; max-width: 80%; white-space: pre-wrap; overflow-wrap: anywhere; }
+  .avatar { flex: none; width: 32px; height: 32px; border-radius: 10px; display: grid; place-items: center; color: #fff;
+            background: linear-gradient(135deg, var(--accent), var(--accent-2)); margin-top: 2px; }
+  .msg.bot .body { min-width: 0; flex: 1; padding-top: 4px; }
+  .msg.bot .content { font-size: 16px; line-height: 1.6; overflow-wrap: anywhere; }
+  .content p { margin: 0 0 10px; }
+  .content p:last-child { margin-bottom: 0; }
+  .content ul, .content ol { margin: 4px 0 10px; padding-left: 22px; }
+  .content li { margin: 3px 0; }
+  .cite { border: 0; border-radius: 6px; padding: 0 5px; margin: 0 1px; font-size: 11px; font-weight: 700; vertical-align: 2px;
+          background: var(--accent-soft); color: var(--accent); line-height: 1.6; }
+  .cite:hover { background: var(--accent); color: var(--on-accent); }
+  .caret { display: inline-block; width: 8px; height: 1.05em; background: var(--accent); vertical-align: -2px; margin-left: 2px;
+           border-radius: 2px; animation: blink 1s steps(2) infinite; }
+  .typing { display: inline-flex; gap: 4px; padding: 8px 0; }
+  .typing span { width: 7px; height: 7px; border-radius: 50%; background: var(--faint); animation: bounce 1.2s infinite ease-in-out; }
+  .typing span:nth-child(2) { animation-delay: .15s; } .typing span:nth-child(3) { animation-delay: .3s; }
+  .notice { font-size: 14px; color: var(--warn); background: var(--warn-soft); border-radius: 12px; padding: 10px 12px; }
+  .closest { margin-top: 10px; font-size: 15px; }
+  .closest .label { font-size: 12px; color: var(--muted); display: block; margin-bottom: 2px; }
+  .closest mark, .passage mark { background: var(--mark); color: inherit; border-radius: 3px; padding: 0 1px; }
+
+  .sources { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 12px; align-items: center; }
+  .src { display: inline-flex; align-items: center; gap: 6px; max-width: 100%; font-size: 12.5px; text-decoration: none;
+         color: var(--text); background: var(--surface); border: 1px solid var(--border); border-radius: 999px; padding: 4px 10px 4px 4px; }
+  .src:hover { border-color: var(--accent); }
+  .src.flash { animation: flash 1.2s ease; }
+  .src .n { flex: none; width: 20px; height: 20px; border-radius: 50%; display: grid; place-items: center; font-size: 11px; font-weight: 700; }
+  .src .t { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .src .pg { color: var(--faint); flex: none; }
+  .msg-actions { display: flex; gap: 14px; margin-top: 8px; }
+  .link-btn { border: 0; background: none; padding: 0; color: var(--muted); font-size: 12.5px; font-weight: 600;
+              display: inline-flex; gap: 5px; align-items: center; text-decoration: none; }
+  .link-btn:hover { color: var(--accent); }
+  .passages { margin-top: 10px; display: grid; gap: 8px; }
+  .passage { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 10px 12px; font-size: 13.5px; }
+  .passage .ph { font-size: 12px; color: var(--muted); margin-bottom: 4px; font-weight: 600; }
+  .passage .pt { white-space: pre-line; max-height: 220px; overflow: auto; }
+
+  /* Composer */
+  .composer-wrap { position: sticky; bottom: 0; padding: 10px 0 14px;
+                   background: linear-gradient(180deg, transparent, var(--bg) 30%); }
+  .composer { display: flex; align-items: flex-end; gap: 8px; background: var(--surface); border: 1px solid var(--border);
+              border-radius: 18px; padding: 8px 8px 8px 10px; box-shadow: var(--shadow); transition: border-color .15s, box-shadow .15s; }
+  .composer:focus-within { border-color: var(--accent); box-shadow: 0 0 0 4px var(--accent-soft), var(--shadow); }
+  .composer select { flex: none; border: 1px solid var(--border); background: var(--surface-2); border-radius: 10px;
+                     font-size: 13px; padding: 7px 8px; color: var(--muted); max-width: 150px; }
+  .composer textarea { flex: 1; min-width: 0; border: 0; outline: 0; background: transparent; resize: none; font-size: 16px;
+                       line-height: 1.45; padding: 7px 4px; max-height: 180px; }
+  .composer textarea::placeholder { color: var(--faint); }
+  .send { flex: none; width: 38px; height: 38px; border-radius: 12px; border: 0; display: grid; place-items: center;
+          color: var(--on-accent); background: linear-gradient(135deg, var(--accent), var(--accent-2)); }
+  .send:disabled { opacity: .4; cursor: not-allowed; }
+  .send.stop { background: var(--text); color: var(--bg); }
+  .fineprint { text-align: center; font-size: 12px; color: var(--faint); margin: 8px 0 0; }
+  @media (max-width: 560px) { .composer select { display: none; } .composer { padding-left: 14px; } }
+
+  /* Library panel */
+  .library { position: sticky; top: 14px; margin-top: 8px; background: var(--surface); border: 1px solid var(--border);
+             border-radius: 18px; box-shadow: var(--shadow); overflow: hidden; max-height: calc(100vh - 90px); display: flex; flex-direction: column; }
+  .scrim { display: none; }
+  @media (max-width: 1020px) {
+    .library { position: fixed; z-index: 20; top: 0; right: 0; bottom: 0; width: min(360px, 92vw); max-height: none; margin: 0;
+               border-radius: 18px 0 0 18px; transform: translateX(105%); transition: transform .2s ease; }
+    .library.open { transform: none; }
+    .scrim { display: block; position: fixed; inset: 0; z-index: 10; background: rgba(0,0,0,.35); }
+  }
+  .library-head { display: flex; align-items: center; gap: 8px; padding: 16px 18px 0; }
+  .library-head h2 { margin: 0; font-size: 16px; flex: 1; }
   .library-head .count { font-size: 12px; color: var(--muted); }
-
-  .dropzone { display: block; margin: 14px 18px 0; border: 1.5px dashed var(--border); border-radius: 14px; padding: 18px 14px;
+  #docs-close { display: none; }
+  @media (max-width: 1020px) { #docs-close { display: inline-grid; } }
+  .dropzone { display: block; margin: 14px 18px 0; border: 1.5px dashed var(--border); border-radius: 14px; padding: 16px 14px;
               text-align: center; background: var(--surface-2); transition: border-color .15s, background .15s; cursor: pointer; }
   .dropzone:hover, .dropzone.over { border-color: var(--accent); background: var(--accent-soft); }
   .dropzone svg { color: var(--accent); }
-  .dropzone strong { display: block; font-size: 14px; margin-top: 6px; }
+  .dropzone strong { display: block; font-size: 14px; margin-top: 4px; }
   .dropzone span { font-size: 12px; color: var(--muted); }
   .upload-row { display: flex; gap: 8px; align-items: center; margin: 10px 18px 0; font-size: 13px; color: var(--muted); }
   .upload-row select { flex: 1; font-size: 13px; padding: 7px 10px; border-radius: 10px; border: 1px solid var(--border); background: var(--surface); }
   .ocr-note { margin: 8px 18px 0; font-size: 12px; color: var(--warn); }
+  .ocr-note code { background: var(--surface-2); padding: 1px 5px; border-radius: 5px; }
   .upload-log { margin: 10px 18px 0; display: grid; gap: 6px; }
   .upload-log:empty { display: none; }
   .upload-item { font-size: 12px; padding: 7px 10px; border-radius: 10px; background: var(--surface-2); display: flex; gap: 8px; align-items: flex-start; }
@@ -208,26 +204,26 @@
   .upload-item.error { background: var(--bad-soft); color: var(--bad); }
   .spinner { width: 14px; height: 14px; border-radius: 50%; border: 2px solid currentColor; border-right-color: transparent;
              animation: spin .8s linear infinite; flex: none; margin-top: 1px; }
-
-  .doc-groups { padding: 8px 10px 14px; margin-top: 8px; max-height: 60vh; overflow-y: auto; }
-  @media (max-width: 960px) { .doc-groups { max-height: none; } }
+  .doc-groups { padding: 8px 10px 14px; margin-top: 8px; overflow-y: auto; flex: 1; }
   .group-title { display: flex; align-items: center; gap: 8px; font-size: 12px; font-weight: 600; text-transform: uppercase;
                  letter-spacing: .05em; color: var(--muted); padding: 10px 8px 6px; }
   .group-title .dotc { width: 8px; height: 8px; border-radius: 50%; }
   .doc { display: flex; align-items: center; gap: 10px; padding: 8px; border-radius: 10px; }
   .doc:hover { background: var(--surface-2); }
-  .doc .file-icon { width: 32px; height: 32px; border-radius: 9px; }
+  .file-icon { flex: none; width: 32px; height: 32px; border-radius: 9px; display: grid; place-items: center; }
   .doc-info { min-width: 0; flex: 1; }
   .doc-info .name { font-size: 13px; font-weight: 600; overflow-wrap: anywhere; line-height: 1.3; }
   .doc-info .meta { font-size: 11px; color: var(--faint); }
   .doc .icon-btn { width: 28px; height: 28px; border-radius: 8px; }
   .doc .icon-btn.danger:hover { color: var(--bad); border-color: var(--bad); }
   .empty-lib { padding: 18px; font-size: 13px; color: var(--muted); text-align: center; }
+  .error-text { color: var(--bad); }
 
   @keyframes rise { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
-  @keyframes shimmer { from { background-position: 200% 0; } to { background-position: -200% 0; } }
   @keyframes spin { to { transform: rotate(360deg); } }
-  @keyframes flash { 0%, 100% { box-shadow: 0 0 0 0 transparent; } 30% { box-shadow: 0 0 0 5px var(--accent-soft); } }
+  @keyframes blink { to { visibility: hidden; } }
+  @keyframes bounce { 0%, 80%, 100% { transform: translateY(0); opacity: .5; } 40% { transform: translateY(-4px); opacity: 1; } }
+  @keyframes flash { 0%, 100% { box-shadow: 0 0 0 0 transparent; } 30% { box-shadow: 0 0 0 4px var(--accent-soft); border-color: var(--accent); } }
   @media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation: none !important; transition: none !important; } }
 </style>
 </head>
@@ -237,48 +233,50 @@
     <span class="logo" aria-hidden="true">
       <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linejoin="round"><path d="M6 3h8l5 5v12a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1z"/><path d="M14 3v5h5"/></svg>
     </span>
-    Document Vault
+    <span class="name">Document Vault</span>
   </div>
   <div class="spacer"></div>
   <span class="pill" id="llm-pill" title="Checking the local AI model…"><span class="dot-s"></span><span id="llm-pill-text">Checking…</span></span>
-  <span class="pill privacy"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg>Stays on this computer</span>
+  <span class="pill privacy"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg>On this computer</span>
+  <button class="btn" id="new-chat" type="button" title="Start a new chat">
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg><span class="label">New chat</span>
+  </button>
+  <button class="btn" id="docs-toggle" type="button" aria-controls="library">
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linejoin="round"><path d="M6 3h8l5 5v12a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1z"/></svg><span class="label">Documents</span>
+  </button>
   <button class="icon-btn" id="theme" type="button" aria-label="Toggle theme"></button>
 </header>
 
 <div class="layout">
-  <main>
-    <section class="hero">
-      <h1>Ask about your <span class="grad">family's documents</span></h1>
-      <p>Insurance policies, warranty cards, bills and property papers, searched in one place.</p>
-    </section>
-
-    <form class="search" id="form" role="search">
-      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg>
-      <input id="q" type="text" placeholder="e.g. When does my bike insurance expire?" autocomplete="off" aria-label="Question">
-      <kbd>/</kbd>
-      <button class="btn-primary" type="submit">Search</button>
-    </form>
-
-    <div class="llm-off setup" id="setup" hidden></div>
-    <div class="filters" id="filters" role="group" aria-label="Filter by category"></div>
-
-    <section class="examples">
-      <p class="section-label">Try asking</p>
-      <div class="chips" id="chips"></div>
-    </section>
-
-    <div id="status" aria-live="polite"></div>
-    <div id="results"></div>
+  <main class="chat">
+    <div class="thread" id="thread" aria-live="polite"></div>
+    <div class="composer-wrap">
+      <form class="composer" id="composer">
+        <select id="category" aria-label="Which documents to use">
+          <option value="">All documents</option>
+          <option value="insurance">Insurance</option>
+          <option value="warranty">Warranties</option>
+          <option value="bill">Bills</option>
+          <option value="property">Property</option>
+          <option value="other">Other</option>
+        </select>
+        <textarea id="q" rows="1" placeholder="Ask about your documents…" aria-label="Message"></textarea>
+        <button class="send" id="send" type="submit" aria-label="Send" disabled></button>
+      </form>
+      <p class="fineprint">Answers come only from your documents, on this computer. Check important dates in the original.</p>
+    </div>
   </main>
 
-  <aside class="library" aria-label="Document library">
+  <div class="scrim" id="scrim" hidden></div>
+  <aside class="library" id="library" aria-label="Your documents">
     <div class="library-head">
       <h2>Your documents</h2>
       <span class="count" id="lib-count"></span>
+      <button class="icon-btn" id="docs-close" type="button" aria-label="Close"></button>
     </div>
     <label class="dropzone" id="dropzone">
       <input type="file" id="file-input" multiple hidden>
-      <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 16V4M7 9l5-5 5 5"/><path d="M4 16v3a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-3"/></svg>
+      <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 16V4M7 9l5-5 5 5"/><path d="M4 16v3a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-3"/></svg>
       <strong>Drop files or click to upload</strong>
       <span id="types-hint">PDF, Word, text, or photos of documents</span>
     </label>
@@ -303,16 +301,15 @@
 const $ = (id) => document.getElementById(id);
 const CATS = ["insurance", "warranty", "bill", "property", "other"];
 const CAT_LABEL = { insurance: "Insurance", warranty: "Warranties", bill: "Bills", property: "Property", other: "Other" };
-const EXAMPLES = [
-  "When does my bike insurance expire?",
-  "Find the washing machine warranty",
-  "When is the electricity bill due?",
-  "What is the sum insured on our health insurance?",
-  "What is the carpet area of our flat?",
-  "Customer care number for the fridge",
+const SUGGESTIONS = [
+  ["insurance", "When does my bike insurance expire?"],
+  ["bill", "What is the electricity bill for August?"],
+  ["warranty", "Find the washing machine warranty"],
+  ["property", "What is the carpet area of our flat?"],
 ];
-let activeCategory = "";  // "" = all categories
 let info = null;
+let history = [];       // [{role, content}] of this chat, sent with each question for follow-ups
+let controller = null;  // AbortController of the answer being written
 
 function el(tag, cls, text) {
   const node = document.createElement(tag);
@@ -323,25 +320,28 @@ function el(tag, cls, text) {
 // Only ever called with the fixed icon strings below, never with server data.
 function svg(markup) { const t = document.createElement("template"); t.innerHTML = markup.trim(); return t.content.firstChild; }
 const ICON = {
-  file: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><path d="M6 3h8l5 5v12a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1z"/><path d="M14 3v5h5"/></svg>',
+  file: '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><path d="M6 3h8l5 5v12a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1z"/><path d="M14 3v5h5"/></svg>',
   open: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 4h6v6M20 4l-9 9"/><path d="M18 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h5"/></svg>',
   trash: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3"/></svg>',
   ok: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>',
-  warn: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><path d="M12 7.5v5.5M12 16.5v.5"/></svg>',
+  warn: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><path d="M12 7.5v5.5M12 16.5v.5"/></svg>',
+  send: '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M12 19V5M6 11l6-6 6 6"/></svg>',
+  stop: '<svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><rect x="5" y="5" width="14" height="14" rx="2.5"/></svg>',
+  close: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg>',
+  bot: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linejoin="round"><path d="M6 3h8l5 5v12a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1z"/><path d="M14 3v5h5"/></svg>',
+  logo: '<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linejoin="round"><path d="M6 3h8l5 5v12a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1z"/><path d="M14 3v5h5"/></svg>',
 };
-function catColor(node, cat) {
-  node.style.color = `var(--c-${cat})`;
-  node.style.background = `var(--c-${cat}-soft)`;
-  return node;
-}
+const displayName = (name) => name.replace(/_/g, "_​");  // let long file names wrap at underscores
+const sentence = (m) => (/[.!?]$/.test(m.trim()) ? m.trim() : `${m.trim()}.`);
+function catColor(node, cat) { node.style.color = `var(--c-${cat})`; node.style.background = `var(--c-${cat}-soft)`; return node; }
 function fileIcon(cat) { const d = catColor(el("span", "file-icon"), cat); d.append(svg(ICON.file)); return d; }
-function badge(cat) { return catColor(el("span", "badge", cat), cat); }
 function fileUrl(docId, filename, page) {
   const url = `/api/documents/${encodeURIComponent(docId)}/file`;
   return /\.pdf$/i.test(filename) && page ? `${url}#page=${page}` : url;
 }
+$("docs-close").append(svg(ICON.close));
 
-/* ---------- theme (system / light / dark), remembered in this browser ---------- */
+/* ---------- theme ---------- */
 const THEMES = ["system", "light", "dark"];
 const THEME_ICON = {
   system: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="3" y="4" width="18" height="12" rx="2"/><path d="M8 20h8M12 16v4"/></svg>',
@@ -364,7 +364,15 @@ $("theme").onclick = () => {
   try { localStorage.setItem("theme", theme); } catch (e) {}
 };
 
-/* ---------- library ---------- */
+/* ---------- library panel ---------- */
+function openDocs(open) {
+  $("library").classList.toggle("open", open);
+  $("scrim").hidden = !open;
+}
+$("docs-toggle").onclick = () => openDocs(true);
+$("docs-close").onclick = () => openDocs(false);
+$("scrim").onclick = () => openDocs(false);
+
 async function refreshLibrary() {
   const [infoRes, docsRes] = await Promise.all([fetch("/api/info"), fetch("/api/documents")]);
   info = await infoRes.json();
@@ -374,9 +382,18 @@ async function refreshLibrary() {
   $("types-hint").textContent = info.ocr_available
     ? `PDF, Word, text, or photos · up to ${info.max_upload_mb} MB`
     : `PDF, Word or text files · up to ${info.max_upload_mb} MB`;
-  renderFilters();
-  renderLlmStatus();
+  renderStatus();
   renderDocs(docs);
+  if (!history.length && !controller && !$("thread").querySelector(".msg")) renderWelcome();
+}
+
+function renderStatus() {
+  const st = info && info.llm_status;
+  if (!st) return;
+  const pill = $("llm-pill");
+  pill.className = `pill ${st.ready ? "ready" : "not-ready"}`;
+  $("llm-pill-text").textContent = st.ready ? "Assistant ready" : "Assistant offline";
+  pill.title = st.message;
 }
 
 function renderDocs(docs) {
@@ -405,19 +422,17 @@ function renderDoc(d) {
   open.href = fileUrl(d.doc_id, d.filename); open.target = "_blank"; open.rel = "noopener";
   open.title = "Open"; open.setAttribute("aria-label", `Open ${d.filename}`); open.append(svg(ICON.open));
   const del = el("button", "icon-btn danger");
-  del.type = "button"; del.title = "Remove from library"; del.setAttribute("aria-label", `Remove ${d.filename}`);
+  del.type = "button"; del.title = "Remove from vault"; del.setAttribute("aria-label", `Remove ${d.filename}`);
   del.append(svg(ICON.trash));
   del.onclick = async () => {
-    if (!confirm(`Remove "${d.filename}" from the library?\n\nThe copy on your computer outside this app is not affected.`)) return;
+    if (!confirm(`Remove "${d.filename}" from the vault?\n\nThe copy on your computer outside this app is not affected.`)) return;
     await fetch(`/api/documents/${encodeURIComponent(d.doc_id)}`, { method: "DELETE" });
     await refreshLibrary();
-    if (document.querySelector(".hit")) runSearch();
   };
   row.append(fileIcon(d.category), infoBox, open, del);
   return row;
 }
 
-/* ---------- upload ---------- */
 async function uploadFiles(fileList) {
   const files = [...fileList];
   if (!files.length) return;
@@ -436,7 +451,7 @@ async function uploadFiles(fileList) {
       const item = el("div", `upload-item ${r.status}`);
       const body = el("span");
       const msg = r.status === "added" ? ` added to ${r.document.category}`
-        : r.status === "duplicate" ? " is already in the library" : `: ${r.error}`;
+        : r.status === "duplicate" ? " is already in the vault" : `: ${r.error}`;
       body.append(el("span", "fname", r.filename), msg);
       item.append(svg(r.status === "error" ? ICON.warn : ICON.ok), body);
       return item;
@@ -453,283 +468,294 @@ const dz = $("dropzone");
 ["dragleave", "drop"].forEach((t) => dz.addEventListener(t, (e) => { e.preventDefault(); dz.classList.remove("over"); }));
 dz.addEventListener("drop", (e) => uploadFiles(e.dataTransfer.files));
 
-/* ---------- filters + examples ---------- */
-function renderFilters() {
-  const make = (value, label, count) => {
-    const b = el("button", "filter");
+/* ---------- chat ---------- */
+function renderWelcome() {
+  const w = el("section", "welcome");
+  const logo = el("span", "big-logo"); logo.append(svg(ICON.logo));
+  const empty = info && info.num_documents === 0;
+  w.append(logo, el("h1", null, "What would you like to know?"),
+    el("p", null, empty
+      ? "Your vault is empty. Upload policies, warranty cards, bills or property papers in Documents, then ask me anything about them."
+      : `Ask me anything about your ${info ? info.num_documents + " " : ""}documents: expiry dates, amounts, policy numbers, warranties.`));
+  const st = info && info.llm_status;
+  if (st && !st.ready) {
+    const box = el("div", "setup");
+    box.append(svg(ICON.warn), el("span", null, `${sentence(st.message)} Until then I can only point you to the closest line in your documents.`));
+    w.append(box);
+  }
+  const grid = el("div", "suggestions");
+  SUGGESTIONS.forEach(([cat, q]) => {
+    const b = el("button", "suggestion");
     b.type = "button";
-    b.setAttribute("aria-pressed", String(activeCategory === value));
-    b.append(label, el("span", "count", String(count)));
-    b.disabled = count === 0 && value !== "";
-    b.onclick = () => { activeCategory = value; renderFilters(); if ($("q").value.trim()) runSearch(); };
-    return b;
-  };
-  const counts = info ? info.categories : {};
-  $("filters").replaceChildren(make("", "All", info ? info.num_documents : 0),
-    ...CATS.map((c) => make(c, CAT_LABEL[c], counts[c] || 0)));
+    b.append(el("small", null, cat), q);
+    b.onclick = () => ask(q);
+    grid.append(b);
+  });
+  w.append(grid);
+  $("thread").replaceChildren(w);
 }
-$("chips").replaceChildren(...EXAMPLES.map((q) => {
-  const b = el("button", "chip", q);
-  b.type = "button";
-  b.onclick = () => { $("q").value = q; runSearch(); };
-  return b;
-}));
 
-/* ---------- search ---------- */
-const STOPWORDS = new Set(("the a an of in on at to for and or is are was were be by with from as that this what who whom when " +
-  "where which why how does did do its it into than then my our we us me find much many").split(" "));
-function queryTerms(q) {
-  return [...new Set(q.toLowerCase().match(/[\p{L}\p{N}]+/gu) || [])].filter((w) => w.length > 2 && !STOPWORDS.has(w));
+function scrollToBottom() { window.scrollTo({ top: document.body.scrollHeight }); }
+
+function addUserMessage(text) {
+  const m = el("div", "msg user");
+  m.append(el("div", "bubble", text));
+  $("thread").append(m);
 }
-function termRegex(terms) {
-  return terms.length ? new RegExp(`\\b(${terms.map((t) => t.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join("|")})`, "giu") : null;
+
+function addBotMessage() {
+  const m = el("div", "msg bot");
+  const avatar = el("span", "avatar"); avatar.append(svg(ICON.bot));
+  const body = el("div", "body");
+  const content = el("div", "content");
+  const typing = el("span", "typing"); typing.append(el("span"), el("span"), el("span"));
+  content.append(typing);
+  body.append(content);
+  m.append(avatar, body);
+  $("thread").append(m);
+  return { body, content };
 }
-function fillHighlighted(p, text, re) {
-  p.replaceChildren();
-  if (!re) { p.textContent = text; return; }
+
+// Citations are shown renumbered per reply (1, 2, ...) in order of first mention,
+// however the retrieved passages happened to be numbered.
+function citationOrder(text, numSources) {
+  const order = [];
+  for (const m of text.matchAll(/\[(\d+)\]/g)) {
+    const n = Number(m[1]);
+    if (n >= 1 && n <= numSources && !order.includes(n)) order.push(n);
+  }
+  return order;
+}
+
+// Minimal, safe formatting for model output: paragraphs, "- " / "1. " lists, **bold**, and [n] citations.
+function renderInline(parent, text, onCite) {
+  const re = /(\*\*[^*]+\*\*|\[\d+\])/g;
   let last = 0;
   for (const m of text.matchAll(re)) {
-    if (m.index > last) p.append(text.slice(last, m.index));
-    p.append(el("mark", null, m[0]));
-    last = m.index + m[0].length;
+    if (m.index > last) parent.append(text.slice(last, m.index));
+    const token = m[0];
+    if (token.startsWith("**")) parent.append(el("strong", null, token.slice(2, -2)));
+    else {
+      const n = Number(token.slice(1, -1));
+      const shown = onCite.label(n);
+      if (shown) {
+        const b = el("button", "cite", String(shown));
+        b.type = "button"; b.title = `Source ${shown}`;
+        b.onclick = () => onCite(n);
+        parent.append(b);
+      }  // a citation to a passage that doesn't exist is dropped
+    }
+    last = m.index + token.length;
   }
-  if (last < text.length) p.append(text.slice(last));
+  if (last < text.length) parent.append(text.slice(last));
 }
-// Start the collapsed preview at the line with the most query-word matches, so the
-// fact you asked about is visible without expanding (passages often open with headers).
-function previewStart(text, re) {
-  if (!re) return 0;
-  const lines = text.split("\n");
-  let best = 0, bestHits = 0, offset = 0, bestOffset = 0, prevOffset = 0;
-  lines.forEach((line, i) => {
-    const hits = (line.match(re) || []).length;
-    if (hits > bestHits) { bestHits = hits; best = i; bestOffset = i > 0 ? prevOffset : 0; }
-    prevOffset = offset;
-    offset += line.length + 1;
-  });
-  return best > 2 ? bestOffset : 0;  // keep one line of context above; don't bother for the first lines
-}
-const displayName = (name) => name.replace(/_/g, "_​");  // let long file names wrap at underscores
-
-function renderHit(h, maxScore, terms, { number = null, top = false } = {}) {
-  const card = el("article", top ? "hit top" : "hit");
-  if (number) card.id = `src-${number}`;
-  const head = el("div", "hit-head");
-  const title = el("div", "hit-title");
-  const sub = el("div", "sub");
-  sub.append(badge(h.category), el("span", null, `page ${h.page}`));
-  title.append(el("span", "name", displayName(h.filename)), sub);
-  const score = el("div", "score", `match ${Math.round(h.score * 100)}%`);
-  const bar = el("div", "bar"), fill = el("span");
-  fill.style.width = `${Math.max(4, Math.min(100, (h.score / maxScore) * 100))}%`;
-  bar.append(fill); score.append(bar);
-  head.append(...(number ? [el("span", "src-num", String(number))] : []), fileIcon(h.category), title, score);
-
-  const re = termRegex(terms);
-  const start = previewStart(h.text, re);
-  const preview = start ? "… " + h.text.slice(start) : h.text;
-  const text = el("p", "text clamped");
-  fillHighlighted(text, preview, re);
-  const actions = el("div", "hit-actions");
-  const open = el("a", "link-btn");
-  open.href = fileUrl(h.doc_id, h.filename, h.page); open.target = "_blank"; open.rel = "noopener";
-  open.append(svg(ICON.open), "Open document");
-  actions.append(open);
-  card.append(head, text, actions);
-  requestAnimationFrame(() => {  // offer "Show more" only when something is hidden
-    if (start || text.scrollHeight > text.clientHeight + 2) {
-      const more = el("button", "link-btn", "Show full passage");
-      more.type = "button";
-      more.onclick = () => {
-        const expand = text.classList.contains("clamped");
-        text.classList.toggle("clamped", !expand);
-        fillHighlighted(text, expand ? h.text : preview, re);
-        more.textContent = expand ? "Show less" : "Show full passage";
-      };
-      actions.append(more);
+function renderMarkdown(container, text, onCite, streaming) {
+  container.replaceChildren();
+  text.trim().split(/\n\s*\n/).forEach((block) => {
+    const lines = block.split("\n").filter((l) => l.trim());
+    const isList = lines.length && lines.every((l) => /^\s*([-*•]|\d+[.)])\s+/.test(l));
+    if (isList) {
+      const list = el(/^\s*\d/.test(lines[0]) ? "ol" : "ul");
+      lines.forEach((l) => { const li = el("li"); renderInline(li, l.replace(/^\s*([-*•]|\d+[.)])\s+/, ""), onCite); list.append(li); });
+      container.append(list);
+    } else {
+      const p = el("p");
+      renderInline(p, lines.join("\n"), onCite);
+      container.append(p);
     }
   });
-  return card;
+  if (streaming) {
+    let last = container.lastElementChild || container;
+    if (last.tagName === "UL" || last.tagName === "OL") last = last.lastElementChild;
+    last.append(el("span", "caret"));
+  }
 }
 
-function skeletons(n) {
-  return Array.from({ length: n }, () => {
-    const s = el("div", "skeleton");
-    ["35%", "95%", "88%", "60%"].forEach((w) => { const line = el("div"); line.style.width = w; s.append(line); });
-    return s;
-  });
+const STOPWORDS = new Set(("the a an of in on at to for and or is are was were be by with from as that this what who whom when " +
+  "where which why how does did do its it into than then my our we us me find much many month").split(" "));
+function termRegex(q) {
+  const terms = [...new Set(q.toLowerCase().match(/[\p{L}\p{N}]+/gu) || [])].filter((w) => w.length > 2 && !STOPWORDS.has(w));
+  return terms.length ? new RegExp(`\\b(${terms.map((t) => t.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join("|")})`, "giu") : null;
 }
-
-function emptyLibraryNotice() {
-  const n = el("div", "notice");
-  n.append(el("h3", null, "Your vault is empty"),
-    el("p", null, "Upload documents in the panel on the right, or try it first with the fictional sample PDFs:"),
-    el("code", null, "python -m backend.upload.ingest samples/pdfs"));
-  return n;
+function fillHighlighted(node, text, re) {
+  if (!re) { node.append(text); return; }
+  let last = 0;
+  for (const m of text.matchAll(re)) {
+    if (m.index > last) node.append(text.slice(last, m.index));
+    node.append(el("mark", null, m[0]));
+    last = m.index + m[0].length;
+  }
+  if (last < text.length) node.append(text.slice(last));
 }
-
-/* ---------- answer (local LLM) ---------- */
-function answerSkeleton() {
-  const card = el("section", "answer");
-  const head = el("div", "answer-head", "Answer");
-  card.append(head);
-  ["92%", "70%"].forEach((w) => { const line = el("div", "skeleton-line"); line.style.width = w; card.append(line); });
-  return card;
-}
-
-function flashSource(n) {
-  const target = $(`src-${n}`);
-  if (!target) return;
-  target.scrollIntoView({ behavior: "smooth", block: "center" });
-  target.classList.remove("flash"); void target.offsetWidth; target.classList.add("flash");
-}
-
-function renderAnswer(data) {
-  const card = el("section", data.found ? "answer" : "answer not-found");
-  const head = el("div", "answer-head");
-  head.append("Answer", el("span", "llm", `${data.llm} · on this computer · ${(data.took_ms / 1000).toFixed(1)} s`));
-  const p = el("p", "answer-text");
-  // Turn "[2]" into a button that jumps to source 2; everything else stays plain text.
-  const parts = data.answer.split(/\[(\d+)\]/);
-  parts.forEach((part, i) => {
-    if (i % 2 === 0) { if (part) p.append(part); return; }
-    const n = Number(part);
-    if (n < 1 || n > data.sources.length) { p.append(`[${part}]`); return; }
-    const b = el("button", "cite", part);
-    b.type = "button"; b.title = `Source ${n}`; b.onclick = () => flashSource(n);
-    p.append(b);
-  });
-  card.append(head, p);
-  return card;
-}
-
-const sentence = (m) => (/[.!?]$/.test(m.trim()) ? m.trim() : `${m.trim()}.`);
-
-function renderLlmStatus() {
-  const st = info && info.llm_status;
-  const pill = $("llm-pill");
-  if (!st) return;
-  pill.className = `pill ${st.ready ? "ready" : "not-ready"}`;
-  $("llm-pill-text").textContent = st.ready ? "Answers ready" : "Answers off";
-  pill.title = st.message;
-  const box = $("setup");
-  box.hidden = st.ready;
-  if (!st.ready) box.replaceChildren(svg(ICON.warn), el("span", null, `${sentence(st.message)} Until then you'll see the closest line from your documents instead of a written answer.`));
-}
-
-// Without the LLM, still give a plain-text reply: the line, among the top 3 passages,
-// that shares the most words with the question (clearly labelled as not an AI answer).
-// If no line shares a word, show nothing rather than an unrelated line.
-function closestLine(hits, terms) {
-  const re = termRegex(terms);
+// Used only when the assistant can't answer: the line sharing the most words with the question.
+function closestLine(sources, question) {
+  const re = termRegex(question);
   if (!re) return null;
   let best = null, bestHits = 0;
-  for (const hit of hits.slice(0, 3)) {
-    for (const raw of hit.text.split("\n")) {
+  for (const s of sources.slice(0, 3)) {
+    for (const raw of s.text.split("\n")) {
       const line = raw.trim();
       if (!line || /^SAMPLE DOCUMENT/i.test(line)) continue;
       const count = new Set((line.match(re) || []).map((w) => w.toLowerCase())).size;
-      if (count > bestHits) { best = { line: line.replace(/^#+\s*/, ""), hit }; bestHits = count; }
+      if (count > bestHits) { best = { line: line.replace(/^#+\s*/, ""), source: s }; bestHits = count; }
     }
   }
   return best;
 }
 
-function renderExtract(hits, terms) {
-  const found = closestLine(hits, terms);
-  if (!found) return [];
-  const card = el("section", "answer extract");
-  const head = el("div", "answer-head");
-  head.append("Closest line in your documents", el("span", "llm", "not an AI answer"));
-  const p = el("p", "answer-text");
-  fillHighlighted(p, found.line, termRegex(terms));
-  card.append(head, p, el("div", "source-line", `From ${found.hit.filename}, page ${found.hit.page}`));
-  return [card];
-}
-
-function llmOffNotice(message) {
-  const box = el("div", "llm-off");
-  box.append(svg(ICON.warn), el("span", null, `${sentence(message)} Showing the matching passages instead.`));
-  return box;
-}
-
-async function searchOnly(q, prefix = []) {
-  const params = new URLSearchParams({ q, k: "5" });
-  if (activeCategory) params.set("category", activeCategory);
-  const res = await fetch(`/api/search?${params}`);
-  const data = await res.json();
-  if (!res.ok) throw new Error(typeof data.detail === "string" ? data.detail : res.statusText);
-  const where = activeCategory ? `in ${CAT_LABEL[activeCategory].toLowerCase()}` : "across all documents";
-  $("status").replaceChildren(
-    el("span", null, `${data.results.length} best ${data.results.length === 1 ? "match" : "matches"} ${where}`),
-    el("span", "dot", "·"), el("span", null, `${data.took_ms} ms`),
-  );
-  if (!data.results.length) {
-    $("results").replaceChildren(...prefix, el("div", "notice", "No documents in this category yet."));
-    return;
-  }
-  const maxScore = Math.max(...data.results.map((r) => r.score));
-  const terms = queryTerms(data.question);
-  $("results").replaceChildren(...prefix, ...renderExtract(data.results, terms), el("p", "sources-label", "Matching documents"),
-    ...data.results.map((h, i) => renderHit(h, maxScore, terms, { top: i === 0 })));
-}
-
-let askSeq = 0;  // ignore answers to questions the user has already replaced
-async function runSearch() {
-  const q = $("q").value.trim();
-  if (!q) { $("q").focus(); return; }
-  if (info && info.num_documents === 0) { $("status").replaceChildren(); $("results").replaceChildren(emptyLibraryNotice()); return; }
-  const seq = ++askSeq;
-  $("status").textContent = "Reading your documents…";
-  $("results").replaceChildren(answerSkeleton(), ...skeletons(2));
-  try {
-    if (!info || !info.llm) {
-      await searchOnly(q, info ? [llmOffNotice("Answers are turned off (the app was started with --no-llm).")] : []);
-      return;
-    }
-    const res = await fetch("/api/ask", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ question: q, category: activeCategory || null, k: 5 }),
+function renderSources(body, sources, citations, question) {
+  if (!sources.length) return;
+  if (citations.length) {
+    const row = el("div", "sources");
+    citations.forEach((n, i) => {
+      const s = sources[n - 1];
+      const a = el("a", "src");
+      a.id = `${body.dataset.id}-src-${n}`;
+      a.href = fileUrl(s.doc_id, s.filename, s.page); a.target = "_blank"; a.rel = "noopener";
+      a.title = `Open ${s.filename} at page ${s.page}`;
+      a.append(catColor(el("span", "n", String(i + 1)), s.category), el("span", "t", s.filename), el("span", "pg", `p. ${s.page}`));
+      row.append(a);
     });
-    const data = await res.json();
-    if (seq !== askSeq) return;
-    if (res.status === 503) {
-      // The banner under the search box explains how to fix it; don't repeat it here.
-      await refreshLibrary().catch(() => {});
-      await searchOnly(q, $("setup").hidden ? [llmOffNotice(data.detail)] : []);
-      return;
-    }
-    if (!res.ok) throw new Error(typeof data.detail === "string" ? data.detail : res.statusText);
-    const where = activeCategory ? `in ${CAT_LABEL[activeCategory].toLowerCase()}` : "across all documents";
-    $("status").replaceChildren(el("span", null, `Answered from ${data.sources.length} passages ${where}`));
-    if (!data.sources.length) {
-      $("results").replaceChildren(renderAnswer(data));
-      return;
-    }
-    const maxScore = Math.max(...data.sources.map((r) => r.score));
-    const terms = queryTerms(q);
-    const cited = new Set(data.citations);
-    $("results").replaceChildren(
-      renderAnswer(data),
-      el("p", "sources-label", "Sources"),
-      ...data.sources.map((h, i) => renderHit(h, maxScore, terms, { number: i + 1, top: cited.has(i + 1) })),
-    );
-  } catch (e) {
-    if (seq !== askSeq) return;
-    $("status").replaceChildren();
-    $("results").replaceChildren(el("div", "notice error-text", `Something went wrong: ${e.message}`));
+    body.append(row);
   }
+  const shown = citations.length ? citations : sources.map((_, i) => i + 1);
+  const label = citations.length ? "Show where this came from" : "Show related passages";
+  const passages = el("div", "passages"); passages.hidden = true;
+  const re = termRegex(question);
+  shown.forEach((n) => {
+    const s = sources[n - 1];
+    const box = el("div", "passage");
+    const pt = el("div", "pt");
+    fillHighlighted(pt, s.text, re);
+    box.append(el("div", "ph", `${citations.length ? `[${shown.indexOf(n) + 1}] ` : ""}${s.filename} · page ${s.page}`), pt);
+    passages.append(box);
+  });
+  const toggle = el("button", "link-btn", label);
+  toggle.type = "button";
+  toggle.onclick = () => { passages.hidden = !passages.hidden; toggle.textContent = passages.hidden ? label : "Hide passages"; };
+  const actions = el("div", "msg-actions");
+  actions.append(toggle);
+  body.append(actions, passages);
 }
 
-$("form").onsubmit = (e) => { e.preventDefault(); runSearch(); };
+function flashSource(body, n) {
+  const chip = document.getElementById(`${body.dataset.id}-src-${n}`);
+  if (!chip) return;
+  chip.scrollIntoView({ behavior: "smooth", block: "nearest" });
+  chip.classList.remove("flash"); void chip.offsetWidth; chip.classList.add("flash");
+}
+
+let msgCounter = 0;
+async function ask(question) {
+  question = question.trim();
+  if (!question || controller) return;
+  if (!history.length) $("thread").replaceChildren();
+  addUserMessage(question);
+  const { body, content } = addBotMessage();
+  body.dataset.id = `m${++msgCounter}`;
+  let sources = [], text = "", done = null, error = null;
+  const onCite = (n) => flashSource(body, n);
+  onCite.label = (n) => { const i = citationOrder(text, sources.length).indexOf(n); return i >= 0 ? i + 1 : null; };
+  controller = new AbortController();
+  setBusy(true);
+  scrollToBottom();
+
+  try {
+    if (info && info.num_documents === 0) {
+      error = "Your vault is empty. Open Documents and upload a policy, warranty card or bill first, then ask again";
+    } else {
+      const res = await fetch("/api/chat", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ question, history: history.slice(-6), category: $("category").value || null }),
+        signal: controller.signal,
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        error = typeof data.detail === "string" ? data.detail : `Something went wrong (${res.status})`;
+      } else {
+        const reader = res.body.getReader();
+        const decoder = new TextDecoder();
+        let buffer = "";
+        for (;;) {
+          const { value, done: finished } = await reader.read();
+          if (finished) break;
+          buffer += decoder.decode(value, { stream: true });
+          const lines = buffer.split("\n");
+          buffer = lines.pop();
+          for (const line of lines) {
+            if (!line.trim()) continue;
+            const ev = JSON.parse(line);
+            if (ev.type === "sources") sources = ev.sources;
+            else if (ev.type === "token") { text += ev.text; renderMarkdown(content, text, onCite, true); scrollToBottom(); }
+            else if (ev.type === "done") done = ev;
+            else if (ev.type === "error") error = ev.message;
+          }
+        }
+      }
+    }
+  } catch (e) {
+    if (e.name !== "AbortError") error = `Couldn't reach the vault: ${e.message}`;
+    else if (!text) text = "Stopped.";
+  }
+
+  if (text) renderMarkdown(content, text, onCite, false);
+  else content.replaceChildren();
+  if (error) {
+    content.append(el("div", "notice", sentence(error)));
+    const hit = closestLine(sources, question);
+    if (hit) {
+      const c = el("div", "closest");
+      c.append(el("span", "label", `Closest line in ${hit.source.filename}, page ${hit.source.page} (not an AI answer):`));
+      const line = el("span"); fillHighlighted(line, hit.line, termRegex(question)); c.append(line);
+      content.append(c);
+    }
+    refreshLibrary().catch(() => {});
+  }
+  renderSources(body, sources, done ? citationOrder(text, sources.length) : [], question);
+  if (text && !error && done) history.push({ role: "user", content: question }, { role: "assistant", content: text });
+  controller = null;
+  setBusy(false);
+  scrollToBottom();
+}
+
+/* ---------- composer ---------- */
+const input = $("q");
+function setBusy(busy) {
+  const send = $("send");
+  send.classList.toggle("stop", busy);
+  send.replaceChildren(svg(busy ? ICON.stop : ICON.send));
+  send.setAttribute("aria-label", busy ? "Stop" : "Send");
+  send.disabled = !busy && !input.value.trim();
+}
+function autosize() { input.style.height = "auto"; input.style.height = `${Math.min(input.scrollHeight, 180)}px`; }
+input.addEventListener("input", () => { autosize(); if (!controller) $("send").disabled = !input.value.trim(); });
+input.addEventListener("keydown", (e) => {
+  if (e.key === "Enter" && !e.shiftKey && !e.isComposing) { e.preventDefault(); $("composer").requestSubmit(); }
+});
+$("composer").onsubmit = (e) => {
+  e.preventDefault();
+  if (controller) { controller.abort(); return; }
+  const q = input.value;
+  if (!q.trim()) return;
+  input.value = ""; autosize();
+  ask(q);
+};
+$("new-chat").onclick = () => {
+  if (controller) controller.abort();
+  history = [];
+  renderWelcome();
+  input.focus();
+};
 document.addEventListener("keydown", (e) => {
   const typing = ["INPUT", "SELECT", "TEXTAREA"].includes(document.activeElement.tagName);
-  if (e.key === "/" && !typing) { e.preventDefault(); $("q").focus(); }
-  if (e.key === "Escape" && document.activeElement === $("q")) $("q").value = "";
+  if (e.key === "/" && !typing) { e.preventDefault(); input.focus(); }
+  if (e.key === "Escape") openDocs(false);
 });
-renderFilters();
+setBusy(false);
+renderWelcome();
 refreshLibrary().catch(() => { $("doc-groups").replaceChildren(el("div", "empty-lib error-text", "Could not reach the server.")); });
+input.focus();
 </script>
 </body>
 </html>

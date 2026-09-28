@@ -39,9 +39,14 @@ class FakeLLM:
         self.reply, self.error = reply, error
         self.calls, self.last_system, self.last_prompt = 0, None, None
 
-    def generate(self, system, prompt):
+    def generate(self, system, prompt, history=None):
         self.calls += 1
-        self.last_system, self.last_prompt = system, prompt
+        self.last_system, self.last_prompt, self.last_history = system, prompt, history
         if self.error:
             raise self.error
         return self.reply
+
+    def stream(self, system, prompt, history=None):
+        text = self.generate(system, prompt, history)
+        for i in range(0, len(text), 7):  # arrive in small pieces, like a real model
+            yield text[i : i + 7]

@@ -8,7 +8,8 @@ Endpoints:
     GET    /api/documents/{id}/file       open the original file
     DELETE /api/documents/{id}            remove a document and its search data
     GET    /api/search?q=...&category=... best-matching passage per document
-    POST   /api/ask                       answer from the local LLM, with the cited passages
+    POST   /api/chat                      chat: answer streamed word by word (NDJSON), with sources
+    POST   /api/ask                       the same answer in one response (scripts, tests)
 
 Usage:
     python -m backend.api.app                 # then open http://127.0.0.1:8000
@@ -24,6 +25,7 @@ there is no login, so it must not be exposed to a network.
 from __future__ import annotations
 
 import argparse
+import json
 import logging
 import tempfile
 import time
@@ -31,10 +33,12 @@ from collections import Counter
 from pathlib import Path
 
 from fastapi import FastAPI, File, Form, HTTPException, Query, UploadFile
-from fastapi.responses import FileResponse
+from typing import Literal
+
+from fastapi.responses import FileResponse, StreamingResponse
 from pydantic import BaseModel, Field
 
-from backend.llm.answer import LLM, answer_question
+from backend.llm.answer import LLM, answer_question, finalize, stream_answer
 from backend.llm.ollama import LLMUnavailableError
 from backend.retriever.retriever import Retriever
 
@@ -52,6 +56,18 @@ logger = logging.getLogger("api")
 def _public(doc: dict) -> dict:
     """Document record as sent to the browser (no internal storage details)."""
     return {k: v for k, v in doc.items() if k not in ("sha256", "stored_as")}
+
+
+class ChatTurn(BaseModel):
+    role: Literal["user", "assistant"]
+    content: str = Field(..., max_length=4000)
+
+
+class ChatRequest(BaseModel):
+    question: str = Field(..., min_length=1, max_length=500)
+    history: list[ChatTurn] = Field(default_factory=list, max_length=20)
+    category: str | None = None
+    k: int = Field(5, ge=1, le=10)
 
 
 class AskRequest(BaseModel):
@@ -178,6 +194,49 @@ def create_app(store: DocumentStore, embedder: EmbedderLike, tokenizer, llm: LLM
             "took_ms": round(took_ms, 1),
             "results": [_passage(chunk, score, i + 1) for i, (chunk, score) in enumerate(hits)],
         }
+
+    def chat_context(question: str, history: list[ChatTurn], k: int, category: str | None):
+        """Passages for a chat turn. A follow-up ("and when is it due?") says little on its
+        own, so also search with the previous question and add those passages at the end."""
+        hits = retriever.context(question, top_k=k, category=category)
+        previous = next((t.content for t in reversed(history) if t.role == "user"), None)
+        if previous:
+            seen = {c["chunk_id"] for c, _ in hits}
+            for chunk, score in retriever.context(f"{previous} {question}", top_k=3, category=category):
+                if chunk["chunk_id"] not in seen:
+                    hits.append((chunk, score))
+                    seen.add(chunk["chunk_id"])
+        return hits
+
+    @app.post("/api/chat")
+    def chat(req: ChatRequest) -> StreamingResponse:
+        if req.category and req.category not in CATEGORIES:
+            raise HTTPException(400, f"category must be one of {CATEGORIES}")
+        if llm is None:
+            raise HTTPException(503, "Answers are turned off (the app was started with --no-llm).")
+        hits = chat_context(req.question, req.history, req.k, req.category or None)
+        sources = [_passage(chunk, score, i + 1) for i, (chunk, score) in enumerate(hits)]
+        history = [t.model_dump() for t in req.history]
+
+        def events():
+            yield json.dumps({"type": "sources", "sources": sources}) + "\n"
+            text = ""
+            try:
+                for piece in stream_answer(req.question, [c for c, _ in hits], llm, history=history):
+                    text += piece
+                    yield json.dumps({"type": "token", "text": piece}) + "\n"
+            except LLMUnavailableError as e:
+                yield json.dumps({"type": "error", "message": str(e)}) + "\n"
+                return
+            except Exception:  # never leave the chat bubble hanging
+                logger.exception("Answer failed")
+                yield json.dumps({"type": "error", "message": "Something went wrong while writing the answer."}) + "\n"
+                return
+            answer = finalize(text, len(hits))
+            yield json.dumps({"type": "done", "citations": answer.citations, "found": answer.found,
+                              "llm": llm.name}) + "\n"
+
+        return StreamingResponse(events(), media_type="application/x-ndjson")
 
     @app.post("/api/ask")
     def ask(req: AskRequest) -> dict:

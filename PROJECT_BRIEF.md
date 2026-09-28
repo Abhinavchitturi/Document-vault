@@ -194,7 +194,7 @@ before it's kept. The before/after numbers are the point.
 |---|---|---|
 | 1 Core RAG | ✅ Upload, PDF/Word/text parsing, page-aware chunking, Arctic Embed embeddings, FAISS, top-k retrieval, local LLM answers with citations, `backend/` layout | Baseline scores on the samples |
 | 2 Metadata | Name, type, upload date, pages, file path, in a JSON file | PostgreSQL, owner |
-| 3 Web app | Single-page HTML app: upload, library by category, search | React + Next.js, login, chat |
+| 3 Web app | Chat page: streaming answers with citations, follow-up questions, library by category, upload | React + Next.js, login |
 | 4 OCR | Tesseract for photos and scanned PDFs | PaddleOCR comparison (optional) |
 | 5 Retrieval | Vector search, category filter, evaluation harness | BM25 + fusion, reranking |
 | 8 Classification | Keyword-based guess (insurance/warranty/bill/property/other) | ML/LLM classifier, more types |

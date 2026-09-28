@@ -57,6 +57,11 @@ class _FakeOllama(BaseHTTPRequestHandler):
             self.wfile.write(b'{"error":"model \\"missing\\" not found, try pulling it first"}')
             return
         self.send_response(200); self.end_headers()
+        if body.get("stream"):
+            for piece in ["It expires", " on 14 March", " 2027 [2]."]:
+                self.wfile.write((json.dumps({"message": {"content": piece}, "done": False}) + "\n").encode())
+            self.wfile.write((json.dumps({"message": {"content": ""}, "done": True}) + "\n").encode())
+            return
         self.wfile.write(json.dumps({"message": {"role": "assistant", "content": " It expires on 14 March 2027 [2]. "}}).encode())
 
     def log_message(self, *args):
@@ -140,3 +145,20 @@ def test_ollama_status(fake_ollama):
     assert not ready and "ollama pull gemma3:12b" in message
     ready, message = OllamaLLM(host="http://127.0.0.1:9").status()
     assert not ready and "isn't running" in message
+
+
+def test_streaming_hides_thinking_and_keeps_normal_text():
+    from backend.llm.answer import strip_thinking
+
+    pieces = ["<th", "ink>weighing the", " two policies</thi", "nk>\nIt expires", " on 14 March 2027 [2]."]
+    assert "".join(strip_thinking(pieces)) == "It expires on 14 March 2027 [2]."
+    assert "".join(strip_thinking(["Your ", "bill is ", "Rs. 2,486."])) == "Your bill is Rs. 2,486."
+    assert "".join(strip_thinking(["<b>"])) == "<b>"
+
+
+def test_ollama_streams_pieces(fake_ollama):
+    host = f"http://127.0.0.1:{fake_ollama.server_port}"
+    pieces = list(OllamaLLM("llama3.1:8b", host=host).stream("sys", "prompt", [{"role": "user", "content": "hi"}]))
+    assert "".join(pieces) == "It expires on 14 March 2027 [2]." and len(pieces) > 1
+    sent = fake_ollama.requests[-1]
+    assert sent["stream"] is True and [m["role"] for m in sent["messages"]] == ["system", "user", "user"]

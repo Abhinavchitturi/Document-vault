@@ -18,7 +18,7 @@ and the privacy decisions.
 |---|---|---|
 | 1 | Core RAG engine | ✅ Upload → parse → chunk → embeddings → FAISS → retrieve → local LLM answer with citations |
 | 2 | Document metadata | 🟡 Stored in a JSON file; PostgreSQL to come |
-| 3 | Web application | 🟡 Single-page app (upload, library, ask); React + Next.js to come |
+| 3 | Web application | 🟡 Chat page (streaming answers, follow-ups, document library, upload); React + Next.js to come |
 | 4 | OCR | ✅ Tesseract for photos and scanned PDFs |
 | 5 | Better retrieval (BM25 + vector) | 🟡 Vector search and evaluation harness; hybrid to come |
 | 6–13 | Auth, mobile, classification, expiry, reminders, security, sharing, deployment | ⏳ |
@@ -49,11 +49,14 @@ that everything works offline.
 ```bash
 python -m backend.api.app    # open http://127.0.0.1:8000
 ```
-Drag documents into **Your documents**, then ask a question. Each answer cites its sources;
-click a citation number to jump to the passage, and **Open document** opens the file at that page.
+It works like a chatbot: type a question, press Enter, and the answer is written out as the
+model generates it, with small numbered links to the documents it used (click one to open the
+file at that page). Ask follow-ups ("and when is it due?") in the same chat; **New chat**
+starts over. Chats aren't saved: refreshing the page clears them. Add documents in
+**Your documents** (drag and drop).
 
 - Another local model: `python -m backend.api.app --llm-model gemma2:9b` (after `ollama pull gemma2:9b`)
-- Search only, no answers: `--no-llm`. If Ollama isn't running, the page says so and still shows the matching passages.
+- If Ollama isn't running, the header shows **Assistant offline**, and replies say how to start it and point to the closest line in your documents.
 
 Import a whole folder instead of uploading one by one. Subfolders named `insurance/`,
 `warranty/`, `bill/` or `property/` set the category; anything else is auto-detected:
@@ -134,5 +137,5 @@ Phase 1 layout:
 ```bash
 pytest -q
 ```
-46 tests. They use a fake embedder and a fake LLM, so they run in about two seconds without
+52 tests. They use a fake embedder and a fake LLM, so they run in about two seconds without
 downloading models or running Ollama.
