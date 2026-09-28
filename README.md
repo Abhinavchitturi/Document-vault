@@ -7,7 +7,7 @@ See [PROJECT_BRIEF.md](./PROJECT_BRIEF.md) for the full design, dataset choice, 
 and build order.
 
 ## Status
-🚧 In progress: step 1 (ingestion + chunking) done; step 2 (vector-only baseline) in progress.
+🚧 In progress: step 1 (ingestion + chunking) done; step 2 (vector-only baseline) done on the 100k subset.
 
 ## Quickstart
 ```bash
@@ -29,8 +29,12 @@ pytest -q
 ## Eval results
 _(filled in as each retrieval stage is built — see PROJECT_BRIEF.md build order)_
 
-| Stage | Recall@10 | MRR@10 |
-|---|---|---|
-| Vector-only | — | — |
-| Hybrid (vector + BM25, RRF) | — | — |
-| Hybrid + reranked | — | — |
+BEIR NQ test set (3,452 questions), searched over a 100k-passage subset: every gold passage
+plus ~96k random distractors. The subset is much easier than the full 2.68M-passage corpus, so
+these numbers are **not** comparable to published BEIR results; compare rows with each other.
+
+| Stage | Recall@1 | Recall@10 | Recall@100 | MRR@10 | nDCG@10 |
+|---|---|---|---|---|---|
+| Vector-only (bge-small-en-v1.5) | 0.679 | 0.950 | 0.989 | 0.836 | 0.857 |
+| Hybrid (vector + BM25, RRF) | — | — | — | — | — |
+| Hybrid + reranked | — | — | — | — | — |
