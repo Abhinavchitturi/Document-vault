@@ -15,11 +15,11 @@ import getpass
 import os
 import re
 
-from sqlalchemy import create_engine, event
+from sqlalchemy import create_engine, event, inspect, text
 from sqlalchemy.engine import Engine, make_url
 from sqlalchemy.exc import OperationalError
 
-from backend.database.schema import metadata
+from backend.database.schema import ADDED_COLUMNS, metadata
 
 DEFAULT_URL = "postgresql+psycopg://localhost/vault"
 LOCAL_HOSTS = {None, "", "localhost", "127.0.0.1", "::1"}
@@ -59,16 +59,29 @@ def connect(url: str) -> Engine:
             dbapi_conn.execute("PRAGMA foreign_keys=ON")
     try:
         metadata.create_all(engine)
+        _add_new_columns(engine)
     except OperationalError as e:
         raise DatabaseUnavailableError(explain_connection_error(parsed, e)) from e
     return engine
 
 
+def _add_new_columns(engine: Engine) -> None:
+    """Bring a vault made by an older version up to date (new nullable columns only)."""
+    existing = {}
+    for table, column, sql_type in ADDED_COLUMNS:
+        if table not in existing:
+            existing[table] = {c["name"] for c in inspect(engine).get_columns(table)}
+        if column not in existing[table]:
+            with engine.begin() as conn:
+                conn.execute(text(f"ALTER TABLE {table} ADD COLUMN {column} {sql_type}"))
+            existing[table].add(column)
+
+
 def _reason(error: OperationalError) -> str:
     """PostgreSQL's own explanation, e.g. 'role "Abhinav" does not exist'."""
-    text = str(getattr(error, "orig", error))
-    fatal = re.search(r"FATAL:\s*(.+)", text)
-    return (fatal.group(1) if fatal else text.strip().splitlines()[0]).strip()
+    message = str(getattr(error, "orig", error))
+    fatal = re.search(r"FATAL:\s*(.+)", message)
+    return (fatal.group(1) if fatal else message.strip().splitlines()[0]).strip()
 
 
 def explain_connection_error(url, error: OperationalError) -> str:

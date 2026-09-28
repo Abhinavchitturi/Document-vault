@@ -9,7 +9,7 @@ Endpoints:
     POST   /api/settings                  switch the answer model (one already downloaded in Ollama)
     POST   /api/documents                 upload one or more files (form fields: files, category)
     GET    /api/documents/{id}/file       open the original file
-    GET    /api/documents/{id}/pages/{n}/image       one PDF page as a PNG
+    GET    /api/documents/{id}/pages/{n}/image       one page as an image (scans and photos straightened)
     POST   /api/documents/{id}/pages/{n}/highlights  where the answer's passage and facts are on that page
     DELETE /api/documents/{id}            remove a document and its search data
     GET    /api/search?q=...&category=... best-matching passage per document
@@ -47,10 +47,10 @@ from pydantic import BaseModel, Field
 from backend.llm.answer import LLM, answer_question, finalize, stream_answer
 from backend.llm.ollama import LLMUnavailableError
 from backend.retriever.retriever import Retriever
-from backend.viewer.highlight import highlights_for, render_pdf_page
+from backend.viewer.highlight import highlights_for, page_image
 
 from backend.parser.categories import CATEGORIES
-from backend.parser.extract import SUPPORTED_SUFFIXES, OcrUnavailableError, UnsupportedFileError, ocr_available
+from backend.parser.extract import IMAGE_SUFFIXES, SUPPORTED_SUFFIXES, OcrUnavailableError, UnsupportedFileError, ocr_available
 from backend.upload.ingest import EmbedderLike, EmptyDocumentError, ingest_file
 from backend.vector_store.store import DocumentStore
 
@@ -227,15 +227,15 @@ def create_app(
         return doc, path
 
     @app.get("/api/documents/{doc_id}/pages/{page}/image")
-    def page_image(doc_id: str, page: int) -> Response:
+    def page_image_route(doc_id: str, page: int) -> Response:
         _, path = _owned_file(doc_id)
-        if path.suffix.lower() != ".pdf":
-            raise HTTPException(400, "page images are only available for PDFs")
+        if path.suffix.lower() != ".pdf" and path.suffix.lower() not in IMAGE_SUFFIXES:
+            raise HTTPException(400, "page images are only available for PDFs, scans and photos")
         try:
-            png = render_pdf_page(path, page)
+            image, media_type = page_image(path, page)
         except ValueError as e:
             raise HTTPException(404, str(e)) from e
-        return Response(png, media_type="image/png", headers={"Cache-Control": "private, no-store"})
+        return Response(image, media_type=media_type, headers={"Cache-Control": "private, no-store"})
 
     @app.post("/api/documents/{doc_id}/pages/{page}/highlights")
     def page_highlights(doc_id: str, page: int, req: HighlightRequest) -> dict:

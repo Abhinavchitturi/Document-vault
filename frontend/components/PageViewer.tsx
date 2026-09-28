@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { api, CATEGORY_LABEL, fileUrl, pageImageUrl, type Highlights, type Source } from "@/lib/api";
+import { api, CATEGORY_LABEL, fileUrl, hardToRead, pageImageUrl, type Highlights, type Source } from "@/lib/api";
 import { FileIcon } from "./DocBits";
 import Icon from "./Icon";
 
@@ -84,8 +84,8 @@ export default function PageViewer({ source, answer, onClose }: { source: Source
               {/* eslint-disable-next-line @next/next/no-img-element */}
               <img alt={`${source.filename}, page ${page}`} onLoad={scrollToHighlight}
                    src={h.kind === "image" ? fileUrl(source.doc_id, source.filename) : pageImageUrl(source.doc_id, page)} />
-              {h.kind === "pdf" && h.passage.map((r, i) => box("hl-passage", r, i))}
-              {h.kind === "pdf" && h.facts.map((r, i) => box("hl-fact", r, i))}
+              {h.passage.map((r, i) => box("hl-passage", r, i))}
+              {h.facts.map((r, i) => box("hl-fact", r, i))}
             </div>
           )}
         </div>
@@ -96,8 +96,9 @@ export default function PageViewer({ source, answer, onClose }: { source: Source
 
 function Note({ h, onSourcePage, sourcePage }: { h: Highlights; onSourcePage: boolean; sourcePage: number }) {
   let content: React.ReactNode;
-  if (h.kind === "image" || h.scanned) {
-    content = onSourcePage ? "This page is a scan or photo, so it can't be highlighted yet." : "Scanned page.";
+  const blurry = h.kind === "scan" && hardToRead(h.confidence);
+  if (h.kind !== "scan" && h.scanned) {
+    content = "This page is a scan or photo. Install Tesseract (brew install tesseract) to read and highlight it.";
   } else if (!onSourcePage) {
     content = `Page ${h.page}. The answer came from page ${sourcePage}.`;
   } else {
@@ -111,10 +112,19 @@ function Note({ h, onSourcePage, sourcePage }: { h: Highlights; onSourcePage: bo
           <span>The answer&apos;s exact wording wasn&apos;t found on this page, so check the highlighted passage.</span>
         )}
         {!h.passage_found && !h.facts_found.length && "Nothing to highlight on this page."}
+        {h.kind === "scan" && !blurry && <span className="faint">Read from a scan, so the boxes are approximate.</span>}
       </>
     );
   }
-  return <div className="viewer-note">{content}</div>;
+  return (
+    <>
+      {blurry && (
+        <div className="viewer-note warn"><Icon name="warn" size={14} />
+          This scan or photo is hard to read ({h.confidence}% OCR confidence). Check the numbers against the page, and consider uploading a clearer photo.</div>
+      )}
+      <div className="viewer-note">{content}</div>
+    </>
+  );
 }
 
 function TextPage({ h }: { h: Highlights }) {

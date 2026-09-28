@@ -6,7 +6,7 @@ import AppShell, { useVault } from "@/components/AppShell";
 import { displayName, FileIcon } from "@/components/DocBits";
 import Icon from "@/components/Icon";
 import PageViewer from "@/components/PageViewer";
-import { api, CATEGORIES, CATEGORY_LABEL, fileUrl, formatBytes, formatDate, type Category, type Source, type VaultDocument } from "@/lib/api";
+import { api, CATEGORIES, CATEGORY_LABEL, fileUrl, formatBytes, formatDate, hardToRead, type Category, type Source, type VaultDocument } from "@/lib/api";
 
 function Documents() {
   const { refresh } = useVault();
@@ -89,6 +89,11 @@ function Documents() {
                         <div className="name">{displayName(d.filename)}</div>
                         <div className="faint" style={{ fontSize: 12 }}>
                           {d.pages} {d.pages === 1 ? "page" : "pages"}{d.ocr_pages ? " · scanned" : ""}
+                          {hardToRead(d.ocr_confidence) && (
+                            <span className="hard-to-read" title={`OCR confidence ${d.ocr_confidence}%: answers from this document may be wrong. Upload a clearer photo.`}>
+                              {" · "}<Icon name="warn" size={11} /> hard to read
+                            </span>
+                          )}
                         </div>
                       </div>
                     </div>

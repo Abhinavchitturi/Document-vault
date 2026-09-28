@@ -7,8 +7,11 @@ web page draws over a rendered image of the page:
              appear verbatim on the page ("Rs. 2,486", "18 September 2026")
 For Word/text files it returns character spans in the page text instead.
 
-The original file is never modified. Scanned pages have no text layer, so they
-are shown without highlights (OCR word positions can add that later).
+Scans and photos ("scan" kind) have no text layer; their OCR word positions (saved at upload
+in files/<doc_id>.ocr.json, see backend/parser/ocr.py) give the same rectangles, in pixels of
+the straightened page image served by page_image(). Older uploads are OCR'd on first view.
+
+The original file is never modified.
 """
 
 from __future__ import annotations
@@ -18,7 +21,8 @@ import re
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from backend.parser.extract import IMAGE_SUFFIXES, MIN_PAGE_CHARS, extract_pages
+from backend.parser.extract import IMAGE_SUFFIXES, MIN_PAGE_CHARS, OCR_RENDER_SCALE, extract_pages
+from backend.parser.ocr import OcrPage, load_ocr, ocr_available, page_image_from_pdf, read_image, rotate, save_ocr
 
 MONTHS = ("jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec")
 CURRENCY = {"rs", "rs.", "inr", "₹", "usd", "$"}
@@ -28,10 +32,10 @@ UNITS = {"sq", "ft", "sqft", "m", "kg", "units", "years", "year", "months", "day
 
 @dataclass
 class Highlights:
-    kind: str  # "pdf", "text" or "image"
+    kind: str  # "pdf", "scan" (OCR'd page), "text", or "image" (a scan that can't be read: no Tesseract)
     page: int
     pages: int
-    width: float = 0.0  # page size in PDF points (pdf only)
+    width: float = 0.0  # page size: PDF points (pdf) or pixels of the straightened image (scan)
     height: float = 0.0
     passage: list = field(default_factory=list)  # pdf: [x, y, w, h]; text: [start, end]
     facts: list = field(default_factory=list)
@@ -40,6 +44,7 @@ class Highlights:
     passage_found: bool = False
     scanned: bool = False
     text: str | None = None  # text kind only
+    confidence: int | None = None  # scan kind: how sure OCR was about this page's words, 0-100
 
 
 # ---------- which facts does the answer state? ----------
@@ -184,8 +189,7 @@ def pdf_highlights(path: Path, page: int, passage: str | None, answer: str | Non
         raw = _page_chars(tp)
         result = Highlights("pdf", page, len(pdf), round(width, 1), round(height, 1))
         if len(raw.strip()) < MIN_PAGE_CHARS:
-            result.scanned = True
-            return result
+            return scan_highlights(path, page, len(pdf), passage, answer)
         norm, index = _normalize(raw)
 
         def to_rects(span):
@@ -202,6 +206,108 @@ def pdf_highlights(path: Path, page: int, passage: str | None, answer: str | Non
         return result
     finally:
         pdf.close()
+
+
+# ---------- scans and photos (OCR word boxes) ----------
+
+def _ocr_page(path: Path, page: int) -> OcrPage | None:
+    """This page's OCR result: saved at upload, or read now (and saved) for older uploads."""
+    saved = load_ocr(path)
+    if page in saved:
+        return saved[page]
+    if not ocr_available():
+        return None
+    if path.suffix.lower() in IMAGE_SUFFIXES:
+        from PIL import Image
+
+        with Image.open(path) as image:
+            result = read_image(image)
+    else:
+        result = read_image(page_image_from_pdf(path, page, OCR_RENDER_SCALE))
+    saved[page] = result
+    save_ocr(path, saved)
+    return result
+
+
+def _word_rects(words: list, start: int, end: int) -> list[list[float]]:
+    """Boxes of the words overlapping text[start:end], merged into one rectangle per line."""
+    rects, cur = [], None
+    for x, y, w, h, s, e in words:
+        if e <= start or s >= end:
+            continue
+        box = [x, y, x + w, y + h]  # left, top, right, bottom
+        overlap = min(box[3], cur[3]) - max(box[1], cur[1]) if cur else 0
+        if cur and overlap > 0.4 * min(h, cur[3] - cur[1]) and x >= cur[2] - h:
+            cur = [cur[0], min(cur[1], box[1]), max(cur[2], box[2]), max(cur[3], box[3])]
+        else:
+            if cur:
+                rects.append(cur)
+            cur = box
+    if cur:
+        rects.append(cur)
+    return [[l - 3, t - 3, r - l + 6, b - t + 6] for l, t, r, b in rects]
+
+
+def scan_highlights(path: Path, page: int, pages: int, passage: str | None, answer: str | None) -> Highlights:
+    ocr = _ocr_page(path, page)
+    if ocr is None:  # no Tesseract: show the page without highlights
+        kind = "image" if path.suffix.lower() in IMAGE_SUFFIXES else "pdf"
+        return Highlights(kind, page, pages, scanned=True)
+    result = Highlights("scan", page, pages, ocr.width, ocr.height, scanned=True, confidence=ocr.confidence)
+    norm, index = _normalize(ocr.text)
+
+    def to_rects(span):
+        s, e = span
+        return _word_rects(ocr.words, index[s], index[e - 1] + 1)
+
+    passage_span = _find_passage(norm, passage) if passage else None
+    if passage_span:
+        result.passage_found = True
+        result.passage = to_rects(passage_span)
+    spans, result.facts_found, result.facts_missing = _find_facts(norm, answer_facts(answer) if answer else [], passage_span)
+    result.facts = [r for span in spans for r in to_rects(span)]
+    return result
+
+
+def _is_scanned_pdf_page(path: Path, page: int) -> bool:
+    import pypdfium2 as pdfium
+
+    pdf = pdfium.PdfDocument(path)
+    try:
+        if not 1 <= page <= len(pdf):
+            raise ValueError(f"page {page} doesn't exist (1-{len(pdf)})")
+        textpage = pdf[page - 1].get_textpage()
+        scanned = len(textpage.get_text_range().strip()) < MIN_PAGE_CHARS
+        textpage.close()
+        return scanned
+    finally:
+        pdf.close()
+
+
+def page_image(path: Path, page: int, max_width_px: int = 1600) -> tuple[bytes, str]:
+    """(image bytes, media type) of one page as the viewer shows it. Scans and photos come
+    straightened (the way OCR read them) so highlight boxes line up."""
+    suffix = path.suffix.lower()
+    if suffix == ".pdf" and not _is_scanned_pdf_page(path, page):
+        return render_pdf_page(path, page, max_width_px), "image/png"
+    if suffix == ".pdf":
+        image = page_image_from_pdf(path, page, 2.0)
+    elif suffix in IMAGE_SUFFIXES:
+        if page != 1:
+            raise ValueError(f"page {page} doesn't exist (1-1)")
+        from PIL import Image, ImageOps
+
+        with Image.open(path) as original:
+            image = ImageOps.exif_transpose(original).convert("RGB")
+    else:
+        raise ValueError("page images are only available for PDFs, scans and photos")
+    saved = load_ocr(path).get(page)
+    image = rotate(image.convert("RGB"), saved.rotation if saved else 0)
+    if image.width > max_width_px:
+        image = image.resize((max_width_px, round(image.height * max_width_px / image.width)))
+    buffer = io.BytesIO()
+    image.save(buffer, format="JPEG", quality=85)
+    return buffer.getvalue(), "image/jpeg"
 
 
 def render_pdf_page(path: Path, page: int, max_width_px: int = 1600) -> bytes:
@@ -250,5 +356,7 @@ def highlights_for(path: Path, page: int, passage: str | None, answer: str | Non
     if suffix == ".pdf":
         return pdf_highlights(path, page, passage, answer)
     if suffix in IMAGE_SUFFIXES:
-        return Highlights("image", page, 1, scanned=True)
+        if page != 1:
+            raise ValueError(f"page {page} doesn't exist (1-1)")
+        return scan_highlights(path, page, 1, passage, answer)
     return text_highlights(path, page, passage, answer)
