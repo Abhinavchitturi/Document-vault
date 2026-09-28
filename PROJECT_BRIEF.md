@@ -30,7 +30,7 @@ OCR, auth, reminders and security at once is how projects stall, so one phase at
 
 ### Phase 1: Core RAG engine (backend only)
 **Goal:** answer questions from uploaded documents.
-- Upload PDF → extract text → chunk → embed (BGE Small v1.5) → store vectors (FAISS)
+- Upload PDF → extract text → chunk → embed (Snowflake Arctic Embed) → store vectors (FAISS)
 - Retrieve top-k chunks → send them as context to the local LLM → return the answer, citing the passages used
 
 ```text
@@ -120,31 +120,59 @@ get "Your insurance expires on 14 March 2027."
 PostgreSQL     Qdrant         File store
 (metadata)   (embeddings)   (encrypted files)
                  |
-          BGE Small v1.5
+   Snowflake Arctic Embed M v1.5
                  |
           Local LLM (Ollama)
-   Llama / Gemma / Mistral, on-device
+     chosen by measurement, on-device
 ```
 
 ## Local models only
 Every model runs on the family's own computer. No document text, question or answer is
-sent to a cloud AI service. (The original plan listed Gemini or Qwen; both are replaced.)
+sent to a cloud AI service. As a further rule, the vault **uses no models from Chinese
+developers** (so no BGE, Qwen, DeepSeek or PaddleOCR), even though they would run locally.
+Documents are in **English**, so English models and English OCR are enough.
 
-| Job | Model | Runs via |
+| Job | Phase | Model | Size | Notes |
+|---|---|---|---|---|
+| Embeddings | 1 | Snowflake Arctic Embed M v1.5 (Snowflake, US), Apache 2.0 | ~440 MB | Strong English retrieval, no custom code needed |
+| Answers | 1 | **Chosen by measurement**, see below | 5–9 GB | Served by Ollama |
+| OCR | 4 | Tesseract (English) | small | Local program |
+| Reranker | 5 | mxbai-rerank-base v1 (Mixedbread, Germany), Apache 2.0; or the ms-marco MiniLM cross-encoder | ~0.1–0.8 GB | Reorders the top results; picked by measurement |
+| Classification, expiry dates | 8, 9 | the same answer LLM | – | No extra model |
+
+### Choosing the answer LLM
+"Most accurate" is measured on our own question set, not taken from leaderboards: what
+matters is copying exact dates, amounts and policy numbers from the family's documents.
+`python -m backend.eval.compare_llms` gives every candidate the same retrieved passages and
+ranks them by accuracy, then speed. Shortlist: one bigger, one smaller model that fit a 16 GB Mac:
+
+| Candidate | By | Download | |
+|---|---|---|---|
+| gemma3:12b | Google (US) | ~8 GB | bigger: expected more accurate, slower |
+| llama3.1:8b | Meta (US) | ~5 GB | smaller: faster |
+
+Others (phi4, mistral-nemo) can be tried later with the same command.
+
+### Choosing the embedding model
+Same approach: `python -m backend.eval.evaluate --model <name>` scores search on the sample
+questions. Shortlist, one bigger and one smaller from the same family:
+
+| Candidate | By | Size |
 |---|---|---|
-| Embeddings | BGE Small v1.5 (BAAI) | sentence-transformers |
-| Answers | **Llama 3.1 8B** (Meta) by default; Gemma (Google) or Mistral (France) are drop-in alternatives | Ollama |
-| OCR | Tesseract | local program |
-| Reranking (Phase 5) | a small cross-encoder | sentence-transformers |
+| Snowflake/snowflake-arctic-embed-m-v1.5 (default) | Snowflake (US) | ~440 MB, bigger |
+| Snowflake/snowflake-arctic-embed-s | Snowflake (US) | ~130 MB, smaller |
+
+Changing the embedding model re-embeds the existing vault automatically on the next start.
+
+The winner becomes the default (`--llm-model` overrides it). Until the comparison has run,
+the default is `llama3.1:8b`. With only 24 questions, a difference of one or two answers is
+a tie; prefer the faster model then.
 
 Guard rails in the code:
 - The LLM client refuses any Ollama address that isn't this machine.
 - Once the embedding model is downloaded, the Hugging Face libraries are switched to offline mode.
 - The web page loads nothing from the internet (no web fonts, no CDNs).
-
-Trade-off: an 8B model on a 16 GB Mac is slower and a little less capable than the big cloud
-models. The evaluation below measures exactly how good it is, and swapping in a larger local
-model is a single flag (`--llm-model`).
+- Reasoning models' private "thinking" is stripped before an answer is shown.
 
 ## Evaluation
 Real family documents can't be committed, so the repo ships a fictional family's papers:
@@ -164,9 +192,9 @@ before it's kept. The before/after numbers are the point.
 ## Current state
 | Phase | Done | Still to do |
 |---|---|---|
-| 1 Core RAG | ✅ Upload, PDF/Word/text parsing, page-aware chunking, BGE Small embeddings, FAISS, top-k retrieval, local LLM answers with citations, `backend/` layout | Baseline scores on the samples |
+| 1 Core RAG | ✅ Upload, PDF/Word/text parsing, page-aware chunking, Arctic Embed embeddings, FAISS, top-k retrieval, local LLM answers with citations, `backend/` layout | Baseline scores on the samples |
 | 2 Metadata | Name, type, upload date, pages, file path, in a JSON file | PostgreSQL, owner |
-| 3 Web app | Single-page HTML app: upload, library by category, search | React + Next.js, login, chat |
+| 3 Web app | Chat page: streaming answers with citations, follow-up questions, library by category, upload | React + Next.js, login |
 | 4 OCR | Tesseract for photos and scanned PDFs | PaddleOCR comparison (optional) |
 | 5 Retrieval | Vector search, category filter, evaluation harness | BM25 + fusion, reranking |
 | 8 Classification | Keyword-based guess (insurance/warranty/bill/property/other) | ML/LLM classifier, more types |

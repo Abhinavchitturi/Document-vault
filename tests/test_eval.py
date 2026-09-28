@@ -57,8 +57,8 @@ def test_evaluate_scores_llm_answers(tmp_path):
     class EchoLLM(FakeLLM):
         """'Answers' with the first passage, so the score reflects retrieval + prompt plumbing."""
 
-        def generate(self, system, prompt):
-            super().generate(system, prompt)
+        def generate(self, system, prompt, history=None):
+            super().generate(system, prompt, history)
             return prompt.split("\n\n")[1]
 
     emb = FakeEmbedder()

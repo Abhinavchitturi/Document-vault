@@ -1,3 +1,5 @@
+import json
+
 import pytest
 from fastapi.testclient import TestClient
 
@@ -74,7 +76,8 @@ def test_ask_returns_answer_with_cited_sources(tmp_path):
     assert data["citations"] == [1] and data["found"] and data["llm"] == "fake/llm"
     assert data["sources"][0]["filename"] == "bike_policy.pdf" and len(data["sources"]) == 2
     assert "[1] bike_policy.pdf (insurance), page 1" in llm.last_prompt
-    assert client.get("/api/info").json()["llm"] == "fake/llm"
+    info = client.get("/api/info").json()
+    assert info["llm"] == "fake/llm" and info["llm_status"]["ready"]
 
 
 def test_ask_when_llm_is_off_or_down(tmp_path):
@@ -83,8 +86,56 @@ def test_ask_when_llm_is_off_or_down(tmp_path):
 
     no_llm = TestClient(create_app(DocumentStore(tmp_path / "a"), FakeEmbedder(), RegexTokenizer()))
     assert no_llm.post("/api/ask", json={"question": "x"}).status_code == 503
+    assert no_llm.get("/api/info").json()["llm_status"]["ready"] is False
     down = FakeLLM(error=LLMUnavailableError("Can't reach Ollama on this computer."))
     client = TestClient(create_app(DocumentStore(tmp_path / "b"), FakeEmbedder(), RegexTokenizer(), down))
     upload(client, "a.txt", b"Water bill due 15 July")
     res = client.post("/api/ask", json={"question": "water bill"})
     assert res.status_code == 503 and "Ollama" in res.json()["detail"]
+
+
+def _chat(client, **body):
+    res = client.post("/api/chat", json=body)
+    return res, [json.loads(line) for line in res.text.splitlines() if line.strip()]
+
+
+def test_chat_streams_sources_then_answer_then_citations(tmp_path):
+    from tests.fakes import FakeLLM
+
+    llm = FakeLLM("Your August electricity bill is Rs. 2,486 [1].")
+    client = TestClient(create_app(DocumentStore(tmp_path / "index"), FakeEmbedder(), RegexTokenizer(), llm))
+    upload(client, "electricity_aug.pdf", make_pdf(["Electricity bill August. Amount payable Rs. 2,486"]))
+    upload(client, "fridge.txt", b"Refrigerator warranty, compressor 10 years")
+    res, events = _chat(client, question="electricity bill august")
+    assert res.status_code == 200 and res.headers["content-type"].startswith("application/x-ndjson")
+    assert events[0]["type"] == "sources" and events[0]["sources"][0]["filename"] == "electricity_aug.pdf"
+    tokens = [e["text"] for e in events if e["type"] == "token"]
+    assert len(tokens) > 1 and "".join(tokens) == "Your August electricity bill is Rs. 2,486 [1]."
+    assert events[-1] == {"type": "done", "citations": [1], "found": True, "llm": "fake/llm"}
+
+
+def test_chat_follow_up_uses_history(tmp_path):
+    from tests.fakes import FakeLLM
+
+    llm = FakeLLM("It is due on 18 September 2026 [1].")
+    client = TestClient(create_app(DocumentStore(tmp_path / "index"), FakeEmbedder(), RegexTokenizer(), llm))
+    upload(client, "electricity_aug.pdf", make_pdf(["Electricity bill August. Due date 18 September 2026"]))
+    history = [{"role": "user", "content": "electricity bill august"},
+               {"role": "assistant", "content": "It is Rs. 2,486 [1]."}]
+    _, events = _chat(client, question="and when is it due?", history=history)
+    assert any(s["filename"] == "electricity_aug.pdf" for s in events[0]["sources"])  # found via the earlier question
+    assert llm.last_history == [{"role": "user", "content": "electricity bill august"},
+                                {"role": "assistant", "content": "It is Rs. 2,486."}]  # old [1] dropped
+
+
+def test_chat_reports_llm_problems_as_an_event(tmp_path):
+    from backend.llm.ollama import LLMUnavailableError
+    from tests.fakes import FakeLLM
+
+    down = FakeLLM(error=LLMUnavailableError("Can't reach Ollama on this computer."))
+    client = TestClient(create_app(DocumentStore(tmp_path / "index"), FakeEmbedder(), RegexTokenizer(), down))
+    upload(client, "a.txt", b"Water bill due 15 July")
+    _, events = _chat(client, question="water bill")
+    assert [e["type"] for e in events] == ["sources", "error"] and "Ollama" in events[1]["message"]
+    no_llm = TestClient(create_app(DocumentStore(tmp_path / "b"), FakeEmbedder(), RegexTokenizer()))
+    assert no_llm.post("/api/chat", json={"question": "x"}).status_code == 503

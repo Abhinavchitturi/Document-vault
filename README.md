@@ -16,9 +16,9 @@ and the privacy decisions.
 
 | Phase | | State |
 |---|---|---|
-| 1 | Core RAG engine | ✅ Upload → parse → chunk → BGE embeddings → FAISS → retrieve → local LLM answer with citations |
+| 1 | Core RAG engine | ✅ Upload → parse → chunk → embeddings → FAISS → retrieve → local LLM answer with citations |
 | 2 | Document metadata | 🟡 Stored in a JSON file; PostgreSQL to come |
-| 3 | Web application | 🟡 Single-page app (upload, library, ask); React + Next.js to come |
+| 3 | Web application | 🟡 Chat page (streaming answers, follow-ups, document library, upload); React + Next.js to come |
 | 4 | OCR | ✅ Tesseract for photos and scanned PDFs |
 | 5 | Better retrieval (BM25 + vector) | 🟡 Vector search and evaluation harness; hybrid to come |
 | 6–13 | Auth, mobile, classification, expiry, reminders, security, sharing, deployment | ⏳ |
@@ -26,8 +26,8 @@ and the privacy decisions.
 ## Privacy
 - For our family only. The repository is private and contains **code and fictional samples only**.
 - Real documents, their text and the search index live in `data/` (git-ignored) on your computer.
-- **Local models only**: embeddings (BGE Small), answers (Llama 3.1 8B via Ollama) and OCR
-  (Tesseract) all run on your machine. The LLM client refuses any non-local address, the
+- **Local models only**: embeddings (Snowflake Arctic Embed), answers (a local LLM via Ollama)
+  and OCR (Tesseract) all run on your machine. No models from Chinese developers are used. The LLM client refuses any non-local address, the
   embedding model runs offline once downloaded, and the web page loads nothing from the internet.
 - The app listens on `127.0.0.1` only and has no login yet (Phase 6), so don't expose it to a network.
 
@@ -42,18 +42,21 @@ ollama pull llama3.1:8b
 # Optional: photos and scanned PDFs
 brew install tesseract
 ```
-The first run also downloads the BGE Small embedding model (~130 MB) from Hugging Face; after
+The first run also downloads the Arctic Embed embedding model (~440 MB) from Hugging Face; after
 that everything works offline.
 
 ## Run
 ```bash
 python -m backend.api.app    # open http://127.0.0.1:8000
 ```
-Drag documents into **Your documents**, then ask a question. Each answer cites its sources;
-click a citation number to jump to the passage, and **Open document** opens the file at that page.
+It works like a chatbot: type a question, press Enter, and the answer is written out as the
+model generates it, with small numbered links to the documents it used (click one to open the
+file at that page). Ask follow-ups ("and when is it due?") in the same chat; **New chat**
+starts over. Chats aren't saved: refreshing the page clears them. Add documents in
+**Your documents** (drag and drop).
 
 - Another local model: `python -m backend.api.app --llm-model gemma2:9b` (after `ollama pull gemma2:9b`)
-- Search only, no answers: `--no-llm`. If Ollama isn't running, the page says so and still shows the matching passages.
+- If Ollama isn't running, the header shows **Assistant offline**, and replies say how to start it and point to the closest line in your documents.
 
 Import a whole folder instead of uploading one by one. Subfolders named `insurance/`,
 `warranty/`, `bill/` or `property/` set the category; anything else is auto-detected:
@@ -87,13 +90,33 @@ questions and writes `results/eval_vector.json` (or `eval_vector_llm.json`).
 
 | Retrieval | Recall@1 | Recall@3 | MRR@5 | Answer@3 | LLM answer accuracy |
 |---|---|---|---|---|---|
-| Vector (BGE Small v1.5) + Llama 3.1 8B | — | — | — | — | — |
+| Vector (Arctic Embed M v1.5) + best local LLM | — | — | — | — | — |
 | Hybrid (BM25 + vector), Phase 5 | — | — | — | — | — |
 
 - **Recall@k**: correct document in the top k
 - **MRR@5**: how high the correct document ranks (1 = always first)
 - **Answer@k**: the exact answer text is inside one of the top-k passages
 - **LLM answer accuracy**: the written answer contains the expected text (strict)
+
+## Choosing the models
+Models are picked by measuring on the sample questions, not by reputation. No models from
+Chinese developers are used.
+
+**Answer LLM.** Shortlist: `gemma3:12b` (bigger) and `llama3.1:8b` (smaller), ~13 GB together:
+```bash
+ollama pull gemma3:12b && ollama pull llama3.1:8b
+python -m backend.eval.compare_llms gemma3:12b llama3.1:8b --show-misses
+```
+Every model gets the same retrieved passages for the 24 sample questions; the table ranks
+them by accuracy, then speed, and `results/llm_comparison.json` keeps every answer. Start
+the app with the winner: `python -m backend.api.app --llm-model <winner>`.
+
+**Embedding model.** Default is Snowflake Arctic Embed M v1.5 (bigger); compare with the smaller S:
+```bash
+python -m backend.eval.evaluate --model Snowflake/snowflake-arctic-embed-m-v1.5
+python -m backend.eval.evaluate --model Snowflake/snowflake-arctic-embed-s
+```
+Switching models re-embeds your vault automatically the next time the app starts.
 
 ## Code
 Phase 1 layout:
@@ -103,16 +126,16 @@ Phase 1 layout:
 | `backend/upload/` | File → chunks → embeddings → vault; folder import (`ingest.py`) |
 | `backend/parser/` | Text from PDF / Word / text / photos per page, OCR (`extract.py`); document types (`categories.py`) |
 | `backend/chunker/` | Token-window chunking that never cuts mid-word |
-| `backend/embeddings/` | BGE Small v1.5; offline mode once downloaded |
+| `backend/embeddings/` | Snowflake Arctic Embed M v1.5; offline mode once downloaded |
 | `backend/vector_store/` | Documents, chunks, FAISS index and original files on disk |
 | `backend/retriever/` | Question → passages (Phase 5 adds BM25 here) |
 | `backend/llm/` | Local Ollama client and the answer-with-citations prompt |
 | `backend/api/` | FastAPI app and the web page |
-| `backend/eval/` | Scoring on the sample questions |
+| `backend/eval/` | Scoring on the sample questions; `compare_llms.py` ranks local LLMs |
 
 ## Tests
 ```bash
 pytest -q
 ```
-43 tests. They use a fake embedder and a fake LLM, so they run in about two seconds without
+52 tests. They use a fake embedder and a fake LLM, so they run in about two seconds without
 downloading models or running Ollama.

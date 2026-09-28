@@ -1,8 +1,8 @@
 """Token-window chunking with overlap.
 
 Chunks are measured in tokens of the *embedding model's* tokenizer (default
-BAAI/bge-small-en-v1.5), because that is the budget that actually matters: bge
-truncates at 512 tokens including [CLS]/[SEP], so chunk_size must stay <= 510.
+Snowflake Arctic Embed M v1.5), because that is the budget that actually matters:
+it truncates at 512 tokens including [CLS]/[SEP], so chunk_size must stay <= 510.
 
 Tokenizers here return character spans rather than token strings, so each chunk's
 text is an exact slice of the original page text (original casing/whitespace kept,
@@ -20,7 +20,7 @@ import re
 from dataclasses import dataclass
 from typing import Protocol
 
-DEFAULT_TOKENIZER = "BAAI/bge-small-en-v1.5"
+from backend.embeddings.embedder import DEFAULT_MODEL as DEFAULT_TOKENIZER
 MODEL_MAX_TOKENS = 510  # 512 minus [CLS] and [SEP]
 MAX_SNAP_TOKENS = 32  # how far a chunk boundary may move to land between words
 
