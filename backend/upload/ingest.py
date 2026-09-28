@@ -146,7 +146,7 @@ def main() -> None:
     parser.add_argument("paths", nargs="+", type=Path, help="files or folders to import")
     parser.add_argument("--category", default="auto", choices=["auto", *CATEGORIES])
     parser.add_argument("--index-dir", default="data/index")
-    parser.add_argument("--model", default=None, help="embedding model (default: bge-small-en-v1.5)")
+    parser.add_argument("--model", default=None, help="embedding model (default: snowflake-arctic-embed-m-v1.5)")
     args = parser.parse_args()
 
     logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")

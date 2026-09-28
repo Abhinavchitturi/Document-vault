@@ -86,9 +86,9 @@ def test_ollama_not_running_explains_how_to_start_it():
 def test_prefer_offline_only_when_model_is_cached(tmp_path, monkeypatch):
     monkeypatch.setenv("HF_HUB_CACHE", str(tmp_path))
     monkeypatch.delenv("HF_HUB_OFFLINE", raising=False)
-    assert not prefer_offline("BAAI/bge-small-en-v1.5")
-    (tmp_path / "models--BAAI--bge-small-en-v1.5" / "snapshots" / "abc123").mkdir(parents=True)
-    assert prefer_offline("BAAI/bge-small-en-v1.5")
+    assert not prefer_offline("Snowflake/snowflake-arctic-embed-m-v1.5")
+    (tmp_path / "models--Snowflake--snowflake-arctic-embed-m-v1.5" / "snapshots" / "abc123").mkdir(parents=True)
+    assert prefer_offline("Snowflake/snowflake-arctic-embed-m-v1.5")
     import os
     assert os.environ["HF_HUB_OFFLINE"] == "1"
 
@@ -117,3 +117,12 @@ def test_compare_ranks_models_and_skips_missing_ones():
     assert [r["model"] for r in rows] == ["strong", "weak", "missing"]
     assert rows[0]["accuracy"] == 1.0 and rows[0]["cited_a_source"] == 2
     assert rows[1]["accuracy"] == 0.0 and not rows[2]["available"] and "ollama pull" in rows[2]["error"]
+
+
+def test_embedding_prefixes():
+    from backend.embeddings.embedder import DEFAULT_MODEL, model_prefixes
+
+    query, passage = model_prefixes(DEFAULT_MODEL)
+    assert DEFAULT_MODEL.startswith("Snowflake/") and query.startswith("Represent this sentence") and passage == ""
+    assert model_prefixes("intfloat/e5-base-v2") == ("query: ", "passage: ")
+    assert model_prefixes("some/other-model") == ("", "")

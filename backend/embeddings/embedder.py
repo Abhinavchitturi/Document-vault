@@ -1,7 +1,10 @@
 """Turn chunks and queries into normalized embedding vectors.
 
-bge and e5 are asymmetric retrievers: queries and passages are encoded with
-different prefixes, and leaving the query prefix off measurably hurts recall.
+Default: Snowflake Arctic Embed M v1.5 (Snowflake, US; Apache 2.0; 109M params,
+768-dim, ~440 MB). The vault avoids models from Chinese developers, so BGE is out.
+
+Arctic Embed and e5 are asymmetric retrievers: queries and passages are encoded
+with different prefixes, and leaving the query prefix off measurably hurts recall.
 Vectors are L2-normalized so cosine similarity is a plain dot product.
 
 The model runs on this computer. It is downloaded from Hugging Face once; after
@@ -16,11 +19,11 @@ from pathlib import Path
 
 import numpy as np
 
-DEFAULT_MODEL = "BAAI/bge-small-en-v1.5"
+DEFAULT_MODEL = "Snowflake/snowflake-arctic-embed-m-v1.5"
 
 # Prefixes recommended by each model's authors for query -> passage retrieval.
 _PREFIXES = {
-    "bge": ("Represent this sentence for searching relevant passages: ", ""),
+    "arctic-embed": ("Represent this sentence for searching relevant passages: ", ""),
     "e5": ("query: ", "passage: "),
 }
 

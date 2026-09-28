@@ -30,7 +30,7 @@ OCR, auth, reminders and security at once is how projects stall, so one phase at
 
 ### Phase 1: Core RAG engine (backend only)
 **Goal:** answer questions from uploaded documents.
-- Upload PDF → extract text → chunk → embed (BGE Small v1.5) → store vectors (FAISS)
+- Upload PDF → extract text → chunk → embed (Snowflake Arctic Embed) → store vectors (FAISS)
 - Retrieve top-k chunks → send them as context to the local LLM → return the answer, citing the passages used
 
 ```text
@@ -120,7 +120,7 @@ get "Your insurance expires on 14 March 2027."
 PostgreSQL     Qdrant         File store
 (metadata)   (embeddings)   (encrypted files)
                  |
-          BGE Small v1.5
+   Snowflake Arctic Embed M v1.5
                  |
           Local LLM (Ollama)
      chosen by measurement, on-device
@@ -128,16 +128,16 @@ PostgreSQL     Qdrant         File store
 
 ## Local models only
 Every model runs on the family's own computer. No document text, question or answer is
-sent to a cloud AI service. Because nothing leaves the machine, a model's origin is not a
-constraint: any open model that runs locally is allowed. Documents are in **English**, so
-English models and English OCR are enough.
+sent to a cloud AI service. As a further rule, the vault **uses no models from Chinese
+developers** (so no BGE, Qwen, DeepSeek or PaddleOCR), even though they would run locally.
+Documents are in **English**, so English models and English OCR are enough.
 
 | Job | Phase | Model | Size | Notes |
 |---|---|---|---|---|
-| Embeddings | 1 | BGE Small v1.5 (BAAI), MIT | ~130 MB | Fast, strong for English retrieval |
+| Embeddings | 1 | Snowflake Arctic Embed M v1.5 (Snowflake, US), Apache 2.0 | ~440 MB | Strong English retrieval, no custom code needed |
 | Answers | 1 | **Chosen by measurement**, see below | 5–9 GB | Served by Ollama |
 | OCR | 4 | Tesseract (English) | small | Local program |
-| Reranker | 5 | bge-reranker-base (BAAI), MIT | ~1.1 GB | Reorders the top results |
+| Reranker | 5 | mxbai-rerank-base v1 (Mixedbread, Germany), Apache 2.0; or the ms-marco MiniLM cross-encoder | ~0.1–0.8 GB | Reorders the top results; picked by measurement |
 | Classification, expiry dates | 8, 9 | the same answer LLM | – | No extra model |
 
 ### Choosing the answer LLM
@@ -148,10 +148,22 @@ ranks them by accuracy, then speed. Candidates that fit a 16 GB Mac:
 
 | Candidate | By | Download |
 |---|---|---|
-| qwen2.5:14b | Alibaba | ~9 GB |
-| gemma3:12b | Google | ~8 GB |
-| phi4 (14B) | Microsoft | ~9 GB |
-| llama3.1:8b | Meta | ~5 GB |
+| gemma3:12b | Google (US) | ~8 GB |
+| phi4 (14B) | Microsoft (US) | ~9 GB |
+| mistral-nemo (12B) | Mistral (France) + NVIDIA | ~7 GB |
+| llama3.1:8b | Meta (US) | ~5 GB |
+
+### Choosing the embedding model
+Same approach: `python -m backend.eval.evaluate --model <name>` scores search on the sample
+questions. Candidates, all non-Chinese and loadable without custom code:
+
+| Candidate | By | Size |
+|---|---|---|
+| Snowflake/snowflake-arctic-embed-m-v1.5 (default) | Snowflake (US) | ~440 MB |
+| Snowflake/snowflake-arctic-embed-s | Snowflake (US) | ~130 MB |
+| intfloat/e5-base-v2 | Microsoft (US) | ~440 MB |
+
+Changing the embedding model re-embeds the existing vault automatically on the next start.
 
 The winner becomes the default (`--llm-model` overrides it). Until the comparison has run,
 the default is `llama3.1:8b`. With only 24 questions, a difference of one or two answers is
@@ -181,7 +193,7 @@ before it's kept. The before/after numbers are the point.
 ## Current state
 | Phase | Done | Still to do |
 |---|---|---|
-| 1 Core RAG | ✅ Upload, PDF/Word/text parsing, page-aware chunking, BGE Small embeddings, FAISS, top-k retrieval, local LLM answers with citations, `backend/` layout | Baseline scores on the samples |
+| 1 Core RAG | ✅ Upload, PDF/Word/text parsing, page-aware chunking, Arctic Embed embeddings, FAISS, top-k retrieval, local LLM answers with citations, `backend/` layout | Baseline scores on the samples |
 | 2 Metadata | Name, type, upload date, pages, file path, in a JSON file | PostgreSQL, owner |
 | 3 Web app | Single-page HTML app: upload, library by category, search | React + Next.js, login, chat |
 | 4 OCR | Tesseract for photos and scanned PDFs | PaddleOCR comparison (optional) |

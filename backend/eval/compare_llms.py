@@ -5,7 +5,7 @@ comparison measures the LLM alone. Models that aren't downloaded are reported
 and skipped.
 
 Usage (each model must be pulled first, e.g. `ollama pull gemma3:12b`):
-    python -m backend.eval.compare_llms llama3.1:8b gemma3:12b qwen2.5:14b phi4
+    python -m backend.eval.compare_llms gemma3:12b phi4 mistral-nemo llama3.1:8b
     python -m backend.eval.compare_llms llama3.1:8b gemma3:12b --show-misses
 
 Writes results/llm_comparison.json. Accuracy is strict (the answer must contain

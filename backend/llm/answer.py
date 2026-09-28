@@ -52,7 +52,7 @@ def answer_question(question: str, passages: list[dict], llm: LLM, today: date |
         return Answer(NOT_FOUND, found=False)
     system = SYSTEM_PROMPT.format(today=(today or date.today()).strftime("%d %B %Y"), not_found=NOT_FOUND)
     text = llm.generate(system, build_prompt(question, passages))
-    # Reasoning models (e.g. Qwen 3, DeepSeek-R1) may prepend their private thinking; never show it.
+    # Reasoning models (e.g. Phi-4 reasoning, some Llama fine-tunes) may prepend their private thinking; never show it.
     text = re.sub(r"<think>.*?</think>", "", text, flags=re.DOTALL).strip()
     cited = sorted({int(n) for n in re.findall(r"\[(\d+)\]", text) if 1 <= int(n) <= len(passages)})
     return Answer(text, cited, found=NOT_FOUND.rstrip(".").lower() not in text.lower())

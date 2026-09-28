@@ -200,7 +200,7 @@ def create_app(store: DocumentStore, embedder: EmbedderLike, tokenizer, llm: LLM
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--index-dir", default="data/index")
-    parser.add_argument("--model", default=None, help="embedding model (default: bge-small-en-v1.5)")
+    parser.add_argument("--model", default=None, help="embedding model (default: snowflake-arctic-embed-m-v1.5)")
     parser.add_argument("--device", default=None, help="cuda / mps / cpu; default picks automatically")
     parser.add_argument("--llm-model", default=None, help="local Ollama model (default: llama3.1:8b)")
     parser.add_argument("--no-llm", action="store_true", help="search only, no answers")
