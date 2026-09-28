@@ -1,0 +1,51 @@
+%PDF-1.4
+1 0 obj
+<< /Type /Catalog /Pages 2 0 R >>
+endobj
+2 0 obj
+<< /Type /Pages /Kids [6 0 R] /Count 1 >>
+endobj
+3 0 obj
+<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding /WinAnsiEncoding >>
+endobj
+4 0 obj
+<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold /Encoding /WinAnsiEncoding >>
+endobj
+5 0 obj
+<< /Length 1033 >>
+stream
+BT /F1 10 Tf 64 712 Td (SAMPLE DOCUMENT - fictional data for testing, not a real bill.) Tj ET
+BT /F2 16 Tf 64 674 Td (Pune Municipal Water Supply Department \(fictional\)) Tj ET
+BT /F2 13 Tf 64 655 Td (Water Bill - Quarter April to June 2026) Tj ET
+BT /F1 10 Tf 64 623 Td (Connection ID: PMW-B-0448120) Tj ET
+BT /F1 10 Tf 64 607 Td (Property: Flat 402, Green Meadows Co-op Housing Society, Baner) Tj ET
+BT /F1 10 Tf 64 591 Td (Connection type: Domestic, metered) Tj ET
+BT /F2 11 Tf 64 558 Td (Consumption) Tj ET
+BT /F1 10 Tf 64 542 Td (Water consumed in the quarter: 42 kilolitres) Tj ET
+BT /F2 11 Tf 64 509 Td (Charges) Tj ET
+BT /F1 10 Tf 64 493 Td (Water charges: Rs. 1,260) Tj ET
+BT /F1 10 Tf 64 477 Td (Sewerage charges: Rs. 378) Tj ET
+BT /F1 10 Tf 64 461 Td (Meter rent: Rs. 45) Tj ET
+BT /F1 10 Tf 64 445 Td (Total amount due: Rs. 1,683) Tj ET
+BT /F2 11 Tf 64 412 Td (Payment) Tj ET
+BT /F1 10 Tf 64 396 Td (Due date: 15 July 2026) Tj ET
+BT /F1 10 Tf 64 380 Td (A 2% rebate applies if paid within 10 days of the bill date.) Tj ET
+endstream
+endobj
+6 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 3 0 R /F2 4 0 R >> >> /Contents 5 0 R >>
+endobj
+xref
+0 7
+0000000000 65535 f 
+0000000009 00000 n 
+0000000058 00000 n 
+0000000115 00000 n 
+0000000212 00000 n 
+0000000314 00000 n 
+0000001399 00000 n 
+trailer
+<< /Size 7 /Root 1 0 R >>
+startxref
+1535
+%%EOF
