@@ -60,8 +60,9 @@ python -m backend.api.app
 ```
 Then open http://127.0.0.1:8000.
 It works like a chatbot: type a question, press Enter, and the answer is written out as the
-model generates it, with small numbered links to the documents it used (click one to open the
-file at that page). Ask follow-ups ("and when is it due?") in the same chat; **New chat**
+model generates it, with small numbered links to the documents it used. Click one to see the
+page with the passage lightly highlighted and the answer itself (amounts, dates, policy numbers)
+strongly highlighted where it appears; **Open original** opens the untouched file. Ask follow-ups ("and when is it due?") in the same chat; **New chat**
 starts over. Chats aren't saved: refreshing the page clears them. Add documents in
 **Your documents** (drag and drop).
 
@@ -156,6 +157,7 @@ Layout:
 | `backend/vector_store/` | The vault: records in the database, vectors in FAISS, original files on disk |
 | `backend/retriever/` | Question → passages (Phase 5 adds BM25 here) |
 | `backend/llm/` | Local Ollama client and the answer-with-citations prompt |
+| `backend/viewer/` | Finds the passage and the answer's facts on a page (PDF boxes, Word/text spans) |
 | `backend/api/` | FastAPI app and the web page |
 | `backend/eval/` | Scoring on the sample questions; `compare_llms.py` ranks local LLMs |
 
@@ -163,7 +165,7 @@ Layout:
 ```bash
 pytest -q
 ```
-59 tests. They use a fake embedder and a fake LLM, so they run in a few seconds without
+65 tests. They use a fake embedder and a fake LLM, so they run in a few seconds without
 downloading models or running Ollama. By default they use SQLite; to run them against
 PostgreSQL (each test gets a throwaway database):
 ```bash

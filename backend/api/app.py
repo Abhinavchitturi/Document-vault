@@ -6,6 +6,8 @@ Endpoints:
     GET    /api/documents                 all documents in the library
     POST   /api/documents                 upload one or more files (form fields: files, category)
     GET    /api/documents/{id}/file       open the original file
+    GET    /api/documents/{id}/pages/{n}/image       one PDF page as a PNG
+    POST   /api/documents/{id}/pages/{n}/highlights  where the answer's passage and facts are on that page
     DELETE /api/documents/{id}            remove a document and its search data
     GET    /api/search?q=...&category=... best-matching passage per document
     POST   /api/chat                      chat: answer streamed word by word (NDJSON), with sources
@@ -30,17 +32,19 @@ import logging
 import tempfile
 import time
 from collections import Counter
+from dataclasses import asdict
 from pathlib import Path
 
 from fastapi import FastAPI, File, Form, HTTPException, Query, UploadFile
 from typing import Literal
 
-from fastapi.responses import FileResponse, StreamingResponse
+from fastapi.responses import FileResponse, Response, StreamingResponse
 from pydantic import BaseModel, Field
 
 from backend.llm.answer import LLM, answer_question, finalize, stream_answer
 from backend.llm.ollama import LLMUnavailableError
 from backend.retriever.retriever import Retriever
+from backend.viewer.highlight import highlights_for, render_pdf_page
 
 from backend.parser.categories import CATEGORIES
 from backend.parser.extract import SUPPORTED_SUFFIXES, OcrUnavailableError, UnsupportedFileError, ocr_available
@@ -70,6 +74,11 @@ class ChatRequest(BaseModel):
     k: int = Field(5, ge=1, le=10)
 
 
+class HighlightRequest(BaseModel):
+    chunk_id: str | None = Field(None, max_length=100)  # the passage the answer used
+    answer: str | None = Field(None, max_length=4000)  # the answer text, to find its facts on the page
+
+
 class AskRequest(BaseModel):
     question: str = Field(..., min_length=1, max_length=500)
     category: str | None = None
@@ -80,6 +89,7 @@ def _passage(chunk: dict, score: float, rank: int) -> dict:
     return {
         "rank": rank,
         "score": round(score, 4),
+        "chunk_id": chunk["chunk_id"],
         "doc_id": chunk["doc_id"],
         "filename": chunk["filename"],
         "category": chunk["category"],
@@ -170,6 +180,34 @@ def create_app(store: DocumentStore, embedder: EmbedderLike, tokenizer, llm: LLM
         if not doc or not path or not path.exists():
             raise HTTPException(404, "document not found")
         return FileResponse(path, filename=doc["filename"], content_disposition_type="inline")
+
+    def _owned_file(doc_id: str) -> tuple[dict, Path]:
+        doc = store.get(doc_id)  # only this owner's documents are visible
+        path = store.file_path(doc_id)
+        if not doc or not path or not path.exists():
+            raise HTTPException(404, "document not found")
+        return doc, path
+
+    @app.get("/api/documents/{doc_id}/pages/{page}/image")
+    def page_image(doc_id: str, page: int) -> Response:
+        _, path = _owned_file(doc_id)
+        if path.suffix.lower() != ".pdf":
+            raise HTTPException(400, "page images are only available for PDFs")
+        try:
+            png = render_pdf_page(path, page)
+        except ValueError as e:
+            raise HTTPException(404, str(e)) from e
+        return Response(png, media_type="image/png", headers={"Cache-Control": "private, no-store"})
+
+    @app.post("/api/documents/{doc_id}/pages/{page}/highlights")
+    def page_highlights(doc_id: str, page: int, req: HighlightRequest) -> dict:
+        _, path = _owned_file(doc_id)
+        chunk = next((c for c in store.chunks if c["chunk_id"] == req.chunk_id and c["doc_id"] == doc_id), None)
+        try:
+            result = highlights_for(path, page, chunk["text"] if chunk else None, req.answer)
+        except ValueError as e:
+            raise HTTPException(404, str(e)) from e
+        return asdict(result)
 
     @app.delete("/api/documents/{doc_id}")
     def delete(doc_id: str) -> dict:
