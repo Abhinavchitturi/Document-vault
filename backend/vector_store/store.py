@@ -22,6 +22,7 @@ app rebuilds the vectors from the stored chunk text on startup.
 from __future__ import annotations
 
 import json
+import logging
 import os
 import threading
 from datetime import datetime, timezone
@@ -33,6 +34,9 @@ from sqlalchemy import delete, func, insert, select
 
 from backend.database.db import connect, fallback_owner
 from backend.database.schema import document_chunks, documents, users, vault_meta
+
+
+logger = logging.getLogger(__name__)
 
 
 def _new_index(dim: int) -> faiss.Index:
@@ -55,7 +59,7 @@ class DocumentStore:
         self.files_dir.mkdir(parents=True, exist_ok=True)
         self.engine = connect(database_url or _default_url(self.root))
         self._lock = threading.RLock()
-        self.owner = owner or self._existing_owner() or fallback_owner()
+        self.owner = owner or self._owner_for_this_computer()
         self.owner_id = self._ensure_user(self.owner)
         self.documents: dict[str, dict] = {}  # this owner's documents, cached
         self.chunks: list[dict] = []  # this owner's chunks, cached for search
@@ -72,6 +76,26 @@ class DocumentStore:
             names = conn.execute(select(users.c.name).limit(2)).scalars().all()
         return names[0] if len(names) == 1 else None
 
+    def _owner_for_this_computer(self) -> str:
+        """Owner when none is given: the vault's existing owner, or the computer's user name.
+
+        An owner that was only ever named automatically after the computer's user follows that
+        user name if it changes (Mac user "ramesh" renamed to "abhinav"). A name someone chose
+        (Settings or the sign-in screen) is kept as is.
+        """
+        computer = fallback_owner()
+        existing = self._existing_owner()
+        if existing is None or existing == computer:
+            return existing or computer
+        with self.engine.begin() as conn:
+            if self._meta(conn, "owner_named_by") == "person":
+                return existing
+            if conn.execute(select(users.c.id).where(users.c.name == computer)).scalar() is not None:
+                return existing  # the new name is already someone else here; don't merge people
+            conn.execute(users.update().where(users.c.name == existing).values(name=computer))
+        logger.info("Computer user name changed: vault owner %r is now %r", existing, computer)
+        return computer
+
     def rename_owner(self, new_name: str) -> str:
         """Rename this vault's owner; their documents stay theirs."""
         new_name = " ".join(new_name.split())
@@ -82,6 +106,7 @@ class DocumentStore:
             if taken is not None:
                 raise ValueError(f"{new_name!r} is already another person in this vault")
             conn.execute(users.update().where(users.c.id == self.owner_id).values(name=new_name))
+            self._set_meta(conn, "owner_named_by", "person")  # from now on, keep this name
         self.owner = new_name
         for doc in self.documents.values():
             doc["owner"] = new_name
