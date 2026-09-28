@@ -17,7 +17,7 @@ and the privacy decisions.
 | Phase | | State |
 |---|---|---|
 | 1 | Core RAG engine | ✅ Upload → parse → chunk → embeddings → FAISS → retrieve → local LLM answer with citations |
-| 2 | Document metadata | 🟡 Stored in a JSON file; PostgreSQL to come |
+| 2 | Document metadata | ✅ PostgreSQL: `users`, `documents`, `document_chunks`; every document has an owner |
 | 3 | Web application | 🟡 Chat page (streaming answers, follow-ups, document library, upload); React + Next.js to come |
 | 4 | OCR | ✅ Tesseract for photos and scanned PDFs |
 | 5 | Better retrieval (BM25 + vector) | 🟡 Vector search and evaluation harness; hybrid to come |
@@ -32,14 +32,23 @@ and the privacy decisions.
 - The app listens on `127.0.0.1` only and has no login yet (Phase 6), so don't expose it to a network.
 
 ## Setup (once)
+Python packages:
 ```bash
 python -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
-
-# Answers: install Ollama from https://ollama.com, open it, then download the model (~5 GB)
+```
+PostgreSQL, which holds the document records (runs on your Mac, starts automatically at login):
+```bash
+brew install postgresql@16
+brew services start postgresql@16
+createdb vault
+```
+Ollama for answers: install it from https://ollama.com, open it, then download the model (~5 GB):
+```bash
 ollama pull llama3.1:8b
-
-# Optional: photos and scanned PDFs
+```
+Optional, for photos and scanned PDFs:
+```bash
 brew install tesseract
 ```
 The first run also downloads the Arctic Embed embedding model (~440 MB) from Hugging Face; after
@@ -47,11 +56,13 @@ that everything works offline.
 
 ## Run
 ```bash
-python -m backend.api.app    # open http://127.0.0.1:8000
+python -m backend.api.app
 ```
+Then open http://127.0.0.1:8000.
 It works like a chatbot: type a question, press Enter, and the answer is written out as the
-model generates it, with small numbered links to the documents it used (click one to open the
-file at that page). Ask follow-ups ("and when is it due?") in the same chat; **New chat**
+model generates it, with small numbered links to the documents it used. Click one to see the
+page with the passage lightly highlighted and the answer itself (amounts, dates, policy numbers)
+strongly highlighted where it appears; **Open original** opens the untouched file. Ask follow-ups ("and when is it due?") in the same chat; **New chat**
 starts over. Chats aren't saved: refreshing the page clears them. Add documents in
 **Your documents** (drag and drop).
 
@@ -63,7 +74,18 @@ Import a whole folder instead of uploading one by one. Subfolders named `insuran
 ```bash
 python -m backend.upload.ingest ~/Documents/family-papers
 ```
-Deleting `data/index/` resets the vault.
+Where things live:
+- **Document records** (name, type, upload date, owner, file path, passage text): the `vault`
+  PostgreSQL database. Choose another with `--database-url` or `VAULT_DATABASE_URL`; only
+  databases on this computer are accepted. `--database-url sqlite:///data/index/vault.db`
+  gives a single-file setup with no server.
+- **Search vectors and original files**: `data/index/` (git-ignored).
+- **Owner**: until login arrives (Phase 6), documents belong to your computer's user name.
+  Override with `--owner` or `VAULT_OWNER`.
+
+A vault created before Phase 2 (`documents.json` in `data/index/`) is moved into the database
+automatically the first time the app starts. To reset everything: `dropdb vault && createdb vault`
+and delete `data/index/`.
 
 ## Try it with dummy documents
 A fictional family (the Mehras) with 13 documents and 24 questions with known answers:
@@ -81,9 +103,13 @@ python -m backend.upload.ingest samples/pdfs
 All names, companies and numbers are made up.
 
 ## Evaluation
+Retrieval only:
 ```bash
-python -m backend.eval.evaluate --show-misses              # retrieval only
-python -m backend.eval.evaluate --with-llm --show-misses   # + local LLM answers
+python -m backend.eval.evaluate --show-misses
+```
+Retrieval plus local LLM answers:
+```bash
+python -m backend.eval.evaluate --with-llm --show-misses
 ```
 Builds a throwaway vault from the samples (your real vault isn't touched), asks the 24
 questions and writes `results/eval_vector.json` (or `eval_vector_llm.json`).
@@ -119,7 +145,7 @@ python -m backend.eval.evaluate --model Snowflake/snowflake-arctic-embed-s
 Switching models re-embeds your vault automatically the next time the app starts.
 
 ## Code
-Phase 1 layout:
+Layout:
 
 | Folder | Role |
 |---|---|
@@ -127,9 +153,11 @@ Phase 1 layout:
 | `backend/parser/` | Text from PDF / Word / text / photos per page, OCR (`extract.py`); document types (`categories.py`) |
 | `backend/chunker/` | Token-window chunking that never cuts mid-word |
 | `backend/embeddings/` | Snowflake Arctic Embed M v1.5; offline mode once downloaded |
-| `backend/vector_store/` | Documents, chunks, FAISS index and original files on disk |
+| `backend/database/` | PostgreSQL schema (`users`, `documents`, `document_chunks`) and connection |
+| `backend/vector_store/` | The vault: records in the database, vectors in FAISS, original files on disk |
 | `backend/retriever/` | Question → passages (Phase 5 adds BM25 here) |
 | `backend/llm/` | Local Ollama client and the answer-with-citations prompt |
+| `backend/viewer/` | Finds the passage and the answer's facts on a page (PDF boxes, Word/text spans) |
 | `backend/api/` | FastAPI app and the web page |
 | `backend/eval/` | Scoring on the sample questions; `compare_llms.py` ranks local LLMs |
 
@@ -137,5 +165,9 @@ Phase 1 layout:
 ```bash
 pytest -q
 ```
-52 tests. They use a fake embedder and a fake LLM, so they run in about two seconds without
-downloading models or running Ollama.
+65 tests. They use a fake embedder and a fake LLM, so they run in a few seconds without
+downloading models or running Ollama. By default they use SQLite; to run them against
+PostgreSQL (each test gets a throwaway database):
+```bash
+VAULT_TEST_DATABASE_URL=postgresql+psycopg://localhost/postgres pytest -q
+```

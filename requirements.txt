@@ -13,6 +13,10 @@ faiss-cpu
 # Answers come from a local model served by Ollama (https://ollama.com), a separate
 # app, not a Python package: install it, then `ollama pull llama3.1:8b`.
 
+# Document records (Phase 2): PostgreSQL on this computer, or SQLite
+sqlalchemy>=2
+psycopg[binary]>=3.1
+
 # Reading documents
 pypdfium2      # PDF text + rendering scanned pages for OCR
 python-docx    # Word files

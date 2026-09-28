@@ -17,6 +17,7 @@ import argparse
 import hashlib
 import logging
 import shutil
+import uuid
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
@@ -96,7 +97,7 @@ def ingest_file(
     if category == "auto":
         category = guess_category(filename, full_text)
 
-    doc_id = sha256[:12]
+    doc_id = uuid.uuid4().hex[:16]  # not derived from the file: two family members may upload the same one
     chunks = []
     for page in pages:
         for span in chunk_text(page.text, tokenizer, chunk_size, overlap):
@@ -145,7 +146,10 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("paths", nargs="+", type=Path, help="files or folders to import")
     parser.add_argument("--category", default="auto", choices=["auto", *CATEGORIES])
-    parser.add_argument("--index-dir", default="data/index")
+    parser.add_argument("--index-dir", default="data/index", help="FAISS vectors and original files")
+    parser.add_argument("--database-url", default=None,
+                        help="metadata database (default: $VAULT_DATABASE_URL or postgresql+psycopg://localhost/vault)")
+    parser.add_argument("--owner", default=None, help="whose documents (default: $VAULT_OWNER or your user name)")
     parser.add_argument("--model", default=None, help="embedding model (default: snowflake-arctic-embed-m-v1.5)")
     args = parser.parse_args()
 
@@ -153,9 +157,14 @@ def main() -> None:
     from backend.chunker.chunker import HFTokenizer
     from backend.embeddings.embedder import DEFAULT_MODEL, Embedder
 
+    from backend.database.db import DatabaseUnavailableError, database_url, default_owner
+
+    try:
+        store = DocumentStore(args.index_dir, database_url(args.database_url), owner=default_owner(args.owner))
+    except DatabaseUnavailableError as e:
+        raise SystemExit(str(e)) from e
     embedder = Embedder(args.model or DEFAULT_MODEL)
     tokenizer = HFTokenizer(embedder.model_name)
-    store = DocumentStore(args.index_dir)
 
     added = skipped = failed = 0
     for path in iter_files(args.paths):
@@ -175,7 +184,8 @@ def main() -> None:
         else:
             skipped += 1
             logger.info("Already in library: %s", path.name)
-    logger.info("Done: %d added, %d already present, %d failed. Library: %d documents", added, skipped, failed, len(store.documents))
+    logger.info("Done: %d added, %d already present, %d failed. Vault for %s: %d documents",
+                added, skipped, failed, store.owner, len(store.documents))
 
 
 if __name__ == "__main__":

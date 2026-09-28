@@ -6,6 +6,8 @@ Endpoints:
     GET    /api/documents                 all documents in the library
     POST   /api/documents                 upload one or more files (form fields: files, category)
     GET    /api/documents/{id}/file       open the original file
+    GET    /api/documents/{id}/pages/{n}/image       one PDF page as a PNG
+    POST   /api/documents/{id}/pages/{n}/highlights  where the answer's passage and facts are on that page
     DELETE /api/documents/{id}            remove a document and its search data
     GET    /api/search?q=...&category=... best-matching passage per document
     POST   /api/chat                      chat: answer streamed word by word (NDJSON), with sources
@@ -30,17 +32,19 @@ import logging
 import tempfile
 import time
 from collections import Counter
+from dataclasses import asdict
 from pathlib import Path
 
 from fastapi import FastAPI, File, Form, HTTPException, Query, UploadFile
 from typing import Literal
 
-from fastapi.responses import FileResponse, StreamingResponse
+from fastapi.responses import FileResponse, Response, StreamingResponse
 from pydantic import BaseModel, Field
 
 from backend.llm.answer import LLM, answer_question, finalize, stream_answer
 from backend.llm.ollama import LLMUnavailableError
 from backend.retriever.retriever import Retriever
+from backend.viewer.highlight import highlights_for, render_pdf_page
 
 from backend.parser.categories import CATEGORIES
 from backend.parser.extract import SUPPORTED_SUFFIXES, OcrUnavailableError, UnsupportedFileError, ocr_available
@@ -70,6 +74,11 @@ class ChatRequest(BaseModel):
     k: int = Field(5, ge=1, le=10)
 
 
+class HighlightRequest(BaseModel):
+    chunk_id: str | None = Field(None, max_length=100)  # the passage the answer used
+    answer: str | None = Field(None, max_length=4000)  # the answer text, to find its facts on the page
+
+
 class AskRequest(BaseModel):
     question: str = Field(..., min_length=1, max_length=500)
     category: str | None = None
@@ -80,6 +89,7 @@ def _passage(chunk: dict, score: float, rank: int) -> dict:
     return {
         "rank": rank,
         "score": round(score, 4),
+        "chunk_id": chunk["chunk_id"],
         "doc_id": chunk["doc_id"],
         "filename": chunk["filename"],
         "category": chunk["category"],
@@ -109,6 +119,7 @@ def create_app(store: DocumentStore, embedder: EmbedderLike, tokenizer, llm: LLM
         counts = Counter(d["category"] for d in store.documents.values())
         return {
             "model": embedder.model_name,
+            "owner": store.owner,
             "llm": llm.name if llm else None,
             "llm_status": _llm_status(llm),
             "num_documents": len(store.documents),
@@ -169,6 +180,34 @@ def create_app(store: DocumentStore, embedder: EmbedderLike, tokenizer, llm: LLM
         if not doc or not path or not path.exists():
             raise HTTPException(404, "document not found")
         return FileResponse(path, filename=doc["filename"], content_disposition_type="inline")
+
+    def _owned_file(doc_id: str) -> tuple[dict, Path]:
+        doc = store.get(doc_id)  # only this owner's documents are visible
+        path = store.file_path(doc_id)
+        if not doc or not path or not path.exists():
+            raise HTTPException(404, "document not found")
+        return doc, path
+
+    @app.get("/api/documents/{doc_id}/pages/{page}/image")
+    def page_image(doc_id: str, page: int) -> Response:
+        _, path = _owned_file(doc_id)
+        if path.suffix.lower() != ".pdf":
+            raise HTTPException(400, "page images are only available for PDFs")
+        try:
+            png = render_pdf_page(path, page)
+        except ValueError as e:
+            raise HTTPException(404, str(e)) from e
+        return Response(png, media_type="image/png", headers={"Cache-Control": "private, no-store"})
+
+    @app.post("/api/documents/{doc_id}/pages/{page}/highlights")
+    def page_highlights(doc_id: str, page: int, req: HighlightRequest) -> dict:
+        _, path = _owned_file(doc_id)
+        chunk = next((c for c in store.chunks if c["chunk_id"] == req.chunk_id and c["doc_id"] == doc_id), None)
+        try:
+            result = highlights_for(path, page, chunk["text"] if chunk else None, req.answer)
+        except ValueError as e:
+            raise HTTPException(404, str(e)) from e
+        return asdict(result)
 
     @app.delete("/api/documents/{doc_id}")
     def delete(doc_id: str) -> dict:
@@ -267,7 +306,10 @@ def create_app(store: DocumentStore, embedder: EmbedderLike, tokenizer, llm: LLM
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument("--index-dir", default="data/index")
+    parser.add_argument("--index-dir", default="data/index", help="FAISS vectors and original files")
+    parser.add_argument("--database-url", default=None,
+                        help="metadata database (default: $VAULT_DATABASE_URL or postgresql+psycopg://localhost/vault)")
+    parser.add_argument("--owner", default=None, help="whose documents (default: $VAULT_OWNER or your user name)")
     parser.add_argument("--model", default=None, help="embedding model (default: snowflake-arctic-embed-m-v1.5)")
     parser.add_argument("--device", default=None, help="cuda / mps / cpu; default picks automatically")
     parser.add_argument("--llm-model", default=None, help="local Ollama model (default: llama3.1:8b)")
@@ -284,18 +326,26 @@ def main() -> None:
     from backend.llm.ollama import OllamaLLM
     from backend.upload.ingest import passage_texts
 
+    from backend.database.db import DatabaseUnavailableError, database_url, default_owner
+
+    try:
+        store = DocumentStore(args.index_dir, database_url(args.database_url), owner=default_owner(args.owner))
+    except DatabaseUnavailableError as e:
+        raise SystemExit(str(e)) from e
     embedder = Embedder(args.model or DEFAULT_MODEL, device=args.device)
-    store = DocumentStore(args.index_dir)
     if store.model and store.model != embedder.model_name:
-        logger.info("Library was embedded with %s; re-embedding with %s", store.model, embedder.model_name)
+        logger.info("Vault was embedded with %s; re-embedding with %s", store.model, embedder.model_name)
+        store.reembed(lambda chunks: embedder.encode_passages(passage_texts(chunks)), embedder.model_name)
+    elif store.missing_vectors:
+        logger.warning("Some passages have no search vectors (interrupted save?); rebuilding them")
         store.reembed(lambda chunks: embedder.encode_passages(passage_texts(chunks)), embedder.model_name)
     if not ocr_available():
         logger.warning("Tesseract not found: photos and scanned PDFs can't be read. macOS: brew install tesseract")
 
     llm = None if args.no_llm else OllamaLLM(args.llm_model or DEFAULT_LLM)
     app = create_app(store, embedder, HFTokenizer(embedder.model_name), llm)
-    logger.info("Vault: %d documents. Answers: %s. Open http://127.0.0.1:%d",
-                len(store.documents), llm.name if llm else "off", args.port)
+    logger.info("Vault for %s: %d documents. Answers: %s. Open http://127.0.0.1:%d",
+                store.owner, len(store.documents), llm.name if llm else "off", args.port)
     uvicorn.run(app, host="127.0.0.1", port=args.port)
 
 
