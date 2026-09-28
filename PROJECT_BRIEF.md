@@ -123,28 +123,45 @@ PostgreSQL     Qdrant         File store
           BGE Small v1.5
                  |
           Local LLM (Ollama)
-   Llama / Gemma / Mistral, on-device
+     chosen by measurement, on-device
 ```
 
 ## Local models only
 Every model runs on the family's own computer. No document text, question or answer is
-sent to a cloud AI service. (The original plan listed Gemini or Qwen; both are replaced.)
+sent to a cloud AI service. Because nothing leaves the machine, a model's origin is not a
+constraint: any open model that runs locally is allowed. Documents are in **English**, so
+English models and English OCR are enough.
 
-| Job | Model | Runs via |
+| Job | Phase | Model | Size | Notes |
+|---|---|---|---|---|
+| Embeddings | 1 | BGE Small v1.5 (BAAI), MIT | ~130 MB | Fast, strong for English retrieval |
+| Answers | 1 | **Chosen by measurement**, see below | 5–9 GB | Served by Ollama |
+| OCR | 4 | Tesseract (English) | small | Local program |
+| Reranker | 5 | bge-reranker-base (BAAI), MIT | ~1.1 GB | Reorders the top results |
+| Classification, expiry dates | 8, 9 | the same answer LLM | – | No extra model |
+
+### Choosing the answer LLM
+"Most accurate" is measured on our own question set, not taken from leaderboards: what
+matters is copying exact dates, amounts and policy numbers from the family's documents.
+`python -m backend.eval.compare_llms` gives every candidate the same retrieved passages and
+ranks them by accuracy, then speed. Candidates that fit a 16 GB Mac:
+
+| Candidate | By | Download |
 |---|---|---|
-| Embeddings | BGE Small v1.5 (BAAI) | sentence-transformers |
-| Answers | **Llama 3.1 8B** (Meta) by default; Gemma (Google) or Mistral (France) are drop-in alternatives | Ollama |
-| OCR | Tesseract | local program |
-| Reranking (Phase 5) | a small cross-encoder | sentence-transformers |
+| qwen2.5:14b | Alibaba | ~9 GB |
+| gemma3:12b | Google | ~8 GB |
+| phi4 (14B) | Microsoft | ~9 GB |
+| llama3.1:8b | Meta | ~5 GB |
+
+The winner becomes the default (`--llm-model` overrides it). Until the comparison has run,
+the default is `llama3.1:8b`. With only 24 questions, a difference of one or two answers is
+a tie; prefer the faster model then.
 
 Guard rails in the code:
 - The LLM client refuses any Ollama address that isn't this machine.
 - Once the embedding model is downloaded, the Hugging Face libraries are switched to offline mode.
 - The web page loads nothing from the internet (no web fonts, no CDNs).
-
-Trade-off: an 8B model on a 16 GB Mac is slower and a little less capable than the big cloud
-models. The evaluation below measures exactly how good it is, and swapping in a larger local
-model is a single flag (`--llm-model`).
+- Reasoning models' private "thinking" is stripped before an answer is shown.
 
 ## Evaluation
 Real family documents can't be committed, so the repo ships a fictional family's papers:

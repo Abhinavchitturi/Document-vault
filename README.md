@@ -26,7 +26,7 @@ and the privacy decisions.
 ## Privacy
 - For our family only. The repository is private and contains **code and fictional samples only**.
 - Real documents, their text and the search index live in `data/` (git-ignored) on your computer.
-- **Local models only**: embeddings (BGE Small), answers (Llama 3.1 8B via Ollama) and OCR
+- **Local models only**: embeddings (BGE Small), answers (a local LLM via Ollama) and OCR
   (Tesseract) all run on your machine. The LLM client refuses any non-local address, the
   embedding model runs offline once downloaded, and the web page loads nothing from the internet.
 - The app listens on `127.0.0.1` only and has no login yet (Phase 6), so don't expose it to a network.
@@ -87,13 +87,23 @@ questions and writes `results/eval_vector.json` (or `eval_vector_llm.json`).
 
 | Retrieval | Recall@1 | Recall@3 | MRR@5 | Answer@3 | LLM answer accuracy |
 |---|---|---|---|---|---|
-| Vector (BGE Small v1.5) + Llama 3.1 8B | — | — | — | — | — |
+| Vector (BGE Small v1.5) + best local LLM | — | — | — | — | — |
 | Hybrid (BM25 + vector), Phase 5 | — | — | — | — | — |
 
 - **Recall@k**: correct document in the top k
 - **MRR@5**: how high the correct document ranks (1 = always first)
 - **Answer@k**: the exact answer text is inside one of the top-k passages
 - **LLM answer accuracy**: the written answer contains the expected text (strict)
+
+## Choosing the local LLM
+The most accurate model is picked by measuring, not by reputation. Pull the candidates
+(about 30 GB together; remove the losers afterwards with `ollama rm <model>`), then:
+```bash
+python -m backend.eval.compare_llms qwen2.5:14b gemma3:12b phi4 llama3.1:8b --show-misses
+```
+Every model gets the same retrieved passages for the 24 sample questions; the table ranks
+them by accuracy, then speed, and `results/llm_comparison.json` keeps every answer. Start
+the app with the winner: `python -m backend.api.app --llm-model <winner>`.
 
 ## Code
 Phase 1 layout:
@@ -108,11 +118,11 @@ Phase 1 layout:
 | `backend/retriever/` | Question → passages (Phase 5 adds BM25 here) |
 | `backend/llm/` | Local Ollama client and the answer-with-citations prompt |
 | `backend/api/` | FastAPI app and the web page |
-| `backend/eval/` | Scoring on the sample questions |
+| `backend/eval/` | Scoring on the sample questions; `compare_llms.py` ranks local LLMs |
 
 ## Tests
 ```bash
 pytest -q
 ```
-43 tests. They use a fake embedder and a fake LLM, so they run in about two seconds without
+45 tests. They use a fake embedder and a fake LLM, so they run in about two seconds without
 downloading models or running Ollama.

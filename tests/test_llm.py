@@ -91,3 +91,29 @@ def test_prefer_offline_only_when_model_is_cached(tmp_path, monkeypatch):
     assert prefer_offline("BAAI/bge-small-en-v1.5")
     import os
     assert os.environ["HF_HUB_OFFLINE"] == "1"
+
+
+def test_reasoning_models_thinking_is_removed():
+    llm = FakeLLM("<think>The 2026 policy is current, so...</think>\nIt expires on 14 March 2027 [2].")
+    assert answer_question("Q?", PASSAGES, llm).text == "It expires on 14 March 2027 [2]."
+
+
+def test_compare_ranks_models_and_skips_missing_ones():
+    from backend.eval.compare_llms import compare
+
+    class Named(FakeLLM):
+        def __init__(self, name, reply=None, error=None):
+            super().__init__(reply, error)
+            self.name = name
+
+    questions = [{"question": "When does it expire?", "answer": "14 March 2027"},
+                 {"question": "Policy number?", "answer": "SGI/TW/2026/448812"}]
+    contexts = [PASSAGES, PASSAGES]
+    rows = compare(questions, contexts, [
+        Named("weak", "I couldn't find that in your documents."),
+        Named("strong", "It expires on 14 March 2027 [2], policy SGI/TW/2026/448812 [2]."),
+        Named("missing", error=LLMUnavailableError("The model missing isn't downloaded yet. Run: ollama pull missing")),
+    ])
+    assert [r["model"] for r in rows] == ["strong", "weak", "missing"]
+    assert rows[0]["accuracy"] == 1.0 and rows[0]["cited_a_source"] == 2
+    assert rows[1]["accuracy"] == 0.0 and not rows[2]["available"] and "ollama pull" in rows[2]["error"]
