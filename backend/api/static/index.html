@@ -142,6 +142,15 @@
   .llm-off { display: flex; gap: 10px; align-items: flex-start; background: var(--warn-soft); color: var(--warn);
              border-radius: 12px; padding: 12px 14px; margin-bottom: 14px; font-size: 14px; }
   .llm-off svg { flex: none; margin-top: 2px; }
+  .llm-off code { background: rgba(0,0,0,.06); }
+  .setup { margin-top: 14px; }
+  .pill .dot-s { width: 7px; height: 7px; border-radius: 50%; background: var(--faint); }
+  .pill.ready .dot-s { background: var(--good); }
+  .pill.not-ready { color: var(--warn); border-color: var(--warn); }
+  .pill.not-ready .dot-s { background: var(--warn); }
+  .answer.extract::before { background: var(--faint); }
+  .answer-text mark { background: var(--mark); color: inherit; border-radius: 3px; padding: 0 1px; }
+  .answer .source-line { margin-top: 8px; font-size: 13px; color: var(--muted); }
   .sources-label { font-size: 12px; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: .05em; margin: 4px 2px 10px; }
   .hit-head { display: flex; align-items: flex-start; gap: 12px; margin-bottom: 10px; }
   .file-icon { flex: none; width: 36px; height: 36px; border-radius: 10px; display: grid; place-items: center; }
@@ -231,6 +240,7 @@
     Document Vault
   </div>
   <div class="spacer"></div>
+  <span class="pill" id="llm-pill" title="Checking the local AI model…"><span class="dot-s"></span><span id="llm-pill-text">Checking…</span></span>
   <span class="pill privacy"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg>Stays on this computer</span>
   <button class="icon-btn" id="theme" type="button" aria-label="Toggle theme"></button>
 </header>
@@ -249,6 +259,7 @@
       <button class="btn-primary" type="submit">Search</button>
     </form>
 
+    <div class="llm-off setup" id="setup" hidden></div>
     <div class="filters" id="filters" role="group" aria-label="Filter by category"></div>
 
     <section class="examples">
@@ -364,6 +375,7 @@ async function refreshLibrary() {
     ? `PDF, Word, text, or photos · up to ${info.max_upload_mb} MB`
     : `PDF, Word or text files · up to ${info.max_upload_mb} MB`;
   renderFilters();
+  renderLlmStatus();
   renderDocs(docs);
 }
 
@@ -591,9 +603,53 @@ function renderAnswer(data) {
   return card;
 }
 
+const sentence = (m) => (/[.!?]$/.test(m.trim()) ? m.trim() : `${m.trim()}.`);
+
+function renderLlmStatus() {
+  const st = info && info.llm_status;
+  const pill = $("llm-pill");
+  if (!st) return;
+  pill.className = `pill ${st.ready ? "ready" : "not-ready"}`;
+  $("llm-pill-text").textContent = st.ready ? "Answers ready" : "Answers off";
+  pill.title = st.message;
+  const box = $("setup");
+  box.hidden = st.ready;
+  if (!st.ready) box.replaceChildren(svg(ICON.warn), el("span", null, `${sentence(st.message)} Until then you'll see the closest line from your documents instead of a written answer.`));
+}
+
+// Without the LLM, still give a plain-text reply: the line, among the top 3 passages,
+// that shares the most words with the question (clearly labelled as not an AI answer).
+// If no line shares a word, show nothing rather than an unrelated line.
+function closestLine(hits, terms) {
+  const re = termRegex(terms);
+  if (!re) return null;
+  let best = null, bestHits = 0;
+  for (const hit of hits.slice(0, 3)) {
+    for (const raw of hit.text.split("\n")) {
+      const line = raw.trim();
+      if (!line || /^SAMPLE DOCUMENT/i.test(line)) continue;
+      const count = new Set((line.match(re) || []).map((w) => w.toLowerCase())).size;
+      if (count > bestHits) { best = { line: line.replace(/^#+\s*/, ""), hit }; bestHits = count; }
+    }
+  }
+  return best;
+}
+
+function renderExtract(hits, terms) {
+  const found = closestLine(hits, terms);
+  if (!found) return [];
+  const card = el("section", "answer extract");
+  const head = el("div", "answer-head");
+  head.append("Closest line in your documents", el("span", "llm", "not an AI answer"));
+  const p = el("p", "answer-text");
+  fillHighlighted(p, found.line, termRegex(terms));
+  card.append(head, p, el("div", "source-line", `From ${found.hit.filename}, page ${found.hit.page}`));
+  return [card];
+}
+
 function llmOffNotice(message) {
   const box = el("div", "llm-off");
-  box.append(svg(ICON.warn), el("span", null, `${message} Showing the matching passages instead.`));
+  box.append(svg(ICON.warn), el("span", null, `${sentence(message)} Showing the matching passages instead.`));
   return box;
 }
 
@@ -614,7 +670,8 @@ async function searchOnly(q, prefix = []) {
   }
   const maxScore = Math.max(...data.results.map((r) => r.score));
   const terms = queryTerms(data.question);
-  $("results").replaceChildren(...prefix, ...data.results.map((h, i) => renderHit(h, maxScore, terms, { top: i === 0 })));
+  $("results").replaceChildren(...prefix, ...renderExtract(data.results, terms), el("p", "sources-label", "Matching documents"),
+    ...data.results.map((h, i) => renderHit(h, maxScore, terms, { top: i === 0 })));
 }
 
 let askSeq = 0;  // ignore answers to questions the user has already replaced
@@ -637,7 +694,12 @@ async function runSearch() {
     });
     const data = await res.json();
     if (seq !== askSeq) return;
-    if (res.status === 503) { await searchOnly(q, [llmOffNotice(data.detail)]); return; }
+    if (res.status === 503) {
+      // The banner under the search box explains how to fix it; don't repeat it here.
+      await refreshLibrary().catch(() => {});
+      await searchOnly(q, $("setup").hidden ? [llmOffNotice(data.detail)] : []);
+      return;
+    }
     if (!res.ok) throw new Error(typeof data.detail === "string" ? data.detail : res.statusText);
     const where = activeCategory ? `in ${CAT_LABEL[activeCategory].toLowerCase()}` : "across all documents";
     $("status").replaceChildren(el("span", null, `Answered from ${data.sources.length} passages ${where}`));

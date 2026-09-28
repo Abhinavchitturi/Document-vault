@@ -45,6 +45,10 @@ def test_ollama_only_talks_to_this_computer():
 
 
 class _FakeOllama(BaseHTTPRequestHandler):
+    def do_GET(self):
+        self.send_response(200); self.end_headers()
+        self.wfile.write(json.dumps({"models": [{"name": "llama3.1:8b"}, {"name": "gemma3:latest"}]}).encode())
+
     def do_POST(self):
         body = json.loads(self.rfile.read(int(self.headers["Content-Length"])))
         self.server.requests.append(body)
@@ -126,3 +130,13 @@ def test_embedding_prefixes():
     assert DEFAULT_MODEL.startswith("Snowflake/") and query.startswith("Represent this sentence") and passage == ""
     assert model_prefixes("intfloat/e5-base-v2") == ("query: ", "passage: ")
     assert model_prefixes("some/other-model") == ("", "")
+
+
+def test_ollama_status(fake_ollama):
+    host = f"http://127.0.0.1:{fake_ollama.server_port}"
+    assert OllamaLLM("llama3.1:8b", host=host).status()[0]
+    assert OllamaLLM("gemma3", host=host).status()[0]  # bare name means ":latest"
+    ready, message = OllamaLLM("gemma3:12b", host=host).status()
+    assert not ready and "ollama pull gemma3:12b" in message
+    ready, message = OllamaLLM(host="http://127.0.0.1:9").status()
+    assert not ready and "isn't running" in message

@@ -74,7 +74,8 @@ def test_ask_returns_answer_with_cited_sources(tmp_path):
     assert data["citations"] == [1] and data["found"] and data["llm"] == "fake/llm"
     assert data["sources"][0]["filename"] == "bike_policy.pdf" and len(data["sources"]) == 2
     assert "[1] bike_policy.pdf (insurance), page 1" in llm.last_prompt
-    assert client.get("/api/info").json()["llm"] == "fake/llm"
+    info = client.get("/api/info").json()
+    assert info["llm"] == "fake/llm" and info["llm_status"]["ready"]
 
 
 def test_ask_when_llm_is_off_or_down(tmp_path):
@@ -83,6 +84,7 @@ def test_ask_when_llm_is_off_or_down(tmp_path):
 
     no_llm = TestClient(create_app(DocumentStore(tmp_path / "a"), FakeEmbedder(), RegexTokenizer()))
     assert no_llm.post("/api/ask", json={"question": "x"}).status_code == 503
+    assert no_llm.get("/api/info").json()["llm_status"]["ready"] is False
     down = FakeLLM(error=LLMUnavailableError("Can't reach Ollama on this computer."))
     client = TestClient(create_app(DocumentStore(tmp_path / "b"), FakeEmbedder(), RegexTokenizer(), down))
     upload(client, "a.txt", b"Water bill due 15 July")

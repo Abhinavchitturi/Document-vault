@@ -72,6 +72,14 @@ def _passage(chunk: dict, score: float, rank: int) -> dict:
     }
 
 
+def _llm_status(llm) -> dict:
+    if llm is None:
+        return {"ready": False, "message": "Answers are turned off (the app was started with --no-llm)."}
+    check = getattr(llm, "status", None)
+    ready, message = check() if check else (True, f"Answers ready ({llm.name})")
+    return {"ready": ready, "message": message}
+
+
 def create_app(store: DocumentStore, embedder: EmbedderLike, tokenizer, llm: LLM | None = None) -> FastAPI:
     app = FastAPI(title="Secure Digital Document Vault")
     retriever = Retriever(store, embedder)
@@ -86,6 +94,7 @@ def create_app(store: DocumentStore, embedder: EmbedderLike, tokenizer, llm: LLM
         return {
             "model": embedder.model_name,
             "llm": llm.name if llm else None,
+            "llm_status": _llm_status(llm),
             "num_documents": len(store.documents),
             "num_chunks": len(store.chunks),
             "categories": {c: counts.get(c, 0) for c in CATEGORIES},
