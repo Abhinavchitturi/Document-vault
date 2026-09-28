@@ -144,24 +144,23 @@ Documents are in **English**, so English models and English OCR are enough.
 "Most accurate" is measured on our own question set, not taken from leaderboards: what
 matters is copying exact dates, amounts and policy numbers from the family's documents.
 `python -m backend.eval.compare_llms` gives every candidate the same retrieved passages and
-ranks them by accuracy, then speed. Candidates that fit a 16 GB Mac:
+ranks them by accuracy, then speed. Shortlist: one bigger, one smaller model that fit a 16 GB Mac:
 
-| Candidate | By | Download |
-|---|---|---|
-| gemma3:12b | Google (US) | ~8 GB |
-| phi4 (14B) | Microsoft (US) | ~9 GB |
-| mistral-nemo (12B) | Mistral (France) + NVIDIA | ~7 GB |
-| llama3.1:8b | Meta (US) | ~5 GB |
+| Candidate | By | Download | |
+|---|---|---|---|
+| gemma3:12b | Google (US) | ~8 GB | bigger: expected more accurate, slower |
+| llama3.1:8b | Meta (US) | ~5 GB | smaller: faster |
+
+Others (phi4, mistral-nemo) can be tried later with the same command.
 
 ### Choosing the embedding model
 Same approach: `python -m backend.eval.evaluate --model <name>` scores search on the sample
-questions. Candidates, all non-Chinese and loadable without custom code:
+questions. Shortlist, one bigger and one smaller from the same family:
 
 | Candidate | By | Size |
 |---|---|---|
-| Snowflake/snowflake-arctic-embed-m-v1.5 (default) | Snowflake (US) | ~440 MB |
-| Snowflake/snowflake-arctic-embed-s | Snowflake (US) | ~130 MB |
-| intfloat/e5-base-v2 | Microsoft (US) | ~440 MB |
+| Snowflake/snowflake-arctic-embed-m-v1.5 (default) | Snowflake (US) | ~440 MB, bigger |
+| Snowflake/snowflake-arctic-embed-s | Snowflake (US) | ~130 MB, smaller |
 
 Changing the embedding model re-embeds the existing vault automatically on the next start.
 

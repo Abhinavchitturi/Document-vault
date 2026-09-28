@@ -99,20 +99,19 @@ questions and writes `results/eval_vector.json` (or `eval_vector_llm.json`).
 Models are picked by measuring on the sample questions, not by reputation. No models from
 Chinese developers are used.
 
-**Answer LLM.** Pull the candidates (about 29 GB together; remove the losers afterwards with
-`ollama rm <model>`), then:
+**Answer LLM.** Shortlist: `gemma3:12b` (bigger) and `llama3.1:8b` (smaller), ~13 GB together:
 ```bash
-python -m backend.eval.compare_llms gemma3:12b phi4 mistral-nemo llama3.1:8b --show-misses
+ollama pull gemma3:12b && ollama pull llama3.1:8b
+python -m backend.eval.compare_llms gemma3:12b llama3.1:8b --show-misses
 ```
 Every model gets the same retrieved passages for the 24 sample questions; the table ranks
 them by accuracy, then speed, and `results/llm_comparison.json` keeps every answer. Start
 the app with the winner: `python -m backend.api.app --llm-model <winner>`.
 
-**Embedding model.** Default is Snowflake Arctic Embed M v1.5. To compare:
+**Embedding model.** Default is Snowflake Arctic Embed M v1.5 (bigger); compare with the smaller S:
 ```bash
 python -m backend.eval.evaluate --model Snowflake/snowflake-arctic-embed-m-v1.5
 python -m backend.eval.evaluate --model Snowflake/snowflake-arctic-embed-s
-python -m backend.eval.evaluate --model intfloat/e5-base-v2
 ```
 Switching models re-embeds your vault automatically the next time the app starts.
 
