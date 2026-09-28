@@ -100,7 +100,9 @@ Where things live:
 - **Search vectors and original files**: `data/index/` (git-ignored).
 - **Owner**: until login arrives (Phase 6), a new vault belongs to your computer's user name.
   Change it under **Settings → Your name**; the vault remembers it and your documents stay
-  yours. `--owner` or `VAULT_OWNER` pick an owner explicitly.
+  yours. If you never picked a name, the vault follows your computer's user name: rename the
+  Mac user from `ramesh` to `abhinav` and the next start shows Abhinav with the same documents.
+  A name you picked yourself is kept. `--owner` or `VAULT_OWNER` pick an owner explicitly.
 
 If the app says it can't connect to the database, it prints PostgreSQL's own reason and the
 commands that fix it. The common one after renaming your Mac user is

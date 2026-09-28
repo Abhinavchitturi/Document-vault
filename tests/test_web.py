@@ -105,3 +105,24 @@ def test_owner_can_be_renamed_and_is_remembered(tmp_path):
     assert client.post("/api/settings", json={"owner_name": ""}).status_code == 422
     DocumentStore(root, owner="Kavya")  # a second person
     assert client.post("/api/settings", json={"owner_name": "Kavya"}).status_code == 400
+
+
+def test_automatic_owner_follows_the_computer_user_name(tmp_path, monkeypatch):
+    from backend.vector_store import store as store_module
+
+    root = tmp_path / "index"
+    monkeypatch.setattr(store_module, "fallback_owner", lambda: "ramesh")
+    store = DocumentStore(root)
+    (tmp_path / "bill.txt").write_text("Water bill due 15 July")
+    from backend.upload.ingest import ingest_file
+    ingest_file(tmp_path / "bill.txt", store, FakeEmbedder(), RegexTokenizer())
+    assert store.owner == "ramesh"
+
+    monkeypatch.setattr(store_module, "fallback_owner", lambda: "abhinav")  # Mac user renamed
+    after = DocumentStore(root)
+    assert after.owner == "abhinav" and len(after.documents) == 1  # same person, same documents
+
+    after.rename_owner("Abhinav C")  # a name chosen by the person is kept...
+    monkeypatch.setattr(store_module, "fallback_owner", lambda: "someone-else")
+    assert DocumentStore(root).owner == "Abhinav C"  # ...even if the computer user changes again
+    assert DocumentStore(root, owner="guest").owner == "guest"  # an explicit --owner still wins
