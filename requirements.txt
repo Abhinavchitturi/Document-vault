@@ -21,4 +21,5 @@ tqdm
 
 # Dev
 pytest
+httpx  # FastAPI TestClient
 python-dotenv

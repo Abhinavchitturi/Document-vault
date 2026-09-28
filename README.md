@@ -23,6 +23,10 @@ python -m src.ingestion.run --show-samples 5
 python -m src.eval.evaluate --show-examples 5
 # -> results/step2_vector.json (first run also caches embeddings in data/processed/nq/embeddings/)
 
+# Try it in the browser: search box + real NQ test questions with the correct passage highlighted
+python -m src.api.app
+# -> open http://127.0.0.1:8000  (needs the step 2 embedding cache; startup takes ~30s)
+
 pytest -q
 ```
 

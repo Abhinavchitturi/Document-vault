@@ -1,0 +1,157 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>RAG Search</title>
+<link rel="icon" href="data:,">
+<style>
+  :root {
+    --bg: #f7f7f5; --panel: #ffffff; --text: #1d1d1b; --muted: #6b6b66; --border: #e2e1dc;
+    --accent: #2f5bd3; --accent-text: #ffffff;
+    --good-bg: #e5f4ea; --good: #1d6b3a; --warn-bg: #fdf1dc; --warn: #8a5a00; --bad-bg: #fbe6e4; --bad: #a3271d;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #161615; --panel: #20201e; --text: #ecebe6; --muted: #9d9c95; --border: #34332f;
+      --accent: #7d9cf0; --accent-text: #10131c;
+      --good-bg: #173222; --good: #8fd3a6; --warn-bg: #3a2c10; --warn: #f0c46a; --bad-bg: #3d1a17; --bad: #f19a90;
+    }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text);
+         font: 15px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+  main { max-width: 860px; margin: 0 auto; padding: 32px 16px 64px; }
+  h1 { font-size: 22px; margin: 0 0 4px; }
+  .sub { color: var(--muted); margin: 0 0 24px; font-size: 14px; }
+  form { display: flex; gap: 8px; flex-wrap: wrap; }
+  input[type=text] { flex: 1 1 320px; min-width: 0; padding: 10px 12px; font: inherit; color: var(--text);
+                     background: var(--panel); border: 1px solid var(--border); border-radius: 8px; }
+  input[type=text]:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
+  select, button { font: inherit; padding: 10px 12px; border-radius: 8px; border: 1px solid var(--border);
+                   background: var(--panel); color: var(--text); cursor: pointer; }
+  button.primary { background: var(--accent); color: var(--accent-text); border-color: var(--accent); font-weight: 600; }
+  .examples { margin: 20px 0 8px; }
+  .examples-head { display: flex; align-items: center; gap: 8px; color: var(--muted); font-size: 13px; margin-bottom: 8px; }
+  .examples-head button { padding: 2px 8px; font-size: 13px; }
+  .chips { display: flex; flex-wrap: wrap; gap: 6px; }
+  .chip { font-size: 13px; padding: 5px 10px; border-radius: 999px; background: var(--panel); text-align: left; }
+  .chip:hover, .examples-head button:hover, select:hover { border-color: var(--accent); }
+  #status { margin: 20px 0 12px; font-size: 14px; color: var(--muted); min-height: 1.5em; }
+  .banner { padding: 10px 12px; border-radius: 8px; margin-bottom: 12px; font-size: 14px; }
+  .banner.good { background: var(--good-bg); color: var(--good); }
+  .banner.warn { background: var(--warn-bg); color: var(--warn); }
+  .banner.bad { background: var(--bad-bg); color: var(--bad); }
+  .hit { background: var(--panel); border: 1px solid var(--border); border-radius: 10px; padding: 14px 16px; margin-bottom: 10px; }
+  .hit.gold { border-color: var(--good); box-shadow: inset 3px 0 0 var(--good); }
+  .hit-head { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; margin-bottom: 6px; }
+  .rank { font-weight: 700; color: var(--muted); font-variant-numeric: tabular-nums; }
+  .title { font-weight: 600; }
+  .badge { font-size: 12px; font-weight: 600; padding: 1px 8px; border-radius: 999px; background: var(--good-bg); color: var(--good); }
+  .meta { margin-left: auto; font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums; }
+  .text { margin: 0; overflow-wrap: anywhere; }
+  .error { color: var(--bad); }
+</style>
+</head>
+<body>
+<main>
+  <h1>RAG Search</h1>
+  <p class="sub">Vector search (bge-small-en-v1.5) over the BEIR NQ passage subset. Retrieval only: no LLM answer yet.</p>
+
+  <form id="form">
+    <input id="q" type="text" placeholder="Ask anything, e.g. who designed the eiffel tower" autocomplete="off" autofocus>
+    <select id="k" aria-label="Number of results">
+      <option value="5">Top 5</option><option value="10" selected>Top 10</option><option value="20">Top 20</option>
+    </select>
+    <button class="primary" type="submit">Search</button>
+  </form>
+
+  <div class="examples">
+    <div class="examples-head">
+      <span>Or try a real NQ test question (these have an answer key, so you'll see where the correct passage ranked):</span>
+      <button type="button" id="more">Shuffle</button>
+    </div>
+    <div class="chips" id="chips"></div>
+  </div>
+
+  <div id="status"></div>
+  <div id="results"></div>
+</main>
+
+<script>
+const $ = (id) => document.getElementById(id);
+let currentQid = null;  // set when a test question chip was clicked
+
+function el(tag, cls, text) {
+  const node = document.createElement(tag);
+  if (cls) node.className = cls;
+  if (text !== undefined) node.textContent = text;
+  return node;
+}
+
+async function loadExamples() {
+  const chips = $("chips");
+  try {
+    const res = await fetch("/api/examples?n=6");
+    const items = await res.json();
+    chips.replaceChildren(...items.map(({ qid, question }) => {
+      const b = el("button", "chip", question);
+      b.type = "button";
+      b.onclick = () => { $("q").value = question; currentQid = qid; runSearch(); };
+      return b;
+    }));
+  } catch (e) {
+    chips.replaceChildren(el("span", "error", "Could not load example questions."));
+  }
+}
+
+function goldBanner(data) {
+  if (!data.gold.length) return null;
+  const k = data.results.length;
+  const parts = data.gold.map((g) => g.rank ? `#${g.rank}` : `not in top ${data.gold_search_depth}`);
+  const best = Math.min(...data.gold.map((g) => g.rank || Infinity));
+  const label = data.gold.length > 1 ? "Correct passages ranked" : "Correct passage ranked";
+  let cls = "bad", note = "search missed it, so an LLM would never see it";
+  if (best <= k) { cls = "good"; note = "found in the results below"; }
+  else if (best <= data.gold_search_depth) { cls = "warn"; note = `below the top ${k}; a reranker could still pull it up`; }
+  return el("div", `banner ${cls}`, `${label} ${parts.join(", ")}: ${note}.`);
+}
+
+function renderHit(h) {
+  const card = el("article", h.is_gold ? "hit gold" : "hit");
+  const head = el("div", "hit-head");
+  head.append(el("span", "rank", `#${h.rank}`), el("span", "title", h.title || "(untitled)"));
+  if (h.is_gold) head.append(el("span", "badge", "correct passage"));
+  head.append(el("span", "meta", `score ${h.score.toFixed(3)} · ${h.chunk_id}`));
+  card.append(head, el("p", "text", h.text));
+  return card;
+}
+
+async function runSearch() {
+  const q = $("q").value.trim();
+  if (!q) return;
+  const params = new URLSearchParams({ k: $("k").value });
+  if (currentQid) params.set("qid", currentQid); else params.set("q", q);
+  $("status").textContent = "Searching…";
+  $("results").replaceChildren();
+  try {
+    const res = await fetch(`/api/search?${params}`);
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.detail || res.statusText);
+    const source = data.qid ? `test question ${data.qid}` : "your question (no answer key, so judge the results yourself)";
+    $("status").textContent = `${data.results.length} passages in ${data.took_ms} ms · ${source}`;
+    const banner = goldBanner(data);
+    $("results").replaceChildren(...(banner ? [banner] : []), ...data.results.map(renderHit));
+  } catch (e) {
+    $("status").replaceChildren(el("span", "error", `Search failed: ${e.message}`));
+  }
+}
+
+$("form").onsubmit = (e) => { e.preventDefault(); runSearch(); };
+$("q").oninput = () => { currentQid = null; };  // typing turns it into a free-form question
+$("k").onchange = () => { if ($("q").value.trim()) runSearch(); };
+$("more").onclick = loadExamples;
+loadExamples();
+</script>
+</body>
+</html>

@@ -4,7 +4,8 @@ import math
 import numpy as np
 import pytest
 
-from src.eval.evaluate import load_or_embed_chunks, vector_search
+from src.eval.evaluate import vector_search
+from src.retrieval.chunk_store import load_or_embed_chunks
 from src.eval.metrics import evaluate, mrr_at_k, ndcg_at_k, recall_at_k, to_doc_ranking
 from src.retrieval.embedder import format_passage, model_prefixes
 from src.retrieval.vector_index import NumpyIndex
