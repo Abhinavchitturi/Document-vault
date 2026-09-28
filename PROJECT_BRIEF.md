@@ -19,8 +19,9 @@ That shapes several decisions:
   email addresses (Phase 6). Each person sees their own documents plus what's shared with them (Phase 12).
 - **Documents never go into the repository.** Uploads, extracted text and indexes live under
   `data/` (git-ignored) locally, or in private storage when deployed. The GitHub repo is private.
-- **Minimum data leaves the vault.** Only the few passages needed to answer a question are
-  sent to the LLM, and a fully local LLM is supported (see *LLM choice*).
+- **Nothing leaves the computer.** Embeddings, search, OCR and the LLM all run locally
+  (see *Local models only*). After the one-time model downloads, the vault makes no
+  network requests at all.
 - **Security is a phase of its own** (Phase 11): encryption at rest, signed URLs, HTTPS.
 
 ## How we build it: 13 phases
@@ -30,7 +31,7 @@ OCR, auth, reminders and security at once is how projects stall, so one phase at
 ### Phase 1: Core RAG engine (backend only)
 **Goal:** answer questions from uploaded documents.
 - Upload PDF → extract text → chunk → embed (BGE Small v1.5) → store vectors (FAISS)
-- Retrieve top-k chunks → send them as context to the LLM → return the answer
+- Retrieve top-k chunks → send them as context to the local LLM → return the answer, citing the passages used
 
 ```text
 backend/
@@ -121,23 +122,29 @@ PostgreSQL     Qdrant         File store
                  |
           BGE Small v1.5
                  |
-                LLM
-  (Gemini, or a local Llama / Gemma / Mistral)
+          Local LLM (Ollama)
+   Llama / Gemma / Mistral, on-device
 ```
 
-## LLM choice
-The original plan listed Gemini or Qwen. Qwen is replaced with alternatives from providers
-we're comfortable sending family documents to, or with models that run entirely on our own machine.
-The `llm/` module hides the provider behind one interface, so switching is a config change.
+## Local models only
+Every model runs on the family's own computer. No document text, question or answer is
+sent to a cloud AI service. (The original plan listed Gemini or Qwen; both are replaced.)
 
-| Option | Where it runs | Notes |
+| Job | Model | Runs via |
 |---|---|---|
-| **Gemini** (Google) | Cloud API | Good quality, cheap. Check data-use terms: Google's free API tier may use submitted content to improve its products; the paid tier does not. Use a paid key for real documents. |
-| **Claude** (Anthropic) or **GPT** (OpenAI) | Cloud API | Strong answer quality. Their APIs don't train on API data by default; still, passages leave the machine. |
-| **Llama** (Meta), **Gemma** (Google), **Mistral** (France) via **Ollama** | Your own computer | Nothing leaves the machine: the most private option. Small models (7-9B) run on a 16 GB Mac; answers are a bit weaker. |
+| Embeddings | BGE Small v1.5 (BAAI) | sentence-transformers |
+| Answers | **Llama 3.1 8B** (Meta) by default; Gemma (Google) or Mistral (France) are drop-in alternatives | Ollama |
+| OCR | Tesseract | local program |
+| Reranking (Phase 5) | a small cross-encoder | sentence-transformers |
 
-Recommended: start with a **local model through Ollama** for real family documents, and keep a
-cloud option (Gemini paid tier) switchable for comparison.
+Guard rails in the code:
+- The LLM client refuses any Ollama address that isn't this machine.
+- Once the embedding model is downloaded, the Hugging Face libraries are switched to offline mode.
+- The web page loads nothing from the internet (no web fonts, no CDNs).
+
+Trade-off: an 8B model on a 16 GB Mac is slower and a little less capable than the big cloud
+models. The evaluation below measures exactly how good it is, and swapping in a larger local
+model is a single flag (`--llm-model`).
 
 ## Evaluation
 Real family documents can't be committed, so the repo ships a fictional family's papers:
@@ -149,17 +156,15 @@ The samples include look-alikes so the task isn't trivial: last year's and this 
 policy, four appliance warranties, three kinds of bill.
 
 Metrics: **Recall@k** (right document in the top k), **MRR@5** (how high it ranks), **Answer@k**
-(the answer text is in a retrieved passage), and from Phase 1's LLM step, **answer accuracy**.
+(the answer text is in a retrieved passage), and **answer accuracy** (the local LLM's written
+answer contains the expected text; strict, so it can only understate quality).
 Every retrieval change (Phase 5 hybrid, reranking) is measured against the previous score
 before it's kept. The before/after numbers are the point.
 
-## Current state (what exists before Phase 1 is finished)
-An early prototype already covers parts of several phases. It gets reorganized as the phases
-are built:
-
-| Phase | Already in the prototype | Still to do |
+## Current state
+| Phase | Done | Still to do |
 |---|---|---|
-| 1 Core RAG | Upload, PDF/Word/text parsing, page-aware chunking, BGE Small embeddings, top-k retrieval, FastAPI | Move code into the `backend/` layout, FAISS vector store, **LLM answer** |
+| 1 Core RAG | ✅ Upload, PDF/Word/text parsing, page-aware chunking, BGE Small embeddings, FAISS, top-k retrieval, local LLM answers with citations, `backend/` layout | Baseline scores on the samples |
 | 2 Metadata | Name, type, upload date, pages, file path, in a JSON file | PostgreSQL, owner |
 | 3 Web app | Single-page HTML app: upload, library by category, search | React + Next.js, login, chat |
 | 4 OCR | Tesseract for photos and scanned PDFs | PaddleOCR comparison (optional) |

@@ -1,6 +1,6 @@
 import pytest
 
-from src.ingestion.chunker import RegexTokenizer, chunk_text
+from backend.chunker.chunker import RegexTokenizer, chunk_text
 
 TOK = RegexTokenizer()
 

@@ -7,6 +7,9 @@ returns one result per document (its best-matching chunk), best first.
 - MRR@k:     1 / rank of the first relevant document in the top k, else 0.
              Rewards putting the right document first, not just somewhere near the top.
 - Answer@k:  1 if the answer string appears in the text of any top-k result, else 0.
+- Answer accuracy (with --with-llm): the written answer contains the expected answer text.
+             Strict on purpose: "5 Sept 2026" for "5 September 2026" counts as wrong,
+             so the number can only understate quality, never inflate it.
              Stricter than Recall: the right document can be found through the
              wrong chunk (e.g. its claims page instead of the page with the date),
              and then an LLM reading the chunks still can't answer.
@@ -28,6 +31,10 @@ def mrr_at_k(ranked_docs: Sequence[str], relevant: set[str], k: int) -> float:
     return 0.0
 
 
+def contains_answer(text: str, answer: str) -> float:
+    """Case- and whitespace-insensitive substring match."""
+    return float(" ".join(answer.lower().split()) in " ".join(text.lower().split()))
+
+
 def answer_at_k(ranked_texts: Sequence[str], answer: str, k: int) -> float:
-    needle = " ".join(answer.lower().split())
-    return float(any(needle in " ".join(t.lower().split()) for t in ranked_texts[:k]))
+    return float(any(contains_answer(t, answer) for t in ranked_texts[:k]))

@@ -6,8 +6,10 @@ touched), asks every question in samples/questions.jsonl, and reports how often
 search put the right document, and the chunk containing the answer, near the top.
 
 Usage:
-    python -m src.eval.evaluate                  # writes results/eval_vector.json
-    python -m src.eval.evaluate --show-misses    # also list questions that failed
+    python -m backend.eval.evaluate                  # retrieval only -> results/eval_vector.json
+    python -m backend.eval.evaluate --show-misses    # also list questions that failed
+    python -m backend.eval.evaluate --with-llm       # also answer each question with the local LLM
+                                                     # -> results/eval_vector_llm.json
 
 Question file format (one JSON object per line):
     {"question": "...", "relevant": ["file_name.pdf"], "answer": "exact text in the document"}
@@ -23,10 +25,11 @@ import shutil
 import time
 from pathlib import Path
 
-from src.eval.metrics import answer_at_k, mrr_at_k, recall_at_k
-from src.ingestion.categories import CATEGORIES
-from src.ingestion.ingest import EmbedderLike, ingest_file, iter_files
-from src.retrieval.document_store import DocumentStore
+from backend.eval.metrics import answer_at_k, contains_answer, mrr_at_k, recall_at_k
+from backend.llm.answer import answer_question
+from backend.parser.categories import CATEGORIES
+from backend.upload.ingest import EmbedderLike, ingest_file, iter_files
+from backend.vector_store.store import DocumentStore
 
 logger = logging.getLogger("eval")
 
@@ -48,8 +51,10 @@ def build_library(docs_dir: Path, index_dir: Path, embedder: EmbedderLike, token
     return store
 
 
-def evaluate(store: DocumentStore, embedder: EmbedderLike, questions: list[dict], ks=KS) -> tuple[dict, list[dict]]:
-    """Return (averaged metrics, per-question details)."""
+def evaluate(
+    store: DocumentStore, embedder: EmbedderLike, questions: list[dict], ks=KS, llm=None, context_k: int = 5
+) -> tuple[dict, list[dict]]:
+    """Return (averaged metrics, per-question details). With `llm`, also score the written answers."""
     query_embs = embedder.encode_queries([q["question"] for q in questions])
     totals = {f"{m}@{k}": 0.0 for m in ("recall", "answer") for k in ks}
     totals[f"mrr@{max(ks)}"] = 0.0
@@ -64,8 +69,15 @@ def evaluate(store: DocumentStore, embedder: EmbedderLike, questions: list[dict]
             totals[f"answer@{k}"] += answer_at_k(texts, q["answer"], k)
         totals[f"mrr@{max(ks)}"] += mrr_at_k(docs, relevant, max(ks))
         rank = next((i + 1 for i, d in enumerate(docs) if d in relevant), None)
-        details.append({"question": q["question"], "relevant": q["relevant"], "rank": rank, "top3": docs[:3],
-                        "answer_found@1": bool(answer_at_k(texts, q["answer"], 1))})
+        detail = {"question": q["question"], "relevant": q["relevant"], "rank": rank, "top3": docs[:3],
+                  "answer_found@1": bool(answer_at_k(texts, q["answer"], 1))}
+        if llm is not None:
+            context = [c for c, _ in store.search(emb, top_k=context_k, per_document=False)]
+            written = answer_question(q["question"], context, llm).text
+            correct = contains_answer(written, q["answer"])
+            totals["answer_accuracy"] = totals.get("answer_accuracy", 0.0) + correct
+            detail.update(llm_answer=written, llm_correct=bool(correct))
+        details.append(detail)
     metrics = {name: round(total / len(questions), 4) for name, total in totals.items()}
     return metrics, details
 
@@ -78,29 +90,39 @@ def main() -> None:
     parser.add_argument("--results-dir", type=Path, default=Path("results"))
     parser.add_argument("--model", default=None)
     parser.add_argument("--show-misses", action="store_true")
+    parser.add_argument("--with-llm", action="store_true", help="also answer with the local Ollama model")
+    parser.add_argument("--llm-model", default=None, help="Ollama model (default: llama3.1:8b)")
     args = parser.parse_args()
 
     logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
-    from src.ingestion.chunker import HFTokenizer
-    from src.retrieval.embedder import DEFAULT_MODEL, Embedder
+    from backend.chunker.chunker import HFTokenizer
+    from backend.embeddings.embedder import DEFAULT_MODEL, Embedder
 
+    llm = None
+    if args.with_llm:
+        from backend.llm.ollama import DEFAULT_MODEL as DEFAULT_LLM
+        from backend.llm.ollama import OllamaLLM
+
+        llm = OllamaLLM(args.llm_model or DEFAULT_LLM)
     embedder = Embedder(args.model or DEFAULT_MODEL)
     t0 = time.time()
     store = build_library(args.docs, args.index_dir, embedder, HFTokenizer(embedder.model_name))
     questions = load_questions(args.questions)
-    metrics, details = evaluate(store, embedder, questions)
+    metrics, details = evaluate(store, embedder, questions, llm=llm)
 
     result = {
         "method": "vector",
         "model": embedder.model_name,
+        "llm": llm.name if llm else None,
         "documents": len(store.documents),
         "chunks": len(store.chunks),
         "questions": len(questions),
         "metrics": metrics,
         "seconds": round(time.time() - t0, 1),
     }
+    out = args.results_dir / ("eval_vector_llm.json" if llm else "eval_vector.json")
     args.results_dir.mkdir(parents=True, exist_ok=True)
-    (args.results_dir / "eval_vector.json").write_text(json.dumps(result, indent=2) + "\n")
+    out.write_text(json.dumps(result, indent=2) + "\n")
 
     print(f"\n=== Vector search: {len(questions)} questions over {len(store.documents)} documents ===")
     for name, value in metrics.items():
@@ -110,7 +132,13 @@ def main() -> None:
     if args.show_misses:
         for d in misses:
             print(f"\n  Q: {d['question']}\n     expected {d['relevant']} -> rank {d['rank']}; top 3: {d['top3']}")
-    print(f"\nSaved {args.results_dir / 'eval_vector.json'}")
+    if llm:
+        wrong = [d for d in details if not d["llm_correct"]]
+        print(f"\n{len(wrong)} written answers missing the expected text.")
+        if args.show_misses:
+            for d in wrong:
+                print(f"\n  Q: {d['question']}\n     answer: {d['llm_answer']}")
+    print(f"\nSaved {out}")
 
 
 if __name__ == "__main__":

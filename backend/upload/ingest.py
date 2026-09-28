@@ -3,8 +3,8 @@
 Used by the web app's upload button, and from the command line for importing a
 whole folder at once:
 
-    python -m src.ingestion.ingest ~/Documents/family-docs
-    python -m src.ingestion.ingest bike_policy.pdf --category insurance
+    python -m backend.upload.ingest ~/Documents/family-docs
+    python -m backend.upload.ingest bike_policy.pdf --category insurance
 
 When importing a folder with --category auto (the default), a file inside a
 folder named after a category (insurance/, warranty/, bill/, property/) gets
@@ -24,11 +24,11 @@ from typing import Protocol
 
 import numpy as np
 
-from src.ingestion.categories import CATEGORIES, guess_category
-from src.ingestion.chunker import SpanTokenizer, chunk_text
-from src.ingestion.extract import SUPPORTED_SUFFIXES, extract_pages
-from src.retrieval.document_store import DocumentStore
-from src.retrieval.embedder import format_passage
+from backend.parser.categories import CATEGORIES, guess_category
+from backend.chunker.chunker import SpanTokenizer, chunk_text
+from backend.parser.extract import SUPPORTED_SUFFIXES, extract_pages
+from backend.vector_store.store import DocumentStore
+from backend.embeddings.embedder import format_passage
 
 logger = logging.getLogger(__name__)
 
@@ -150,8 +150,8 @@ def main() -> None:
     args = parser.parse_args()
 
     logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
-    from src.ingestion.chunker import HFTokenizer
-    from src.retrieval.embedder import DEFAULT_MODEL, Embedder
+    from backend.chunker.chunker import HFTokenizer
+    from backend.embeddings.embedder import DEFAULT_MODEL, Embedder
 
     embedder = Embedder(args.model or DEFAULT_MODEL)
     tokenizer = HFTokenizer(embedder.model_name)
