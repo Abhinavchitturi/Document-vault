@@ -7,7 +7,7 @@ See [PROJECT_BRIEF.md](./PROJECT_BRIEF.md) for the full design, dataset choice, 
 and build order.
 
 ## Status
-🚧 In progress — step 1 (ingestion + chunking).
+🚧 In progress: step 1 (ingestion + chunking) done; step 2 (vector-only baseline) in progress.
 
 ## Quickstart
 ```bash
@@ -18,6 +18,10 @@ pip install -r requirements.txt
 # distractors), chunk into 400-token windows with 80-token overlap, print samples
 python -m src.ingestion.run --show-samples 5
 # -> data/processed/nq/chunks.jsonl, data/processed/nq/chunk_stats.json
+
+# Step 2: embed chunks with bge-small, search with every test question, score against qrels
+python -m src.eval.evaluate --show-examples 5
+# -> results/step2_vector.json (first run also caches embeddings in data/processed/nq/embeddings/)
 
 pytest -q
 ```
