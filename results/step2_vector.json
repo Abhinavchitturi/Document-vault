@@ -1,0 +1,19 @@
+{
+  "step": 2,
+  "method": "vector",
+  "model": "BAAI/bge-small-en-v1.5",
+  "embed_title": true,
+  "dataset": "nq",
+  "split": "test",
+  "num_queries": 3452,
+  "num_chunks": 100223,
+  "num_docs": 99977,
+  "metrics": {
+    "recall@1": 0.6787,
+    "recall@10": 0.9495,
+    "recall@100": 0.9888,
+    "mrr@10": 0.8361,
+    "ndcg@10": 0.8569
+  },
+  "query_encode_and_search_secs": 5.7
+}
