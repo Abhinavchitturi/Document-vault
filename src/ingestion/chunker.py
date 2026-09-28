@@ -5,17 +5,20 @@ BAAI/bge-small-en-v1.5), because that is the budget that actually matters: bge
 truncates at 512 tokens including [CLS]/[SEP], so chunk_size must stay <= 510.
 
 Tokenizers here return character spans rather than token strings, so each chunk's
-text is an exact slice of the original document (original casing/whitespace kept,
+text is an exact slice of the original page text (original casing/whitespace kept,
 no lossy detokenization).
+
+Defaults are smaller than typical (300 tokens, 60 overlap) because questions
+about family documents target specific facts: an expiry date, a policy number,
+a due amount. Smaller chunks keep the matching fact from being diluted by the
+rest of a long policy page.
 """
 
 from __future__ import annotations
 
 import re
-from dataclasses import asdict, dataclass
-from typing import Iterable, Iterator, Protocol
-
-from src.ingestion.loader import Document
+from dataclasses import dataclass
+from typing import Protocol
 
 DEFAULT_TOKENIZER = "BAAI/bge-small-en-v1.5"
 MODEL_MAX_TOKENS = 510  # 512 minus [CLS] and [SEP]
@@ -61,43 +64,29 @@ class RegexTokenizer:
 
 
 @dataclass
-class Chunk:
-    chunk_id: str  # f"{doc_id}#{chunk_index}"
-    doc_id: str
-    source: str  # dataset the doc came from, e.g. "beir/nq"
-    title: str
-    text: str
-    chunk_index: int  # position of this chunk within its document
-    num_chunks: int  # total chunks produced from the document
-    start_char: int  # span of `text` within the original document text
+class Span:
+    start_char: int
     end_char: int
     n_tokens: int
 
-    def to_dict(self) -> dict:
-        return asdict(self)
 
-
-def chunk_document(
-    doc: Document,
-    tokenizer: SpanTokenizer,
-    source: str,
-    chunk_size: int = 400,
-    overlap: int = 80,
-) -> list[Chunk]:
-    """Split one document into overlapping windows of up to `chunk_size` tokens.
+def chunk_text(text: str, tokenizer: SpanTokenizer, chunk_size: int = 300, overlap: int = 60) -> list[Span]:
+    """Split text into overlapping windows of up to `chunk_size` tokens.
 
     Consecutive chunks share about `overlap` tokens. Window boundaries are moved
-    back to the nearest whitespace so no chunk starts or ends mid-word. A
-    document at or under `chunk_size` tokens becomes a single chunk. If the
-    final window would be a short tail (< overlap new tokens), it is folded into
-    the previous window instead of emitted as a near-duplicate fragment.
+    back to the nearest whitespace so no chunk starts or ends mid-word. Text at
+    or under `chunk_size` tokens becomes a single chunk. If the final window
+    would be a short tail (< overlap new tokens), it is folded into the previous
+    window instead of emitted as a near-duplicate fragment.
+
+    Returns character spans; `text[span.start_char:span.end_char]` is the chunk.
     """
     if not 0 <= overlap < chunk_size:
         raise ValueError("need 0 <= overlap < chunk_size")
     if chunk_size > MODEL_MAX_TOKENS:
         raise ValueError(f"chunk_size {chunk_size} exceeds embedding model limit {MODEL_MAX_TOKENS}")
 
-    spans = tokenizer.spans(doc.text)
+    spans = tokenizer.spans(text)
     if not spans:
         return []
 
@@ -136,33 +125,4 @@ def chunk_document(
         last_end = windows.pop()[1]
         windows[-1] = (windows[-1][0], last_end)
 
-    chunks = []
-    for i, (tok_start, tok_end) in enumerate(windows):
-        start_char = spans[tok_start][0]
-        end_char = spans[tok_end - 1][1]
-        chunks.append(
-            Chunk(
-                chunk_id=f"{doc.doc_id}#{i}",
-                doc_id=doc.doc_id,
-                source=source,
-                title=doc.title,
-                text=doc.text[start_char:end_char],
-                chunk_index=i,
-                num_chunks=len(windows),
-                start_char=start_char,
-                end_char=end_char,
-                n_tokens=tok_end - tok_start,
-            )
-        )
-    return chunks
-
-
-def chunk_documents(
-    docs: Iterable[Document],
-    tokenizer: SpanTokenizer,
-    source: str,
-    chunk_size: int = 400,
-    overlap: int = 80,
-) -> Iterator[Chunk]:
-    for doc in docs:
-        yield from chunk_document(doc, tokenizer, source, chunk_size, overlap)
+    return [Span(spans[a][0], spans[b - 1][1], b - a) for a, b in windows]
