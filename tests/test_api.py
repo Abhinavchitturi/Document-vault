@@ -1,55 +1,62 @@
-import numpy as np
 import pytest
 from fastapi.testclient import TestClient
 
 from src.api.app import create_app
-from src.retrieval.searcher import VectorSearcher
-from tests.test_retrieval import FakeEmbedder
-
-CHUNKS = [
-    {"doc_id": "d1", "chunk_id": "d1#0", "title": "Eiffel Tower", "text": "wrought iron tower in paris designed by eiffel"},
-    {"doc_id": "d2", "chunk_id": "d2#0", "title": "Photosynthesis", "text": "plants convert light energy into chemical energy"},
-    {"doc_id": "d2", "chunk_id": "d2#1", "title": "Photosynthesis", "text": "chlorophyll in plants absorbs light"},
-    {"doc_id": "d3", "chunk_id": "d3#0", "title": "Great Wall", "text": "ancient wall across northern china"},
-]
-QUERIES = {"test0": "how do plants convert light into energy", "test1": "who built the great wall of china"}
-QRELS = {"test0": {"d2": 1}, "test1": {"d3": 1}}
+from src.ingestion.chunker import RegexTokenizer
+from src.retrieval.document_store import DocumentStore
+from tests.fakes import FakeEmbedder
+from tests.pdf_helper import make_pdf
 
 
 @pytest.fixture
-def client():
-    emb = FakeEmbedder()
-    searcher = VectorSearcher(CHUNKS, emb.encode_passages([c["title"] + " " + c["text"] for c in CHUNKS]), emb)
-    return TestClient(create_app(searcher, QUERIES, QRELS))
+def client(tmp_path):
+    return TestClient(create_app(DocumentStore(tmp_path / "index"), FakeEmbedder(), RegexTokenizer()))
 
 
-def test_page_is_served(client):
-    res = client.get("/")
-    assert res.status_code == 200 and "RAG Search" in res.text
+def upload(client, name, content, category="auto"):
+    return client.post("/api/documents", files=[("files", (name, content))], data={"category": category}).json()
 
 
-def test_free_text_search_returns_one_hit_per_doc(client):
-    data = client.get("/api/search", params={"q": "plants light energy", "k": 3}).json()
-    assert data["results"][0]["doc_id"] == "d2"
-    assert [r["rank"] for r in data["results"]] == [1, 2, 3]
-    assert len({r["doc_id"] for r in data["results"]}) == 3  # d2's two chunks merged
-    assert data["gold"] == [] and not any(r["is_gold"] for r in data["results"])
+def test_page_and_empty_library(client):
+    assert "Family Documents" in client.get("/").text
+    info = client.get("/api/info").json()
+    assert info["num_documents"] == 0 and set(info["categories"]) == {"insurance", "warranty", "bill", "property", "other"}
+    assert client.get("/api/search", params={"q": "anything"}).json()["results"] == []
 
 
-def test_test_question_reports_gold_rank(client):
-    data = client.get("/api/search", params={"qid": "test0", "k": 1}).json()
-    assert data["question"] == QUERIES["test0"]
-    assert data["gold"] == [{"doc_id": "d2", "rank": 1}]
-    assert len(data["results"]) == 1 and data["results"][0]["is_gold"]
+def test_upload_search_open_delete(client):
+    [res] = upload(client, "bike_policy.pdf", make_pdf(["Two-wheeler policy", "Policy expires on 14 March 2027"]))
+    assert res["status"] == "added"
+    doc = res["document"]
+    assert doc["category"] == "insurance" and doc["pages"] == 2 and "sha256" not in doc
+
+    upload(client, "fridge.md", b"Refrigerator warranty. Compressor covered for 10 years.", category="warranty")
+    assert len(client.get("/api/documents").json()) == 2
+
+    # The fake embedder matches exact words only, hence "expires".
+    hit = client.get("/api/search", params={"q": "when the policy expires"}).json()["results"][0]
+    assert (hit["filename"], hit["page"], hit["category"]) == ("bike_policy.pdf", 2, "insurance")
+    only_warranty = client.get("/api/search", params={"q": "policy expire", "category": "warranty"}).json()
+    assert [r["filename"] for r in only_warranty["results"]] == ["fridge.md"]
+
+    file_res = client.get(f"/api/documents/{doc['doc_id']}/file")
+    assert file_res.status_code == 200 and file_res.content.startswith(b"%PDF")
+    assert client.delete(f"/api/documents/{doc['doc_id']}").json() == {"deleted": doc["doc_id"]}
+    assert client.get(f"/api/documents/{doc['doc_id']}/file").status_code == 404
+    assert client.get("/api/info").json()["num_documents"] == 1
 
 
-def test_examples_and_errors(client):
-    examples = client.get("/api/examples", params={"n": 5}).json()
-    assert {e["qid"] for e in examples} == {"test0", "test1"}
-    assert client.get("/api/search").status_code == 400
-    assert client.get("/api/search", params={"qid": "nope"}).status_code == 404
+def test_duplicate_bad_type_and_bad_category(client):
+    upload(client, "a.txt", b"Water bill due 15 July")
+    assert upload(client, "copy_of_a.txt", b"Water bill due 15 July")[0]["status"] == "duplicate"
+    bad = upload(client, "sheet.xlsx", b"x")[0]
+    assert bad["status"] == "error" and "Unsupported" in bad["error"]
+    assert upload(client, "empty.txt", b"   ")[0]["status"] == "error"
+    res = client.post("/api/documents", files=[("files", ("x.txt", b"hi"))], data={"category": "cars"})
+    assert res.status_code == 400
 
 
-def test_searcher_rejects_mismatched_embeddings():
-    with pytest.raises(ValueError):
-        VectorSearcher(CHUNKS, np.zeros((2, 64), dtype=np.float32), FakeEmbedder())
+def test_uploaded_filename_cannot_escape_the_library(client, tmp_path):
+    [res] = upload(client, "../../evil.txt", b"Warranty card for the mixer grinder")
+    assert res["document"]["filename"] == "evil.txt"
+    assert not (tmp_path / "evil.txt").exists()

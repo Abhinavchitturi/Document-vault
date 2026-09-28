@@ -1,25 +1,21 @@
-# Core
+# Web app
 fastapi
 uvicorn[standard]
-pydantic
+python-multipart  # file uploads
 
-# Embeddings + reranking
+# Embeddings (and later, reranking)
 sentence-transformers
 transformers
 torch
-
-# Retrieval
-rank_bm25
-qdrant-client
-
-# Eval / data
-beir
 numpy
-pandas
-ftfy
-tqdm
+
+# Reading documents
+pypdfium2      # PDF text + rendering scanned pages for OCR
+python-docx    # Word files
+pytesseract    # OCR for photos/scans; also needs the Tesseract program: brew install tesseract
+pillow
+ftfy           # repairs mis-encoded characters in extracted text
 
 # Dev
 pytest
 httpx  # FastAPI TestClient
-python-dotenv

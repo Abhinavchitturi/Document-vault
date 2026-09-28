@@ -28,9 +28,8 @@ def model_prefixes(model_name: str) -> tuple[str, str]:
 
 
 def format_passage(title: str, text: str, with_title: bool = True) -> str:
-    """Text we embed for a chunk. Titles carry the entity name, which many NQ
-    passages never repeat in their body (e.g. a "Lee Baldwin" passage that only
-    says "Lee")."""
+    """Text we embed for a chunk: its title (document name and category), then the
+    text. Page two of a policy rarely repeats what the policy is for."""
     return f"{title} {text}" if with_title and title else text
 
 

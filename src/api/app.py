@@ -1,75 +1,154 @@
-"""Search API + a small web page for trying retrieval by hand.
+"""Family Documents Assistant: web API and page.
 
 Endpoints:
-    GET /                     the search page
-    GET /api/search?q=...     top-k passages for a query
-    GET /api/search?qid=...   same, for a BEIR test question, plus where its gold passage ranked
-    GET /api/examples?n=8     random test questions to try
+    GET    /                              the web page
+    GET    /api/info                      library size, categories, whether OCR is available
+    GET    /api/documents                 all documents in the library
+    POST   /api/documents                 upload one or more files (form fields: files, category)
+    GET    /api/documents/{id}/file       open the original file
+    DELETE /api/documents/{id}            remove a document and its search data
+    GET    /api/search?q=...&category=... best-matching passage per document
 
-Usage (after steps 1 and 2 have been run, so the embedding cache exists):
-    python -m src.api.app          # then open http://127.0.0.1:8000
+Usage:
+    python -m src.api.app                 # then open http://127.0.0.1:8000
+
+The server listens on 127.0.0.1 only: the library holds personal documents and
+there is no login, so it must not be exposed to a network.
 """
 
 from __future__ import annotations
 
 import argparse
 import logging
-import random
-from dataclasses import asdict
+import tempfile
+import time
+from collections import Counter
 from pathlib import Path
 
-from fastapi import FastAPI, HTTPException, Query
+from fastapi import FastAPI, File, Form, HTTPException, Query, UploadFile
 from fastapi.responses import FileResponse
 
-from src.retrieval.searcher import VectorSearcher
+from src.ingestion.categories import CATEGORIES
+from src.ingestion.extract import SUPPORTED_SUFFIXES, OcrUnavailableError, UnsupportedFileError, ocr_available
+from src.ingestion.ingest import EmbedderLike, EmptyDocumentError, ingest_file
+from src.retrieval.document_store import DocumentStore
 
 STATIC_DIR = Path(__file__).parent / "static"
-GOLD_SEARCH_DEPTH = 100  # how far down we look for a test question's gold passage
+MAX_UPLOAD_BYTES = 50 * 1024 * 1024
 
 logger = logging.getLogger("api")
 
 
-def create_app(searcher: VectorSearcher, queries: dict[str, str], qrels: dict[str, dict[str, int]]) -> FastAPI:
-    """Build the app around an already-loaded searcher (tests pass a fake one)."""
-    app = FastAPI(title="RAG hybrid search")
-    test_qids = [q for q in qrels if q in queries]
+def _public(doc: dict) -> dict:
+    """Document record as sent to the browser (no internal storage details)."""
+    return {k: v for k, v in doc.items() if k not in ("sha256", "stored_as")}
+
+
+def create_app(store: DocumentStore, embedder: EmbedderLike, tokenizer) -> FastAPI:
+    app = FastAPI(title="Family Documents Assistant")
 
     @app.get("/", include_in_schema=False)
     def index() -> FileResponse:
         return FileResponse(STATIC_DIR / "index.html")
 
-    @app.get("/api/examples")
-    def examples(n: int = Query(8, ge=1, le=50)) -> list[dict]:
-        return [{"qid": q, "question": queries[q]} for q in random.sample(test_qids, min(n, len(test_qids)))]
+    @app.get("/api/info")
+    def info() -> dict:
+        counts = Counter(d["category"] for d in store.documents.values())
+        return {
+            "model": embedder.model_name,
+            "num_documents": len(store.documents),
+            "num_chunks": len(store.chunks),
+            "categories": {c: counts.get(c, 0) for c in CATEGORIES},
+            "ocr_available": ocr_available(),
+            "supported_types": sorted(SUPPORTED_SUFFIXES),
+            "max_upload_mb": MAX_UPLOAD_BYTES // (1024 * 1024),
+        }
+
+    @app.get("/api/documents")
+    def list_documents() -> list[dict]:
+        return [_public(d) for d in store.list_documents()]
+
+    @app.post("/api/documents")
+    def upload(files: list[UploadFile] = File(...), category: str = Form("auto")) -> list[dict]:
+        if category != "auto" and category not in CATEGORIES:
+            raise HTTPException(400, f"category must be 'auto' or one of {CATEGORIES}")
+        results = []
+        for upload_file in files:
+            name = Path(upload_file.filename or "document").name
+            suffix = Path(name).suffix.lower()
+            if suffix not in SUPPORTED_SUFFIXES:
+                results.append({"filename": name, "status": "error",
+                                "error": f"Unsupported file type. Supported: {', '.join(sorted(SUPPORTED_SUFFIXES))}"})
+                continue
+            with tempfile.TemporaryDirectory() as tmp:
+                # Keep the extension: extraction picks its parser from it.
+                tmp_path = Path(tmp) / f"upload{suffix}"
+                size = 0
+                with open(tmp_path, "wb") as out:
+                    while block := upload_file.file.read(1 << 20):
+                        size += len(block)
+                        if size > MAX_UPLOAD_BYTES:
+                            break
+                        out.write(block)
+                if size > MAX_UPLOAD_BYTES:
+                    results.append({"filename": name, "status": "error",
+                                    "error": f"File is larger than {MAX_UPLOAD_BYTES // (1024 * 1024)} MB"})
+                    continue
+                try:
+                    result = ingest_file(tmp_path, store, embedder, tokenizer, category, filename=name)
+                except (UnsupportedFileError, OcrUnavailableError, EmptyDocumentError, ValueError) as e:
+                    results.append({"filename": name, "status": "error", "error": str(e)})
+                    continue
+                except Exception:  # a corrupt file shouldn't take the server down
+                    logger.exception("Failed to ingest %s", name)
+                    results.append({"filename": name, "status": "error", "error": "Could not read this file."})
+                    continue
+            results.append({"filename": name, "status": "added" if result.created else "duplicate",
+                            "document": _public(result.document)})
+        return results
+
+    @app.get("/api/documents/{doc_id}/file")
+    def open_file(doc_id: str) -> FileResponse:
+        doc = store.get(doc_id)
+        path = store.file_path(doc_id)
+        if not doc or not path or not path.exists():
+            raise HTTPException(404, "document not found")
+        return FileResponse(path, filename=doc["filename"], content_disposition_type="inline")
+
+    @app.delete("/api/documents/{doc_id}")
+    def delete(doc_id: str) -> dict:
+        if not store.delete(doc_id):
+            raise HTTPException(404, "document not found")
+        return {"deleted": doc_id}
 
     @app.get("/api/search")
     def search(
-        q: str | None = Query(None, max_length=500),
-        qid: str | None = None,
-        k: int = Query(10, ge=1, le=50),
+        q: str = Query(..., min_length=1, max_length=500),
+        k: int = Query(5, ge=1, le=20),
+        category: str | None = None,
     ) -> dict:
-        if qid is not None:
-            if qid not in queries:
-                raise HTTPException(404, f"unknown question id {qid}")
-            q = queries[qid]
-        if not q or not q.strip():
-            raise HTTPException(400, "pass a question as ?q=... or ?qid=...")
-
-        gold_ids = {d for d, s in qrels.get(qid, {}).items() if s > 0} if qid else set()
-        # For test questions, search deeper so we can report the gold rank even when it's below k.
-        hits, took_ms = searcher.search(q, top_k=max(k, GOLD_SEARCH_DEPTH) if gold_ids else k)
-        gold = [
-            {"doc_id": g, "rank": next((h.rank for h in hits if h.doc_id == g), None)}
-            for g in sorted(gold_ids)
-        ]
+        if category and category not in CATEGORIES:
+            raise HTTPException(400, f"category must be one of {CATEGORIES}")
+        t0 = time.perf_counter()
+        hits = store.search(embedder.encode_queries([q])[0], top_k=k, category=category or None)
+        took_ms = (time.perf_counter() - t0) * 1000
         return {
             "question": q,
-            "qid": qid,
+            "category": category,
             "method": "vector",
             "took_ms": round(took_ms, 1),
-            "gold": gold,  # empty for free-typed questions
-            "gold_search_depth": GOLD_SEARCH_DEPTH,
-            "results": [asdict(h) | {"is_gold": h.doc_id in gold_ids} for h in hits[:k]],
+            "results": [
+                {
+                    "rank": i + 1,
+                    "score": round(score, 4),
+                    "doc_id": chunk["doc_id"],
+                    "filename": chunk["filename"],
+                    "category": chunk["category"],
+                    "page": chunk["page"],
+                    "text": chunk["text"],
+                }
+                for i, (chunk, score) in enumerate(hits)
+            ],
         }
 
     return app
@@ -77,36 +156,30 @@ def create_app(searcher: VectorSearcher, queries: dict[str, str], qrels: dict[st
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument("--dataset", default="nq")
-    parser.add_argument("--raw-dir", default="data/raw")
-    parser.add_argument("--processed-dir", default="data/processed")
-    parser.add_argument("--split", default="test")
-    parser.add_argument("--model", default=None, help="defaults to the step 2 model")
-    parser.add_argument("--device", default=None)
-    parser.add_argument("--no-title", action="store_true")
-    parser.add_argument("--host", default="127.0.0.1")
+    parser.add_argument("--index-dir", default="data/index")
+    parser.add_argument("--model", default=None, help="embedding model (default: bge-small-en-v1.5)")
+    parser.add_argument("--device", default=None, help="cuda / mps / cpu; default picks automatically")
     parser.add_argument("--port", type=int, default=8000)
     args = parser.parse_args()
 
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
     import uvicorn
 
-    from src.ingestion.loader import load_qrels, load_queries
-    from src.retrieval.chunk_store import load_chunks, load_or_embed_chunks
+    from src.ingestion.chunker import HFTokenizer
+    from src.ingestion.ingest import passage_texts
     from src.retrieval.embedder import DEFAULT_MODEL, Embedder
 
-    data_dir = Path(args.processed_dir) / args.dataset
-    chunks_path = data_dir / "chunks.jsonl"
-    if not chunks_path.exists():
-        raise SystemExit(f"{chunks_path} not found: run step 1 first (python -m src.ingestion.run)")
-    chunks = load_chunks(chunks_path)
     embedder = Embedder(args.model or DEFAULT_MODEL, device=args.device)
-    embeddings = load_or_embed_chunks(chunks, chunks_path, embedder, data_dir / "embeddings", not args.no_title)
-    raw_dir = Path(args.raw_dir) / args.dataset
-    app = create_app(VectorSearcher(chunks, embeddings, embedder), load_queries(raw_dir), load_qrels(raw_dir, args.split))
+    store = DocumentStore(args.index_dir)
+    if store.model and store.model != embedder.model_name:
+        logger.info("Library was embedded with %s; re-embedding with %s", store.model, embedder.model_name)
+        store.reembed(lambda chunks: embedder.encode_passages(passage_texts(chunks)), embedder.model_name)
+    if not ocr_available():
+        logger.warning("Tesseract not found: photos and scanned PDFs can't be read. macOS: brew install tesseract")
 
-    logger.info("Open http://%s:%d", args.host, args.port)
-    uvicorn.run(app, host=args.host, port=args.port)
+    app = create_app(store, embedder, HFTokenizer(embedder.model_name))
+    logger.info("Library: %d documents. Open http://127.0.0.1:%d", len(store.documents), args.port)
+    uvicorn.run(app, host="127.0.0.1", port=args.port)
 
 
 if __name__ == "__main__":

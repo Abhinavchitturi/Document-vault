@@ -1,44 +1,83 @@
-# RAG Pipeline with Hybrid Search
+# Family Documents Assistant
 
-A production-style Retrieval-Augmented Generation system combining **vector search + BM25
-keyword search + cross-encoder reranking**, evaluated on BEIR's Natural Questions subset.
+Ask questions about your family's paperwork (insurance policies, warranty cards, bills,
+property documents) and get the passage and page that answers it. Everything stays on your
+computer.
 
-See [PROJECT_BRIEF.md](./PROJECT_BRIEF.md) for the full design, dataset choice, tech stack,
-and build order.
+> "When does my bike insurance expire?" → **bike_insurance_2026.pdf, page 1**: *"From 15 March 2026 to midnight of 14 March 2027"*
+
+Under the hood it's a retrieval-augmented generation (RAG) pipeline, built step by step with a
+measured score at each stage. See [PROJECT_BRIEF.md](./PROJECT_BRIEF.md) for requirements,
+architecture and build order.
 
 ## Status
-🚧 In progress: step 1 (ingestion + chunking) done; step 2 (vector-only baseline) done on the 100k subset.
+🚧 Steps 1–2 done: document ingestion (PDF, Word, text, photos with OCR) and vector search
+with a web app. Next: hybrid BM25 + vector search.
 
-## Quickstart
+## Setup
 ```bash
 python -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
-
-# Step 1: download BEIR NQ, take a 100k-passage subset (all gold passages + random
-# distractors), chunk into 400-token windows with 80-token overlap, print samples
-python -m src.ingestion.run --show-samples 5
-# -> data/processed/nq/chunks.jsonl, data/processed/nq/chunk_stats.json
-
-# Step 2: embed chunks with bge-small, search with every test question, score against qrels
-python -m src.eval.evaluate --show-examples 5
-# -> results/step2_vector.json (first run also caches embeddings in data/processed/nq/embeddings/)
-
-# Try it in the browser: search box + real NQ test questions with the correct passage highlighted
-python -m src.api.app
-# -> open http://127.0.0.1:8000  (needs the step 2 embedding cache; startup takes ~30s)
-
-pytest -q
+brew install tesseract   # optional: needed only for photos and scanned PDFs
 ```
 
-## Eval results
-_(filled in as each retrieval stage is built — see PROJECT_BRIEF.md build order)_
+## Use it
+```bash
+python -m src.api.app
+# open http://127.0.0.1:8000, then drag your documents into "Your documents"
+```
 
-BEIR NQ test set (3,452 questions), searched over a 100k-passage subset: every gold passage
-plus ~96k random distractors. The subset is much easier than the full 2.68M-passage corpus, so
-these numbers are **not** comparable to published BEIR results; compare rows with each other.
+Or import a whole folder from the command line. Files in subfolders named `insurance/`,
+`warranty/`, `bill/` or `property/` get that category; others are auto-detected:
+```bash
+python -m src.ingestion.ingest ~/Documents/family-papers
+```
 
-| Stage | Recall@1 | Recall@10 | Recall@100 | MRR@10 | nDCG@10 |
+To try it without your own documents, import the fictional samples:
+```bash
+python -m src.ingestion.ingest samples/documents
+```
+
+Your library lives in `data/index/` (git-ignored). Deleting that folder resets it.
+
+## How it works
+```
+upload ─> text per page (OCR if scanned) ─> 300-token chunks ─> bge-small embeddings ─> data/index/
+question ─> embed ─> cosine search (optionally within one category) ─> best passage per document
+```
+
+| Module | Role |
+|---|---|
+| `src/ingestion/extract.py` | Text from PDF / Word / text / images, one entry per page; OCR for scans |
+| `src/ingestion/categories.py` | Categories and keyword-based auto-detection |
+| `src/ingestion/chunker.py` | Token-window chunking that never cuts mid-word |
+| `src/ingestion/ingest.py` | File → chunks → embeddings → library; folder import CLI |
+| `src/retrieval/embedder.py` | bge-small query/passage embeddings |
+| `src/retrieval/document_store.py` | The library on disk: documents, chunks, vectors, original files; search |
+| `src/api/app.py`, `src/api/static/index.html` | Web API and page |
+| `src/eval/` | Scoring on the sample question set |
+
+## Evaluation
+`samples/` holds 13 fictional documents and 24 questions with known answers, including
+look-alikes (two years of bike policy, four appliance warranties, three bills).
+```bash
+python -m src.eval.evaluate --show-misses
+```
+Builds a throwaway library from the samples (your real library isn't touched) and writes
+`results/eval_vector.json`.
+
+| Stage | Recall@1 | Recall@3 | MRR@5 | Answer@1 | Answer@3 |
 |---|---|---|---|---|---|
-| Vector-only (bge-small-en-v1.5) | 0.679 | 0.950 | 0.989 | 0.836 | 0.857 |
+| Vector (bge-small-en-v1.5) | — | — | — | — | — |
 | Hybrid (vector + BM25, RRF) | — | — | — | — | — |
 | Hybrid + reranked | — | — | — | — | — |
+
+- **Recall@k**: correct document in the top k results
+- **MRR@5**: how high the correct document ranks (1 = always first)
+- **Answer@k**: the exact answer text is inside one of the top-k passages
+
+## Tests
+```bash
+pytest -q
+```
+Tests use a fake embedder, so they run in about a second without downloading models.
