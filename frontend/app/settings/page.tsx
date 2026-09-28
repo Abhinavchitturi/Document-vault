@@ -7,6 +7,12 @@ import { useTheme, type Theme } from "@/components/ThemeToggle";
 import { api, type Settings } from "@/lib/api";
 import { startSession } from "@/lib/session";
 
+const SEARCH_LABEL: Record<string, string> = {
+  hybrid: "Hybrid: meaning + exact words and numbers",
+  vector: "Meaning only (vector)",
+  keyword: "Exact words only (keyword)",
+};
+
 function SettingsView() {
   const { refresh } = useVault();
   const [theme, setTheme] = useTheme();
@@ -119,6 +125,7 @@ function SettingsView() {
           {s ? (
             <dl className="kv">
               <dt>Owner</dt><dd style={{ textTransform: "capitalize" }}>{s.owner}</dd>
+              <dt>Search</dt><dd>{SEARCH_LABEL[s.search_method] ?? s.search_method}</dd>
               <dt>Search model</dt><dd>{s.embedding_model}</dd>
               <dt>Document records</dt><dd><code>{s.database}</code></dd>
               <dt>Files and vectors</dt><dd><code>{s.index_dir}</code></dd>

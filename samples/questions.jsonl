@@ -22,3 +22,11 @@
 {"question": "Washing machine customer care number", "relevant": ["washing_machine_warranty.md"], "answer": "1800-120-8866"}
 {"question": "Where is the original sale deed kept?", "relevant": ["flat_sale_deed_summary.md"], "answer": "bank locker"}
 {"question": "What is the AC compressor warranty period?", "relevant": ["air_conditioner_warranty.md"], "answer": "5 years"}
+{"question": "Which appliance has serial number FL340D-2310-44721?", "relevant": ["refrigerator_warranty.md"], "answer": "FL340D-2310-44721"}
+{"question": "What is receipt PT/2026/BNR/0098213 for?", "relevant": ["property_tax_receipt_2026.md"], "answer": "PT/2026/BNR/0098213"}
+{"question": "Find policy NHI/FF/2026/5521847", "relevant": ["health_insurance_family_floater.md"], "answer": "NHI/FF/2026/5521847"}
+{"question": "Which bill is for account SKF-PUN-2231094?", "relevant": ["internet_bill_2026_08.md"], "answer": "SKF-PUN-2231094"}
+{"question": "Extended warranty certificate LCP-778120-24", "relevant": ["television_warranty.md"], "answer": "LCP-778120-24"}
+{"question": "Which document has connection ID PMW-B-0448120?", "relevant": ["water_bill_2026_q2.md"], "answer": "PMW-B-0448120"}
+{"question": "Whose claims helpline is 1800-266-7010?", "relevant": ["car_insurance_2025.md"], "answer": "1800-266-7010"}
+{"question": "Find the document for property ID 42/19/1180/402", "relevant": ["property_tax_receipt_2026.md"], "answer": "42/19/1180/402"}
