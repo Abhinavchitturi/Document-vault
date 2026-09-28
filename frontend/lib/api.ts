@@ -36,6 +36,7 @@ export interface VaultDocument {
   owner: string;
   pages: number;
   ocr_pages: number;
+  ocr_confidence: number | null; // worst OCR page, 0-100; null when nothing was OCR'd
   num_chunks: number;
   size_bytes: number;
   added_at: string;
@@ -71,7 +72,7 @@ export interface Settings {
 }
 
 export interface Highlights {
-  kind: "pdf" | "text" | "image";
+  kind: "pdf" | "scan" | "text" | "image"; // scan: OCR'd page with word boxes; image: can't be read here
   page: number;
   pages: number;
   width: number;
@@ -83,7 +84,12 @@ export interface Highlights {
   passage_found: boolean;
   scanned: boolean;
   text: string | null;
+  confidence: number | null;
 }
+
+/** Below this OCR confidence, a scan is flagged as hard to read (backend/parser/ocr.py). */
+export const LOW_CONFIDENCE = 70;
+export const hardToRead = (confidence: number | null | undefined) => confidence != null && confidence < LOW_CONFIDENCE;
 
 export interface ChatTurn {
   role: "user" | "assistant";

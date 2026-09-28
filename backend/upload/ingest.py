@@ -28,6 +28,7 @@ import numpy as np
 from backend.parser.categories import CATEGORIES, guess_category
 from backend.chunker.chunker import SpanTokenizer, chunk_text
 from backend.parser.extract import SUPPORTED_SUFFIXES, extract_pages
+from backend.parser.ocr import save_ocr
 from backend.vector_store.store import DocumentStore
 from backend.embeddings.embedder import format_passage
 
@@ -93,6 +94,10 @@ def ingest_file(
     pages = extract_pages(path)
     full_text = "\n".join(p.text for p in pages)
     if not full_text.strip():
+        if any(p.ocr for p in pages):
+            raise EmptyDocumentError(
+                f"No readable text found in {filename}. If it's a photo, retake it flat, in good light and in focus."
+            )
         raise EmptyDocumentError(f"No text found in {filename}")
     if category == "auto":
         category = guess_category(filename, full_text)
@@ -115,12 +120,17 @@ def ingest_file(
 
     stored_as = f"{doc_id}{suffix}"
     shutil.copyfile(path, store.files_dir / stored_as)
+    scanned = {p.number: p.ocr_data for p in pages if p.ocr_data is not None}
+    if scanned:  # word positions, so answers can be highlighted on the scan later
+        save_ocr(store.files_dir / stored_as, scanned)
+    confidences = [d.confidence for d in scanned.values() if d.confidence is not None]
     document = {
         "doc_id": doc_id,
         "filename": filename,
         "category": category,
         "pages": len(pages),
         "ocr_pages": sum(p.ocr for p in pages),
+        "ocr_confidence": min(confidences) if confidences else None,  # the hardest page to read
         "num_chunks": len(chunks),
         "size_bytes": path.stat().st_size,
         "sha256": sha256,

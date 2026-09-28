@@ -44,9 +44,13 @@ def test_facts_not_on_the_page_are_reported():
     assert h.facts == [] and h.facts_missing == ["5 Sept 2026", "Rs. 9,999"]
 
 
-def test_scanned_pages_and_images_have_no_highlights(tmp_path):
+def test_scans_without_tesseract_are_shown_without_highlights(tmp_path, monkeypatch):
+    from backend.viewer import highlight
+
+    monkeypatch.setattr(highlight, "ocr_available", lambda: False)
     (tmp_path / "scan.pdf").write_bytes(make_pdf([""]))
-    assert highlights_for(tmp_path / "scan.pdf", 1, "x", ANSWER).scanned
+    h = highlights_for(tmp_path / "scan.pdf", 1, "x", ANSWER)
+    assert h.kind == "pdf" and h.scanned and not h.facts
     assert highlights_for(tmp_path / "card.jpg", 1, "x", ANSWER).kind == "image"
 
 

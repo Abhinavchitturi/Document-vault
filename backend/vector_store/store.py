@@ -2,7 +2,8 @@
 
     PostgreSQL (backend/database/)   users, documents, document_chunks, vault_meta
     <root>/vectors.faiss             FAISS inner-product index; vector id = document_chunks.id
-    <root>/files/                    the original uploads, as <doc_id><ext>
+    <root>/files/                    the original uploads, as <doc_id><ext>, plus <doc_id>.ocr.json
+                                     (word positions of scanned pages, for highlighting)
 
 `root` defaults to data/index/ (git-ignored: it holds personal documents).
 
@@ -34,6 +35,7 @@ from sqlalchemy import delete, func, insert, select
 
 from backend.database.db import connect, fallback_owner
 from backend.database.schema import document_chunks, documents, users, vault_meta
+from backend.parser.ocr import ocr_sidecar
 
 
 logger = logging.getLogger(__name__)
@@ -134,6 +136,7 @@ class DocumentStore:
             "id": document["doc_id"], "owner_id": owner_id, "name": document["filename"],
             "doc_type": document["category"], "uploaded_at": datetime.fromisoformat(document["added_at"]),
             "file_path": document["stored_as"], "pages": document["pages"], "ocr_pages": document.get("ocr_pages", 0),
+            "ocr_confidence": document.get("ocr_confidence"),
             "num_chunks": document["num_chunks"], "size_bytes": document["size_bytes"], "sha256": document["sha256"],
         }
 
@@ -149,7 +152,8 @@ class DocumentStore:
             self.documents = {
                 r["id"]: {
                     "doc_id": r["id"], "filename": r["name"], "category": r["doc_type"], "owner": self.owner,
-                    "pages": r["pages"], "ocr_pages": r["ocr_pages"], "num_chunks": r["num_chunks"],
+                    "pages": r["pages"], "ocr_pages": r["ocr_pages"], "ocr_confidence": r["ocr_confidence"],
+                    "num_chunks": r["num_chunks"],
                     "size_bytes": r["size_bytes"], "sha256": r["sha256"], "stored_as": r["file_path"],
                     "added_at": _as_utc(r["uploaded_at"]).isoformat(timespec="seconds"),
                 }
@@ -350,6 +354,7 @@ class DocumentStore:
             del self.documents[doc_id]
             self.chunks = [c for c in self.chunks if c["doc_id"] != doc_id]
             (self.files_dir / doc["stored_as"]).unlink(missing_ok=True)
+            ocr_sidecar(self.files_dir / doc["stored_as"]).unlink(missing_ok=True)
             return True
 
     def reembed(self, embed_passages, model: str) -> None:

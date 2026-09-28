@@ -48,6 +48,7 @@ documents = Table(
     Column("file_path", Text, nullable=False),  # relative to the vault's files/ folder
     Column("pages", Integer, nullable=False),
     Column("ocr_pages", Integer, nullable=False, default=0),
+    Column("ocr_confidence", Integer),  # Phase 4: worst OCR page's confidence 0-100; NULL if no OCR
     Column("num_chunks", Integer, nullable=False),
     Column("size_bytes", BigInteger, nullable=False),
     Column("sha256", String(64), nullable=False),
@@ -65,6 +66,10 @@ document_chunks = Table(
     Column("n_tokens", Integer, nullable=False),
 )
 Index("ix_document_chunks_document_id", document_chunks.c.document_id)
+
+# Columns added after a table first shipped. create_all() never alters existing tables, so
+# connect() adds these to older vaults: (table, column, SQL type).
+ADDED_COLUMNS = [("documents", "ocr_confidence", "INTEGER")]
 
 vault_meta = Table(
     "vault_meta",

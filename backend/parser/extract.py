@@ -6,19 +6,21 @@ Supported:
     .txt / .md              read as-is
     .png .jpg .jpeg .webp .tif .tiff    OCR (photos or scans of warranty cards, bills...)
 
-OCR uses Tesseract, which is a separate program: `brew install tesseract` on macOS.
-Without it, text-based PDFs, Word and text files still work; images and scanned
-pages are reported as needing OCR.
+OCR (backend/parser/ocr.py) uses Tesseract, a separate program: `brew install tesseract`
+on macOS. Without it, text-based PDFs, Word and text files still work; images and scanned
+pages are reported as needing OCR. OCR'd pages keep their word positions and a confidence
+score (Page.ocr_data) so answers can be highlighted on scans and blurry photos flagged.
 """
 
 from __future__ import annotations
 
 import re
-import shutil
 from dataclasses import dataclass
 from pathlib import Path
 
 import ftfy
+
+from backend.parser.ocr import OcrPage, OcrUnavailableError, ocr_available, read_image, require_ocr
 
 TEXT_SUFFIXES = {".txt", ".md"}
 IMAGE_SUFFIXES = {".png", ".jpg", ".jpeg", ".webp", ".tif", ".tiff"}
@@ -32,15 +34,12 @@ class UnsupportedFileError(ValueError):
     pass
 
 
-class OcrUnavailableError(RuntimeError):
-    pass
-
-
 @dataclass
 class Page:
     number: int  # 1-based
     text: str
     ocr: bool = False
+    ocr_data: OcrPage | None = None  # word boxes and confidence, for OCR'd pages
 
 
 def clean_text(text: str) -> str:
@@ -53,21 +52,6 @@ def clean_text(text: str) -> str:
     return text.strip()
 
 
-def ocr_available() -> bool:
-    return shutil.which("tesseract") is not None
-
-
-def _ocr(image) -> str:
-    if not ocr_available():
-        raise OcrUnavailableError(
-            "This file needs OCR (it's an image or a scan). Install Tesseract (macOS: brew install tesseract) "
-            "and restart the app."
-        )
-    import pytesseract
-
-    return pytesseract.image_to_string(image)
-
-
 def _pdf_pages(path: Path) -> list[Page]:
     import pypdfium2 as pdfium
 
@@ -78,12 +62,12 @@ def _pdf_pages(path: Path) -> list[Page]:
             textpage = page.get_textpage()
             text = clean_text(textpage.get_text_range())
             textpage.close()
-            ocr = False
+            data = None
             if len(text) < MIN_PAGE_CHARS and ocr_available():
-                text = clean_text(_ocr(page.render(scale=OCR_RENDER_SCALE).to_pil()))
-                ocr = True
+                data = read_image(page.render(scale=OCR_RENDER_SCALE).to_pil())
+                text = clean_text(data.text)
             page.close()
-            pages.append(Page(i, text, ocr))
+            pages.append(Page(i, text, data is not None, data))
     finally:
         pdf.close()
     if not any(p.text for p in pages) and not ocr_available():
@@ -108,10 +92,10 @@ def _docx_pages(path: Path) -> list[Page]:
 def _image_pages(path: Path) -> list[Page]:
     from PIL import Image
 
-    if not ocr_available():  # say what to install before failing on anything else
-        _ocr(None)
+    require_ocr()  # say what to install before failing on anything else
     with Image.open(path) as image:
-        return [Page(1, clean_text(_ocr(image)), ocr=True)]
+        data = read_image(image)
+    return [Page(1, clean_text(data.text), ocr=True, ocr_data=data)]
 
 
 def extract_pages(path: str | Path) -> list[Page]:

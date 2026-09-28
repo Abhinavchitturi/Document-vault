@@ -19,7 +19,7 @@ and the privacy decisions.
 | 1 | Core RAG engine | ✅ Upload → parse → chunk → embeddings → FAISS → retrieve → local LLM answer with citations |
 | 2 | Document metadata | ✅ PostgreSQL: `users`, `documents`, `document_chunks`; every document has an owner |
 | 3 | Web application | ✅ React + Next.js: Login, Dashboard, Chat, Documents, Upload, Settings |
-| 4 | OCR | ✅ Tesseract for photos and scanned PDFs |
+| 4 | OCR | ✅ Photos and scanned PDFs: auto-rotated, cleaned up, answers highlighted on the scan, blurry scans flagged |
 | 5 | Better retrieval (BM25 + vector) | 🟡 Vector search and evaluation harness; hybrid to come |
 | 6–13 | Auth, mobile, classification, expiry, reminders, security, sharing, deployment | ⏳ |
 
@@ -47,10 +47,14 @@ Ollama for answers: install it from https://ollama.com, open it, then download t
 ```bash
 ollama pull llama3.1:8b
 ```
-Optional, for photos and scanned PDFs:
+For photos and scanned PDFs (includes English and page-orientation detection):
 ```bash
 brew install tesseract
 ```
+Scans and phone photos are turned upright (phone rotation and sideways or upside-down scans),
+contrast-cleaned and read. Answers are highlighted on the scan itself. A page read with under 70%
+confidence is marked **hard to read** in Documents, at upload and in the viewer. Retake those
+photos flat, in good light and in focus.
 The web app (built once, and again after pulling changes to `frontend/`):
 ```bash
 brew install node
@@ -126,6 +130,8 @@ A fictional family (the Mehras) with 13 documents and 24 questions with known an
 | `samples/documents/` | The same documents as text (the source; edit these) |
 | `samples/questions.jsonl` | Questions, the correct document, and the exact answer text |
 | `samples/make_pdfs.py` | Regenerates the PDFs after editing a sample |
+| `samples/scans/` | OCR tests: an upside-down scanned gas bill (PDF with no text) and a grey, tilted phone photo of a warranty card |
+| `samples/make_scans.py` | Regenerates the scans |
 
 ```bash
 python -m backend.upload.ingest samples/pdfs
@@ -180,7 +186,7 @@ Layout:
 | Folder | Role |
 |---|---|
 | `backend/upload/` | File → chunks → embeddings → vault; folder import (`ingest.py`) |
-| `backend/parser/` | Text from PDF / Word / text / photos per page, OCR (`extract.py`); document types (`categories.py`) |
+| `backend/parser/` | Text from PDF / Word / text / photos per page (`extract.py`); OCR with orientation, clean-up, word positions and confidence (`ocr.py`); document types (`categories.py`) |
 | `backend/chunker/` | Token-window chunking that never cuts mid-word |
 | `backend/embeddings/` | Snowflake Arctic Embed M v1.5; offline mode once downloaded |
 | `backend/database/` | PostgreSQL schema (`users`, `documents`, `document_chunks`) and connection |

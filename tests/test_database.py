@@ -146,3 +146,20 @@ def test_connection_errors_say_what_is_wrong_and_how_to_fix_it(server_says, expe
                                        OperationalError("connect", {}, _PgError(server_says)))
     for text in expected:
         assert text in message, (text, message)
+
+
+def test_older_vaults_get_new_columns(tmp_path):
+    import sqlite3
+
+    from sqlalchemy import inspect
+
+    from backend.database.db import connect
+
+    path = tmp_path / "old.db"
+    with sqlite3.connect(path) as conn:  # a Phase 2 documents table, before ocr_confidence existed
+        conn.execute("CREATE TABLE documents (id VARCHAR(32) PRIMARY KEY, owner_id INTEGER, name TEXT, doc_type VARCHAR(32),"
+                     " uploaded_at TIMESTAMP, file_path TEXT, pages INTEGER, ocr_pages INTEGER, num_chunks INTEGER,"
+                     " size_bytes BIGINT, sha256 VARCHAR(64))")
+    engine = connect(f"sqlite:///{path}")
+    assert "ocr_confidence" in {c["name"] for c in inspect(engine).get_columns("documents")}
+    connect(f"sqlite:///{path}")  # and connecting again doesn't try to add it twice

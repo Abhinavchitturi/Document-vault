@@ -2,7 +2,7 @@ import docx
 import pytest
 from PIL import Image
 
-from backend.parser import extract
+from backend.parser import extract, ocr
 from backend.parser.categories import guess_category
 from backend.parser.extract import OcrUnavailableError, UnsupportedFileError, clean_text, extract_pages
 from tests.pdf_helper import make_pdf
@@ -36,6 +36,7 @@ def test_text_and_markdown(tmp_path):
 
 def test_image_without_tesseract_explains_how_to_fix(tmp_path, monkeypatch):
     monkeypatch.setattr(extract, "ocr_available", lambda: False)
+    monkeypatch.setattr(ocr, "ocr_available", lambda: False)
     Image.new("RGB", (20, 20), "white").save(tmp_path / "card.png")
     (tmp_path / "phone_photo.jpg").write_bytes(b"not decodable")  # the install hint must still win
     for name in ("card.png", "phone_photo.jpg"):
@@ -45,6 +46,7 @@ def test_image_without_tesseract_explains_how_to_fix(tmp_path, monkeypatch):
 
 def test_scanned_pdf_without_tesseract_explains_how_to_fix(tmp_path, monkeypatch):
     monkeypatch.setattr(extract, "ocr_available", lambda: False)
+    monkeypatch.setattr(ocr, "ocr_available", lambda: False)
     (tmp_path / "scan.pdf").write_bytes(make_pdf([""]))
     with pytest.raises(OcrUnavailableError):
         extract_pages(tmp_path / "scan.pdf")

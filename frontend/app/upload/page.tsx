@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useRef, useState } from "react";
 import AppShell, { useVault } from "@/components/AppShell";
 import Icon from "@/components/Icon";
-import { api, CATEGORIES, CATEGORY_LABEL, type Category, type UploadResult } from "@/lib/api";
+import { api, CATEGORIES, CATEGORY_LABEL, hardToRead, type Category, type UploadResult } from "@/lib/api";
 
 function Upload() {
   const { info, refresh } = useVault();
@@ -71,6 +71,8 @@ function Upload() {
                 <span>
                   <span className="fname">{r.filename}</span>
                   {r.status === "added" && r.document && ` added as ${CATEGORY_LABEL[r.document.category]}, ${r.document.pages} ${r.document.pages === 1 ? "page" : "pages"}${r.document.ocr_pages ? " (read with OCR)" : ""}.`}
+                  {r.status === "added" && hardToRead(r.document?.ocr_confidence) &&
+                    ` It was hard to read (${r.document!.ocr_confidence}% OCR confidence), so answers from it may be wrong. A sharper, well-lit photo will help.`}
                   {r.status === "duplicate" && " is already in the vault."}
                   {r.status === "error" && `: ${r.error}`}
                 </span>
