@@ -98,8 +98,9 @@ Where things live:
   databases on this computer are accepted. `--database-url sqlite:///data/index/vault.db`
   gives a single-file setup with no server.
 - **Search vectors and original files**: `data/index/` (git-ignored).
-- **Owner**: until login arrives (Phase 6), documents belong to your computer's user name.
-  Override with `--owner` or `VAULT_OWNER`.
+- **Owner**: until login arrives (Phase 6), a new vault belongs to your computer's user name.
+  Change it under **Settings → Your name**; the vault remembers it and your documents stay
+  yours. `--owner` or `VAULT_OWNER` pick an owner explicitly.
 
 A vault created before Phase 2 (`documents.json` in `data/index/`) is moved into the database
 automatically the first time the app starts. To reset everything: `dropdb vault && createdb vault`
@@ -184,7 +185,7 @@ Layout:
 ```bash
 pytest -q
 ```
-71 tests. They use a fake embedder and a fake LLM, so they run in a few seconds without
+72 tests. They use a fake embedder and a fake LLM, so they run in a few seconds without
 downloading models or running Ollama. By default they use SQLite; to run them against
 PostgreSQL (each test gets a throwaway database):
 ```bash

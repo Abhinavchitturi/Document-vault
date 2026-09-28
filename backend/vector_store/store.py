@@ -31,7 +31,7 @@ import faiss
 import numpy as np
 from sqlalchemy import delete, func, insert, select
 
-from backend.database.db import connect
+from backend.database.db import connect, fallback_owner
 from backend.database.schema import document_chunks, documents, users, vault_meta
 
 
@@ -49,14 +49,14 @@ def _default_url(root: Path) -> str:
 
 
 class DocumentStore:
-    def __init__(self, root: str | Path, database_url: str | None = None, owner: str = "family"):
+    def __init__(self, root: str | Path, database_url: str | None = None, owner: str | None = None):
         self.root = Path(root)
         self.files_dir = self.root / "files"
         self.files_dir.mkdir(parents=True, exist_ok=True)
         self.engine = connect(database_url or _default_url(self.root))
         self._lock = threading.RLock()
-        self.owner = owner
-        self.owner_id = self._ensure_user(owner)
+        self.owner = owner or self._existing_owner() or fallback_owner()
+        self.owner_id = self._ensure_user(self.owner)
         self.documents: dict[str, dict] = {}  # this owner's documents, cached
         self.chunks: list[dict] = []  # this owner's chunks, cached for search
         self.index: faiss.Index | None = None
@@ -65,6 +65,27 @@ class DocumentStore:
         self._load()
 
     # ---------- database ----------
+
+    def _existing_owner(self) -> str | None:
+        """The vault's owner when it has exactly one, so a renamed owner is remembered."""
+        with self.engine.connect() as conn:
+            names = conn.execute(select(users.c.name).limit(2)).scalars().all()
+        return names[0] if len(names) == 1 else None
+
+    def rename_owner(self, new_name: str) -> str:
+        """Rename this vault's owner; their documents stay theirs."""
+        new_name = " ".join(new_name.split())
+        if not 1 <= len(new_name) <= 60:
+            raise ValueError("the name must be 1 to 60 characters")
+        with self._lock, self.engine.begin() as conn:
+            taken = conn.execute(select(users.c.id).where(users.c.name == new_name, users.c.id != self.owner_id)).scalar()
+            if taken is not None:
+                raise ValueError(f"{new_name!r} is already another person in this vault")
+            conn.execute(users.update().where(users.c.id == self.owner_id).values(name=new_name))
+        self.owner = new_name
+        for doc in self.documents.values():
+            doc["owner"] = new_name
+        return new_name
 
     def _ensure_user(self, name: str) -> int:
         with self.engine.begin() as conn:

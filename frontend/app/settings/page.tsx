@@ -5,16 +5,18 @@ import AppShell, { useVault } from "@/components/AppShell";
 import Icon from "@/components/Icon";
 import { useTheme, type Theme } from "@/components/ThemeToggle";
 import { api, type Settings } from "@/lib/api";
+import { startSession } from "@/lib/session";
 
 function SettingsView() {
   const { refresh } = useVault();
   const [theme, setTheme] = useTheme();
   const [s, setS] = useState<Settings | null>(null);
   const [model, setModel] = useState("");
+  const [name, setName] = useState("");
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState<{ ok: boolean; text: string } | null>(null);
 
-  const load = () => api.settings().then((r) => { setS(r); setModel(r.llm_model ?? ""); })
+  const load = () => api.settings().then((r) => { setS(r); setModel(r.llm_model ?? ""); setName(r.owner); })
     .catch((e) => setMessage({ ok: false, text: e.message }));
   useEffect(() => { load(); }, []);
 
@@ -22,9 +24,26 @@ function SettingsView() {
     setSaving(true);
     setMessage(null);
     try {
-      const r = await api.saveSettings(model);
+      const r = await api.saveSettings({ llm_model: model });
       setS(r);
       setMessage({ ok: true, text: `Answers now come from ${model}.` });
+      refresh();
+    } catch (e) {
+      setMessage({ ok: false, text: (e as Error).message });
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const saveName = async () => {
+    setSaving(true);
+    setMessage(null);
+    try {
+      const r = await api.saveSettings({ owner_name: name });
+      setS(r);
+      setName(r.owner);
+      startSession(r.owner);
+      setMessage({ ok: true, text: `The vault now belongs to ${r.owner}. All your documents came along.` });
       refresh();
     } catch (e) {
       setMessage({ ok: false, text: (e as Error).message });
@@ -39,6 +58,20 @@ function SettingsView() {
         {message && (
           <div className={`notice ${message.ok ? "good" : "bad"}`} role="status"><Icon name={message.ok ? "ok" : "warn"} />{message.text}</div>
         )}
+
+        <section className="card">
+          <h2>You</h2>
+          <div className="setting-row">
+            <div className="label">
+              <strong>Your name</strong>
+              <span>Shown on the sign-in screen and as the owner of your documents.</span>
+            </div>
+            <form style={{ display: "flex", gap: 8 }} onSubmit={(e) => { e.preventDefault(); saveName(); }}>
+              <input className="input" value={name} maxLength={60} onChange={(e) => setName(e.target.value)} aria-label="Your name" />
+              <button className="btn primary" type="submit" disabled={saving || !name.trim() || name.trim() === s?.owner}>Save</button>
+            </form>
+          </div>
+        </section>
 
         <section className="card">
           <h2>Assistant</h2>

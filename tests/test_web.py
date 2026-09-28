@@ -29,7 +29,7 @@ def web(tmp_path):
     (site / "index.html").write_text("<!doctype html><title>Document Vault</title>dashboard")
     (site / "chat" / "index.html").write_text("<!doctype html>chat page")
     llm = ModelLLM()
-    app = create_app(DocumentStore(tmp_path / "index"), FakeEmbedder(), RegexTokenizer(), llm,
+    app = create_app(DocumentStore(tmp_path / "index", owner="family"), FakeEmbedder(), RegexTokenizer(), llm,
                      frontend_dir=site, database_label="postgresql+psycopg://localhost/vault")
     return TestClient(app), llm
 
@@ -84,3 +84,24 @@ def test_settings_show_setup_and_switch_the_answer_model(web):
     assert llm.model == "gemma3:12b"
     bad = client.post("/api/settings", json={"llm_model": "phi4"})
     assert bad.status_code == 400 and "ollama pull phi4" in bad.json()["detail"]
+
+
+def test_owner_can_be_renamed_and_is_remembered(tmp_path):
+    from backend.upload.ingest import ingest_file
+
+    root = tmp_path / "index"
+    store = DocumentStore(root)  # no owner given: falls back to the computer's user name
+    (tmp_path / "bill.txt").write_text("Water bill due 15 July")
+    ingest_file(tmp_path / "bill.txt", store, FakeEmbedder(), RegexTokenizer())
+    client = TestClient(create_app(store, FakeEmbedder(), RegexTokenizer(), frontend_dir=None))
+
+    res = client.post("/api/settings", json={"owner_name": "  Abhinav  "})
+    assert res.status_code == 200 and res.json()["owner"] == "Abhinav"
+    assert client.get("/api/info").json()["owner"] == "Abhinav"
+    assert [d["owner"] for d in client.get("/api/documents").json()] == ["Abhinav"]
+
+    again = DocumentStore(root)  # next start, still no owner given: keeps "Abhinav" and the documents
+    assert again.owner == "Abhinav" and len(again.documents) == 1
+    assert client.post("/api/settings", json={"owner_name": ""}).status_code == 422
+    DocumentStore(root, owner="Kavya")  # a second person
+    assert client.post("/api/settings", json={"owner_name": "Kavya"}).status_code == 400

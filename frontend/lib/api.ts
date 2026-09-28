@@ -114,11 +114,11 @@ export const api = {
     return fetch("/api/documents", { method: "POST", body: form }).then((r) => json<UploadResult[]>(r));
   },
   settings: () => fetch("/api/settings").then((r) => json<Settings>(r)),
-  saveSettings: (llm_model: string) =>
+  saveSettings: (changes: { llm_model?: string; owner_name?: string }) =>
     fetch("/api/settings", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ llm_model }),
+      body: JSON.stringify(changes),
     }).then((r) => json<Settings>(r)),
   highlights: (docId: string, page: number, body: { chunk_id?: string; answer?: string }) =>
     fetch(`/api/documents/${encodeURIComponent(docId)}/pages/${page}/highlights`, {

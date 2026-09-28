@@ -95,7 +95,8 @@ class CategoryUpdate(BaseModel):
 
 
 class SettingsUpdate(BaseModel):
-    llm_model: str = Field(..., min_length=1, max_length=200)
+    llm_model: str | None = Field(None, min_length=1, max_length=200)
+    owner_name: str | None = Field(None, min_length=1, max_length=60)
 
 
 class HighlightRequest(BaseModel):
@@ -278,6 +279,14 @@ def create_app(
 
     @app.post("/api/settings")
     def save_settings(req: SettingsUpdate) -> dict:
+        if req.owner_name is not None:
+            try:
+                store.rename_owner(req.owner_name)
+            except ValueError as e:
+                raise HTTPException(400, str(e)) from e
+            logger.info("Owner renamed to %s", store.owner)
+        if req.llm_model is None:
+            return settings_view()
         if llm is None or not hasattr(llm, "model"):
             raise HTTPException(400, "Answers are turned off; start the app without --no-llm to choose a model.")
         installed = llm.list_models() if hasattr(llm, "list_models") else []
