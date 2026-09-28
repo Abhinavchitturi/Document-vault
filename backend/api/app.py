@@ -109,6 +109,7 @@ def create_app(store: DocumentStore, embedder: EmbedderLike, tokenizer, llm: LLM
         counts = Counter(d["category"] for d in store.documents.values())
         return {
             "model": embedder.model_name,
+            "owner": store.owner,
             "llm": llm.name if llm else None,
             "llm_status": _llm_status(llm),
             "num_documents": len(store.documents),
@@ -267,7 +268,10 @@ def create_app(store: DocumentStore, embedder: EmbedderLike, tokenizer, llm: LLM
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument("--index-dir", default="data/index")
+    parser.add_argument("--index-dir", default="data/index", help="FAISS vectors and original files")
+    parser.add_argument("--database-url", default=None,
+                        help="metadata database (default: $VAULT_DATABASE_URL or postgresql+psycopg://localhost/vault)")
+    parser.add_argument("--owner", default=None, help="whose documents (default: $VAULT_OWNER or your user name)")
     parser.add_argument("--model", default=None, help="embedding model (default: snowflake-arctic-embed-m-v1.5)")
     parser.add_argument("--device", default=None, help="cuda / mps / cpu; default picks automatically")
     parser.add_argument("--llm-model", default=None, help="local Ollama model (default: llama3.1:8b)")
@@ -284,18 +288,26 @@ def main() -> None:
     from backend.llm.ollama import OllamaLLM
     from backend.upload.ingest import passage_texts
 
+    from backend.database.db import DatabaseUnavailableError, database_url, default_owner
+
+    try:
+        store = DocumentStore(args.index_dir, database_url(args.database_url), owner=default_owner(args.owner))
+    except DatabaseUnavailableError as e:
+        raise SystemExit(str(e)) from e
     embedder = Embedder(args.model or DEFAULT_MODEL, device=args.device)
-    store = DocumentStore(args.index_dir)
     if store.model and store.model != embedder.model_name:
-        logger.info("Library was embedded with %s; re-embedding with %s", store.model, embedder.model_name)
+        logger.info("Vault was embedded with %s; re-embedding with %s", store.model, embedder.model_name)
+        store.reembed(lambda chunks: embedder.encode_passages(passage_texts(chunks)), embedder.model_name)
+    elif store.missing_vectors:
+        logger.warning("Some passages have no search vectors (interrupted save?); rebuilding them")
         store.reembed(lambda chunks: embedder.encode_passages(passage_texts(chunks)), embedder.model_name)
     if not ocr_available():
         logger.warning("Tesseract not found: photos and scanned PDFs can't be read. macOS: brew install tesseract")
 
     llm = None if args.no_llm else OllamaLLM(args.llm_model or DEFAULT_LLM)
     app = create_app(store, embedder, HFTokenizer(embedder.model_name), llm)
-    logger.info("Vault: %d documents. Answers: %s. Open http://127.0.0.1:%d",
-                len(store.documents), llm.name if llm else "off", args.port)
+    logger.info("Vault for %s: %d documents. Answers: %s. Open http://127.0.0.1:%d",
+                store.owner, len(store.documents), llm.name if llm else "off", args.port)
     uvicorn.run(app, host="127.0.0.1", port=args.port)
 
 
