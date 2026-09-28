@@ -41,6 +41,20 @@ from backend.parser.ocr import ocr_sidecar
 logger = logging.getLogger(__name__)
 
 
+def top_results(ranked: list[tuple[dict, float]], top_k: int, per_document: bool) -> list[tuple[dict, float]]:
+    """The first top_k of a ranking; per_document keeps only each document's best chunk."""
+    results, seen = [], set()
+    for chunk, score in ranked:
+        if per_document:
+            if chunk["doc_id"] in seen:
+                continue
+            seen.add(chunk["doc_id"])
+        results.append((chunk, score))
+        if len(results) == top_k:
+            break
+    return results
+
+
 def _new_index(dim: int) -> faiss.Index:
     return faiss.IndexIDMap2(faiss.IndexFlatIP(dim))
 
@@ -65,6 +79,7 @@ class DocumentStore:
         self.owner_id = self._ensure_user(self.owner)
         self.documents: dict[str, dict] = {}  # this owner's documents, cached
         self.chunks: list[dict] = []  # this owner's chunks, cached for search
+        self.revision = 0  # bumped on every change, so derived indexes (BM25) know to rebuild
         self.index: faiss.Index | None = None
         self.model: str | None = None
         self._migrate_json_vault()
@@ -176,6 +191,7 @@ class DocumentStore:
         ]
         index_path = self.root / "vectors.faiss"
         self.index = faiss.read_index(str(index_path)) if index_path.exists() else None
+        self.revision += 1
 
     def _save_index(self) -> None:
         index_path = self.root / "vectors.faiss"
@@ -249,11 +265,16 @@ class DocumentStore:
         category: str | None = None,
         per_document: bool = True,
     ) -> list[tuple[dict, float]]:
-        """[(chunk, score), ...] best first.
+        """[(chunk, score), ...] best first, by vector similarity only (see backend/retriever/
+        for hybrid search).
 
         per_document=True keeps only each document's best chunk (a results list);
         False returns the top chunks regardless of document (context for the LLM).
         """
+        return top_results(self.rank(query_embedding, category), top_k, per_document)
+
+    def rank(self, query_embedding: np.ndarray, category: str | None = None) -> list[tuple[dict, float]]:
+        """Every one of this owner's chunks (optionally one category), most similar first."""
         with self._lock:
             if not self.num_vectors or not self.chunks:
                 return []
@@ -262,18 +283,11 @@ class DocumentStore:
             query = np.ascontiguousarray(query_embedding.reshape(1, -1), dtype=np.float32)
             scores, vids = self.index.search(query, self.num_vectors)
             by_vid = {c["vid"]: c for c in self.chunks}  # only this owner's chunks
-            results, seen = [], set()
+            results = []
             for score, vid in zip(scores[0], vids[0]):
                 chunk = by_vid.get(int(vid))
-                if chunk is None or (category and chunk["category"] != category):
-                    continue
-                if per_document:
-                    if chunk["doc_id"] in seen:
-                        continue
-                    seen.add(chunk["doc_id"])
-                results.append((chunk, float(score)))
-                if len(results) == top_k:
-                    break
+                if chunk is not None and not (category and chunk["category"] != category):
+                    results.append((chunk, float(score)))
             return results
 
     def counts_by_category(self) -> dict[str, int]:
@@ -313,6 +327,7 @@ class DocumentStore:
             self.model = model
             self.documents[document["doc_id"]] = {**document, "owner": self.owner}
             self.chunks.extend(chunks)
+            self.revision += 1
 
     def update_category(self, doc_id: str, category: str, vectors: np.ndarray | None = None) -> dict:
         """Re-file a document under another type. `vectors` are its chunks' new embeddings
@@ -333,6 +348,7 @@ class DocumentStore:
             for c in self.chunks:
                 if c["doc_id"] == doc_id:
                     c["category"] = category
+            self.revision += 1
             return doc
 
     def chunks_of(self, doc_id: str) -> list[dict]:
@@ -353,6 +369,7 @@ class DocumentStore:
                 self._save_index()
             del self.documents[doc_id]
             self.chunks = [c for c in self.chunks if c["doc_id"] != doc_id]
+            self.revision += 1
             (self.files_dir / doc["stored_as"]).unlink(missing_ok=True)
             ocr_sidecar(self.files_dir / doc["stored_as"]).unlink(missing_ok=True)
             return True

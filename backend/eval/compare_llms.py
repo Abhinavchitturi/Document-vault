@@ -22,6 +22,7 @@ import time
 from pathlib import Path
 
 from backend.eval.evaluate import build_library, load_questions
+from backend.retriever.retriever import Retriever
 from backend.eval.metrics import contains_answer
 from backend.llm.answer import answer_question
 from backend.llm.ollama import LLMUnavailableError
@@ -79,8 +80,8 @@ def main() -> None:
     embedder = Embedder(DEFAULT_MODEL)
     store = build_library(args.docs, args.index_dir, embedder, HFTokenizer(embedder.model_name))
     questions = load_questions(args.questions)
-    query_embs = embedder.encode_queries([q["question"] for q in questions])
-    contexts = [[c for c, _ in store.search(e, top_k=args.context_k, per_document=False)] for e in query_embs]
+    retriever = Retriever(store, embedder)  # hybrid search, as in the app
+    contexts = [[c for c, _ in retriever.context(q["question"], top_k=args.context_k)] for q in questions]
 
     rows = compare(questions, contexts, [OllamaLLM(m) for m in args.models])
     args.results_dir.mkdir(parents=True, exist_ok=True)

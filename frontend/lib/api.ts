@@ -69,6 +69,7 @@ export interface Settings {
   database: string;
   index_dir: string;
   ocr_available: boolean;
+  search_method: "hybrid" | "vector" | "keyword";
 }
 
 export interface Highlights {

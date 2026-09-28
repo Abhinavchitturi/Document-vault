@@ -33,7 +33,7 @@ def test_evaluate_runs_on_samples(tmp_path):
     assert {d["category"] for d in store.documents.values()} == {"insurance", "warranty", "bill", "property"}
     metrics, details = evaluate(store, emb, load_questions(SAMPLES / "questions.jsonl"))
     assert set(metrics) == {"recall@1", "recall@3", "recall@5", "answer@1", "answer@3", "answer@5", "mrr@5"}
-    assert all(0 <= v <= 1 for v in metrics.values()) and len(details) == 24
+    assert all(0 <= v <= 1 for v in metrics.values()) and len(details) == 32
     assert metrics["recall@5"] >= metrics["recall@1"]
     json.dumps(details)  # serializable for reports
 

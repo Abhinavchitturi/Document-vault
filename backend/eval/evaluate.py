@@ -6,10 +6,11 @@ touched), asks every question in samples/questions.jsonl, and reports how often
 search put the right document, and the chunk containing the answer, near the top.
 
 Usage:
-    python -m backend.eval.evaluate                  # retrieval only -> results/eval_vector.json
+    python -m backend.eval.evaluate                  # compare hybrid, vector and keyword search
+                                                     # -> results/eval_search.json
     python -m backend.eval.evaluate --show-misses    # also list questions that failed
-    python -m backend.eval.evaluate --with-llm       # also answer each question with the local LLM
-                                                     # -> results/eval_vector_llm.json
+    python -m backend.eval.evaluate --with-llm       # also answer each question with the local LLM,
+                                                     # using hybrid search -> results/eval_hybrid_llm.json
 
 Question file format (one JSON object per line):
     {"question": "...", "relevant": ["file_name.pdf"], "answer": "exact text in the document"}
@@ -28,6 +29,7 @@ from pathlib import Path
 from backend.eval.metrics import answer_at_k, contains_answer, mrr_at_k, recall_at_k
 from backend.llm.answer import answer_question
 from backend.parser.categories import CATEGORIES
+from backend.retriever.retriever import METHODS, Retriever
 from backend.upload.ingest import EmbedderLike, ingest_file, iter_files
 from backend.vector_store.store import DocumentStore
 
@@ -52,15 +54,16 @@ def build_library(docs_dir: Path, index_dir: Path, embedder: EmbedderLike, token
 
 
 def evaluate(
-    store: DocumentStore, embedder: EmbedderLike, questions: list[dict], ks=KS, llm=None, context_k: int = 5
+    store: DocumentStore, embedder: EmbedderLike, questions: list[dict], ks=KS, llm=None, context_k: int = 5,
+    method: str = "hybrid",
 ) -> tuple[dict, list[dict]]:
     """Return (averaged metrics, per-question details). With `llm`, also score the written answers."""
-    query_embs = embedder.encode_queries([q["question"] for q in questions])
+    retriever = Retriever(store, embedder, method)
     totals = {f"{m}@{k}": 0.0 for m in ("recall", "answer") for k in ks}
     totals[f"mrr@{max(ks)}"] = 0.0
     details = []
-    for q, emb in zip(questions, query_embs):
-        hits = store.search(emb, top_k=max(ks))
+    for q in questions:
+        hits = retriever.documents(q["question"], top_k=max(ks))
         docs = [chunk["filename"] for chunk, _ in hits]
         texts = [chunk["text"] for chunk, _ in hits]
         relevant = set(q["relevant"])
@@ -72,7 +75,7 @@ def evaluate(
         detail = {"question": q["question"], "relevant": q["relevant"], "rank": rank, "top3": docs[:3],
                   "answer_found@1": bool(answer_at_k(texts, q["answer"], 1))}
         if llm is not None:
-            context = [c for c, _ in store.search(emb, top_k=context_k, per_document=False)]
+            context = [c for c, _ in retriever.context(q["question"], top_k=context_k)]
             written = answer_question(q["question"], context, llm).text
             correct = contains_answer(written, q["answer"])
             totals["answer_accuracy"] = totals.get("answer_accuracy", 0.0) + correct
@@ -90,6 +93,8 @@ def main() -> None:
     parser.add_argument("--results-dir", type=Path, default=Path("results"))
     parser.add_argument("--model", default=None)
     parser.add_argument("--show-misses", action="store_true")
+    parser.add_argument("--method", default="all", choices=["all", *METHODS],
+                        help="search method to score (default: compare all three)")
     parser.add_argument("--with-llm", action="store_true", help="also answer with the local Ollama model")
     parser.add_argument("--llm-model", default=None, help="Ollama model (default: llama3.1:8b)")
     args = parser.parse_args()
@@ -104,40 +109,50 @@ def main() -> None:
         from backend.llm.ollama import OllamaLLM
 
         llm = OllamaLLM(args.llm_model or DEFAULT_LLM)
+    methods = list(METHODS) if args.method == "all" else [args.method]
+    if llm and args.method == "all":
+        methods = ["hybrid"]  # answering every question three times isn't worth the wait
     embedder = Embedder(args.model or DEFAULT_MODEL)
-    t0 = time.time()
     store = build_library(args.docs, args.index_dir, embedder, HFTokenizer(embedder.model_name))
     questions = load_questions(args.questions)
-    metrics, details = evaluate(store, embedder, questions, llm=llm)
+
+    runs = {}
+    for method in methods:
+        t0 = time.time()
+        metrics, details = evaluate(store, embedder, questions, llm=llm, method=method)
+        runs[method] = {"metrics": metrics, "details": details, "seconds": round(time.time() - t0, 1)}
 
     result = {
-        "method": "vector",
         "model": embedder.model_name,
         "llm": llm.name if llm else None,
         "documents": len(store.documents),
         "chunks": len(store.chunks),
         "questions": len(questions),
-        "metrics": metrics,
-        "seconds": round(time.time() - t0, 1),
+        "methods": {m: {"metrics": r["metrics"], "seconds": r["seconds"]} for m, r in runs.items()},
     }
-    out = args.results_dir / ("eval_vector_llm.json" if llm else "eval_vector.json")
+    name = f"eval_{methods[0]}_llm.json" if llm else ("eval_search.json" if len(methods) > 1 else f"eval_{methods[0]}.json")
+    out = args.results_dir / name
     args.results_dir.mkdir(parents=True, exist_ok=True)
     out.write_text(json.dumps(result, indent=2) + "\n")
 
-    print(f"\n=== Vector search: {len(questions)} questions over {len(store.documents)} documents ===")
-    for name, value in metrics.items():
-        print(f"  {name:<10} {value:.3f}")
-    misses = [d for d in details if d["rank"] != 1 or not d["answer_found@1"]]
-    print(f"\n{len(misses)} questions where the top result was the wrong document or lacked the answer.")
-    if args.show_misses:
-        for d in misses:
-            print(f"\n  Q: {d['question']}\n     expected {d['relevant']} -> rank {d['rank']}; top 3: {d['top3']}")
-    if llm:
-        wrong = [d for d in details if not d["llm_correct"]]
-        print(f"\n{len(wrong)} written answers missing the expected text.")
+    print(f"\n=== {len(questions)} questions over {len(store.documents)} documents ===")
+    names = list(next(iter(runs.values()))["metrics"])
+    print(f"  {'':<10}" + "".join(f"{m:>10}" for m in runs))
+    for metric in names:
+        print(f"  {metric:<10}" + "".join(f"{r['metrics'][metric]:>10.3f}" for r in runs.values()))
+    for method, run in runs.items():
+        details = run["details"]
+        misses = [d for d in details if d["rank"] != 1 or not d["answer_found@1"]]
+        print(f"\n{method}: {len(misses)} questions where the top result was the wrong document or lacked the answer.")
         if args.show_misses:
-            for d in wrong:
-                print(f"\n  Q: {d['question']}\n     answer: {d['llm_answer']}")
+            for d in misses:
+                print(f"  Q: {d['question']}\n     expected {d['relevant']} -> rank {d['rank']}; top 3: {d['top3']}")
+        if llm:
+            wrong = [d for d in details if not d["llm_correct"]]
+            print(f"{method}: {len(wrong)} written answers missing the expected text.")
+            if args.show_misses:
+                for d in wrong:
+                    print(f"  Q: {d['question']}\n     answer: {d['llm_answer']}")
     print(f"\nSaved {out}")
 
 

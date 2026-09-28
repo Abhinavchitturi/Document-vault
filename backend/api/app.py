@@ -12,7 +12,7 @@ Endpoints:
     GET    /api/documents/{id}/pages/{n}/image       one page as an image (scans and photos straightened)
     POST   /api/documents/{id}/pages/{n}/highlights  where the answer's passage and facts are on that page
     DELETE /api/documents/{id}            remove a document and its search data
-    GET    /api/search?q=...&category=... best-matching passage per document
+    GET    /api/search?q=...&category=...&method=... best passage per document (hybrid search by default)
     POST   /api/chat                      chat: answer streamed word by word (NDJSON), with sources
     POST   /api/ask                       the same answer in one response (scripts, tests)
 
@@ -46,7 +46,7 @@ from pydantic import BaseModel, Field
 
 from backend.llm.answer import LLM, answer_question, finalize, stream_answer
 from backend.llm.ollama import LLMUnavailableError
-from backend.retriever.retriever import Retriever
+from backend.retriever.retriever import METHODS, Retriever
 from backend.viewer.highlight import highlights_for, page_image
 
 from backend.parser.categories import CATEGORIES
@@ -138,9 +138,11 @@ def create_app(
     llm: LLM | None = None,
     frontend_dir: Path | None = FRONTEND_DIR,
     database_label: str = "",
+    search_method: str = "hybrid",
 ) -> FastAPI:
     app = FastAPI(title="Secure Digital Document Vault", docs_url=None, redoc_url=None, openapi_url=None)
-    retriever = Retriever(store, embedder)
+    retriever = Retriever(store, embedder, search_method)
+    retrievers = {m: retriever if m == search_method else Retriever(store, embedder, m) for m in METHODS}
 
     @app.middleware("http")
     async def security_headers(request, call_next):
@@ -271,6 +273,7 @@ def create_app(
             "database": database_label or "SQLite file in the vault folder",
             "index_dir": str(store.root),
             "ocr_available": ocr_available(),
+            "search_method": search_method,
         }
 
     @app.get("/api/settings")
@@ -307,16 +310,20 @@ def create_app(
         q: str = Query(..., min_length=1, max_length=500),
         k: int = Query(5, ge=1, le=20),
         category: str | None = None,
+        method: str | None = None,
     ) -> dict:
         if category and category not in CATEGORIES:
             raise HTTPException(400, f"category must be one of {CATEGORIES}")
+        if method and method not in METHODS:
+            raise HTTPException(400, f"method must be one of {METHODS}")
+        method = method or search_method
         t0 = time.perf_counter()
-        hits = retriever.documents(q, top_k=k, category=category or None)
+        hits = retrievers[method].documents(q, top_k=k, category=category or None)
         took_ms = (time.perf_counter() - t0) * 1000
         return {
             "question": q,
             "category": category,
-            "method": "vector",
+            "method": method,
             "took_ms": round(took_ms, 1),
             "results": [_passage(chunk, score, i + 1) for i, (chunk, score) in enumerate(hits)],
         }
@@ -410,6 +417,8 @@ def main() -> None:
     parser.add_argument("--device", default=None, help="cuda / mps / cpu; default picks automatically")
     parser.add_argument("--llm-model", default=None, help="local Ollama model (default: llama3.1:8b)")
     parser.add_argument("--no-llm", action="store_true", help="search only, no answers")
+    parser.add_argument("--search", default="hybrid", choices=METHODS,
+                        help="hybrid (meaning + exact words, default), vector (meaning only) or keyword (BM25 only)")
     parser.add_argument("--port", type=int, default=8000)
     args = parser.parse_args()
 
@@ -442,7 +451,8 @@ def main() -> None:
     from sqlalchemy.engine import make_url
 
     db_label = make_url(database_url(args.database_url)).render_as_string(hide_password=True)
-    app = create_app(store, embedder, HFTokenizer(embedder.model_name), llm, database_label=db_label)
+    app = create_app(store, embedder, HFTokenizer(embedder.model_name), llm, database_label=db_label,
+                     search_method=args.search)
     logger.info("Vault for %s: %d documents. Answers: %s. Open http://127.0.0.1:%d",
                 store.owner, len(store.documents), llm.name if llm else "off", args.port)
     uvicorn.run(app, host="127.0.0.1", port=args.port)

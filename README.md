@@ -20,7 +20,7 @@ and the privacy decisions.
 | 2 | Document metadata | ✅ PostgreSQL: `users`, `documents`, `document_chunks`; every document has an owner |
 | 3 | Web application | ✅ React + Next.js: Login, Dashboard, Chat, Documents, Upload, Settings |
 | 4 | OCR | ✅ Photos and scanned PDFs: auto-rotated, cleaned up, answers highlighted on the scan, blurry scans flagged |
-| 5 | Better retrieval (BM25 + vector) | 🟡 Vector search and evaluation harness; hybrid to come |
+| 5 | Better retrieval (BM25 + vector) | ✅ Hybrid search: meaning (vector) + exact words and numbers (BM25), fused; exact ID matches first |
 | 6–13 | Auth, mobile, classification, expiry, reminders, security, sharing, deployment | ⏳ |
 
 ## Privacy
@@ -122,7 +122,7 @@ automatically the first time the app starts. To reset everything: `dropdb vault 
 and delete `data/index/`.
 
 ## Try it with dummy documents
-A fictional family (the Mehras) with 13 documents and 24 questions with known answers:
+A fictional family (the Mehras) with 13 documents and 32 questions with known answers (8 of them look up a document by a number, like a serial or policy number):
 
 | Path | What |
 |---|---|
@@ -139,21 +139,31 @@ python -m backend.upload.ingest samples/pdfs
 All names, companies and numbers are made up.
 
 ## Evaluation
-Retrieval only:
+Compare the three search methods (hybrid, vector only, keyword only):
 ```bash
 python -m backend.eval.evaluate --show-misses
 ```
-Retrieval plus local LLM answers:
+Hybrid search plus local LLM answers:
 ```bash
 python -m backend.eval.evaluate --with-llm --show-misses
 ```
-Builds a throwaway vault from the samples (your real vault isn't touched), asks the 24
-questions and writes `results/eval_vector.json` (or `eval_vector_llm.json`).
+Builds a throwaway vault from the samples (your real vault isn't touched), asks the 32
+questions and writes `results/eval_search.json` (or `eval_hybrid_llm.json`).
 
 | Retrieval | Recall@1 | Recall@3 | MRR@5 | Answer@3 | LLM answer accuracy |
 |---|---|---|---|---|---|
-| Vector (Arctic Embed M v1.5) + best local LLM | — | — | — | — | — |
-| Hybrid (BM25 + vector), Phase 5 | — | — | — | — | — |
+| Keyword only (BM25) | 0.938 | 1.000 | 0.969 | 1.000 | — |
+| Vector only (Arctic Embed M v1.5) | — | — | — | — | — |
+| **Hybrid (app default)** | — | — | — | — | — |
+
+Rows marked — are filled in by running the command above (the embedding model runs on your Mac).
+
+**How hybrid search works** (`backend/retriever/`): every passage is ranked twice, by meaning
+(the embedding model: "when does my bike cover end" finds "expires on") and by exact words
+(BM25: rare words and numbers like `KMI/PC/25/0093318` count most). The two rankings are merged
+with Reciprocal Rank Fusion. If the question contains a number copied from a document (policy,
+serial, account or phone number), passages with that exact number come first. Start the app
+with `--search vector` or `--search keyword` to try one method alone.
 
 - **Recall@k**: correct document in the top k
 - **MRR@5**: how high the correct document ranks (1 = always first)
@@ -191,7 +201,7 @@ Layout:
 | `backend/embeddings/` | Snowflake Arctic Embed M v1.5; offline mode once downloaded |
 | `backend/database/` | PostgreSQL schema (`users`, `documents`, `document_chunks`) and connection |
 | `backend/vector_store/` | The vault: records in the database, vectors in FAISS, original files on disk |
-| `backend/retriever/` | Question → passages (Phase 5 adds BM25 here) |
+| `backend/retriever/` | Question → passages: hybrid fusion (`retriever.py`), keyword search (`bm25.py`) |
 | `backend/llm/` | Local Ollama client and the answer-with-citations prompt |
 | `backend/viewer/` | Finds the passage and the answer's facts on a page (PDF boxes, Word/text spans) |
 | `backend/api/` | FastAPI app: the API, and serving the built web app |
