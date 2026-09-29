@@ -131,7 +131,8 @@ documents = Table(
     Column("amount", String(32)),  # the main amount, digits only
     Column("reference", Text),  # policy / account / serial / receipt number (encrypted, Phase 11)
     Column("issuer", Text),  # encrypted
-    Column("facts_method", String(16)),  # needle / ollama / rules / person
+    Column("facts_method", String(16)),
+    Column("private", Boolean, nullable=False, default=False),  # Phase 12: hidden from the family even in family mode  # needle / ollama / rules / person
     Column("num_chunks", Integer, nullable=False),
     Column("size_bytes", BigInteger, nullable=False),
     Column("sha256", String(64), nullable=False),
@@ -152,6 +153,15 @@ Index("ix_document_chunks_document_id", document_chunks.c.document_id)
 
 # Columns added after a table first shipped. create_all() never alters existing tables, so
 # connect() adds these to older vaults: (table, column, SQL type).
+document_shares = Table(  # Phase 12: a document its owner shared with another family member
+    "document_shares",
+    metadata,
+    Column("document_id", String(32), ForeignKey("documents.id", ondelete="CASCADE"), primary_key=True),
+    Column("user_id", Integer, ForeignKey("users.id", ondelete="CASCADE"), primary_key=True),
+    Column("shared_at", DateTime(timezone=True), nullable=False),
+)
+Index("ix_document_shares_user_id", document_shares.c.user_id)
+
 access_log = Table(
     "access_log",  # Phase 11: who signed in, opened, added or removed what, and when
     metadata,
@@ -178,6 +188,7 @@ ADDED_COLUMNS = [
     ("documents", "reference", "TEXT"),
     ("documents", "issuer", "TEXT"),
     ("documents", "facts_method", "VARCHAR(16)"),
+    ("documents", "private", "BOOLEAN NOT NULL DEFAULT FALSE"),
     ("users", "password_hash", "TEXT"),
     ("users", "is_admin", "BOOLEAN NOT NULL DEFAULT FALSE"),
 ]

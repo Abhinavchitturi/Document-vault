@@ -25,6 +25,7 @@ const paths = {
   fingerprint: <><path d="M12 11v2.5a7 7 0 0 1-1.3 4.1" /><path d="M8.6 20.2A11 11 0 0 0 9 13.5V11a3 3 0 0 1 6 0v1.5" /><path d="M15 16.5a17 17 0 0 1-.9 4.3" /><path d="M5.2 17.5A11 11 0 0 0 6 13.5V11a6 6 0 0 1 10.7-3.7" /><path d="M18 11v2a20 20 0 0 1-.3 3.5" /><path d="M3.5 13a9 9 0 0 0 .5-2 8 8 0 0 1 1.3-4.4" /></>,
   phone: <><rect x="7" y="2.5" width="10" height="19" rx="2.2" /><path d="M11 18.5h2" /></>,
   edit: <><path d="M4 20h4L19 9l-4-4L4 16z" /><path d="M13.5 6.5l4 4" /></>,
+  share: <><circle cx="9" cy="8" r="3.2" /><path d="M3.5 19a5.5 5.5 0 0 1 11 0" /><circle cx="17" cy="9" r="2.4" /><path d="M16 13.6a4.5 4.5 0 0 1 5 4.4" /></>,
   lock: <><rect x="5" y="11" width="14" height="10" rx="2" /><path d="M8 11V7a4 4 0 0 1 8 0v4" /></>,
 };
 

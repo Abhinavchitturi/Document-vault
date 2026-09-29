@@ -96,6 +96,7 @@ def test_sign_in_out_and_cookie(tmp_path):
 
 def test_each_person_sees_only_their_own_documents(tmp_path):
     store, app = make_app(tmp_path)
+    store.set_family_mode(False)  # private mode (Phase 12); family mode is tested in test_sharing.py
     admin = signed_in(app)
     mine = upload(admin, "car_insurance.txt", b"Car insurance policy KMI/PC/25/0093318 expires 14 March 2027")["document"]
     assert admin.post("/api/users", json={"name": "Sunita", "password": SUNITA}).status_code == 200

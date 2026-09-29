@@ -6,7 +6,7 @@ import AppShell, { useVault } from "@/components/AppShell";
 import { displayName, FileIcon } from "@/components/DocBits";
 import Icon from "@/components/Icon";
 import PageViewer from "@/components/PageViewer";
-import { api, CATEGORIES, CATEGORY_LABEL, daysUntil, fileUrl, formatAmount, formatBytes, formatDate, hardToRead, showReference, type Category, type DocumentChanges, type Source, type VaultDocument } from "@/lib/api";
+import { api, CATEGORIES, CATEGORY_LABEL, daysUntil, fileUrl, formatAmount, formatBytes, formatDate, hardToRead, showReference, type Category, type DocumentChanges, type Person, type Source, type VaultDocument } from "@/lib/api";
 
 function Documents() {
   const { refresh } = useVault();
@@ -16,6 +16,39 @@ function Documents() {
   const [message, setMessage] = useState<string | null>(null);
   const [viewing, setViewing] = useState<Source | null>(null);
   const [editing, setEditing] = useState<string | null>(null);
+  const [sharing, setSharing] = useState<string | null>(null);
+  const [family, setFamily] = useState<Person[] | null>(null);
+  const [whose, setWhose] = useState<"all" | "mine" | "shared">("all");
+  const [familyMode, setFamilyMode] = useState<boolean | null>(null);
+  useEffect(() => { api.settings().then((s) => setFamilyMode(s.family_mode)).catch(() => setFamilyMode(false)); }, []);
+
+  const openSharing = (d: VaultDocument) => {
+    setEditing(null);
+    setSharing(sharing === d.doc_id ? null : d.doc_id);
+    if (family === null) api.family().then(setFamily).catch(() => setFamily([]));
+  };
+  const savePrivate = async (d: VaultDocument, isPrivate: boolean) => {
+    try {
+      const updated = await api.setPrivate(d.doc_id, isPrivate);
+      setDocs((all) => all?.map((x) => (x.doc_id === d.doc_id ? updated : x)) ?? null);
+      setSharing(null);
+      setMessage(isPrivate ? `${d.filename} is private: only you can see it.` : `The family can see ${d.filename} again.`);
+    } catch (e) {
+      setMessage(`Couldn't change it: ${(e as Error).message}`);
+    }
+  };
+  const saveSharing = async (d: VaultDocument, ids: number[]) => {
+    try {
+      const updated = await api.share(d.doc_id, ids);
+      setDocs((all) => all?.map((x) => (x.doc_id === d.doc_id ? updated : x)) ?? null);
+      setSharing(null);
+      setMessage(updated.shared_with.length
+        ? `${d.filename} is shared with ${updated.shared_with.map((p) => p.name).join(", ")}.`
+        : `${d.filename} is only yours again.`);
+    } catch (e) {
+      setMessage(`Couldn't share: ${(e as Error).message}`);
+    }
+  };
 
   const saveDetails = async (d: VaultDocument, changes: DocumentChanges) => {
     try {
@@ -40,7 +73,9 @@ function Documents() {
     docs?.forEach((d) => { c[d.category]++; });
     return c;
   }, [docs]);
-  const shown = (docs ?? []).filter((d) => (!filter || d.category === filter) && d.filename.toLowerCase().includes(query.toLowerCase()));
+  const anyShared = (docs ?? []).some((d) => !d.mine);
+  const shown = (docs ?? []).filter((d) => (!filter || d.category === filter) && d.filename.toLowerCase().includes(query.toLowerCase())
+    && (whose === "all" || (whose === "mine") === d.mine));
 
   const changeCategory = async (d: VaultDocument, category: Category) => {
     try {
@@ -53,6 +88,18 @@ function Documents() {
     }
   };
   const remove = async (d: VaultDocument) => {
+    if (!d.mine) {
+      if (!confirm(`Take "${d.filename}" off your list?\n\n${d.owner} keeps it; they can share it with you again.`)) return;
+      try {
+        await api.leaveShare(d.doc_id);
+        setMessage(`Removed ${d.filename} from your list.`);
+      } catch (e) {
+        setMessage(`Couldn't remove it: ${(e as Error).message}`);
+      }
+      load();
+      refresh();
+      return;
+    }
     if (!confirm(`Remove "${d.filename}" from the vault?\n\nThe copy on your computer outside this app is not affected.`)) return;
     await api.deleteDocument(d.doc_id);
     setMessage(`Removed ${d.filename}.`);
@@ -78,6 +125,13 @@ function Documents() {
             </button>
           ))}
         </div>
+        {anyShared && (
+          <div className="segmented" role="group" aria-label="Whose documents">
+            {([["all", "All"], ["mine", "Mine"], ["shared", familyMode ? "Family's" : "Shared with me"]] as const).map(([k, label]) => (
+              <button key={k} type="button" aria-pressed={whose === k} onClick={() => setWhose(k)}>{label}</button>
+            ))}
+          </div>
+        )}
       </div>
       {message && <div className="notice good" style={{ marginBottom: 12 }} role="status"><Icon name="ok" />{message}</div>}
 
@@ -114,26 +168,46 @@ function Documents() {
                           )}
                         </div>
                         <Facts d={d} />
+                        {!d.mine && <div className="shared-line" style={{ textTransform: "capitalize" }}><Icon name="share" size={12} /> {d.via === "family" ? `${d.owner}'s` : `Shared by ${d.owner}`}</div>}
+                        {d.mine && d.private && <div className="shared-line"><Icon name="lock" size={12} /> Private: only you</div>}
+                        {d.mine && d.shared_with.length > 0 && (
+                          <div className="shared-line"><Icon name="share" size={12} /> Shared with {d.shared_with.map((p) => p.name).join(", ")}</div>
+                        )}
                       </div>
                     </div>
                   </td>
                   <td>
-                    <select aria-label={`Type of ${d.filename}`} value={d.category} onChange={(e) => changeCategory(d, e.target.value as Category)}>
-                      {CATEGORIES.map((c) => <option key={c} value={c}>{CATEGORY_LABEL[c]}</option>)}
-                    </select>
+                    {d.mine ? (
+                      <select aria-label={`Type of ${d.filename}`} value={d.category} onChange={(e) => changeCategory(d, e.target.value as Category)}>
+                        {CATEGORIES.map((c) => <option key={c} value={c}>{CATEGORY_LABEL[c]}</option>)}
+                      </select>
+                    ) : <span className="muted">{CATEGORY_LABEL[d.category]}</span>}
                   </td>
                   <td className="c-added faint">{formatDate(d.added_at)}</td>
                   <td className="c-size faint">{formatBytes(d.size_bytes)}</td>
                   <td>
                     <div className="actions">
                       <button className="icon-btn" type="button" title="View" aria-label={`View ${d.filename}`} onClick={() => view(d)}><Icon name="search" /></button>
-                      <button className="icon-btn" type="button" title="Details: dates, amount, number" aria-label={`Details of ${d.filename}`}
-                              aria-expanded={editing === d.doc_id} onClick={() => setEditing(editing === d.doc_id ? null : d.doc_id)}><Icon name="edit" /></button>
+                      {d.mine && <>
+                        <button className="icon-btn" type="button" title="Details: dates, amount, number" aria-label={`Details of ${d.filename}`}
+                                aria-expanded={editing === d.doc_id} onClick={() => { setSharing(null); setEditing(editing === d.doc_id ? null : d.doc_id); }}><Icon name="edit" /></button>
+                        <button className="icon-btn" type="button" title={familyMode ? "Who can see this" : "Share with family"} aria-label={`Share ${d.filename}`}
+                                aria-expanded={sharing === d.doc_id} onClick={() => openSharing(d)}><Icon name="share" /></button>
+                      </>}
                       <a className="icon-btn" href={fileUrl(d.doc_id, d.filename)} target="_blank" rel="noopener" title="Open original" aria-label={`Open ${d.filename}`}><Icon name="open" /></a>
-                      <button className="icon-btn danger" type="button" title="Remove from vault" aria-label={`Remove ${d.filename}`} onClick={() => remove(d)}><Icon name="trash" /></button>
+                      {d.mine
+                        ? <button className="icon-btn danger" type="button" title="Remove from vault" aria-label={`Remove ${d.filename}`} onClick={() => remove(d)}><Icon name="trash" /></button>
+                        : d.via === "shared" && <button className="icon-btn" type="button" title="Remove from my list" aria-label={`Remove ${d.filename} from my list`} onClick={() => remove(d)}><Icon name="close" /></button>}
                     </div>
                   </td>
                 </tr>
+                {sharing === d.doc_id && (
+                  <tr className="details-row"><td colSpan={5}>
+                    {familyMode
+                      ? <PrivateForm d={d} onSave={(p) => savePrivate(d, p)} onCancel={() => setSharing(null)} />
+                      : <ShareForm d={d} family={family} onSave={(ids) => saveSharing(d, ids)} onCancel={() => setSharing(null)} />}
+                  </td></tr>
+                )}
                 {editing === d.doc_id && (
                   <tr className="details-row"><td colSpan={5}><DetailsForm d={d} onSave={(c) => saveDetails(d, c)} onCancel={() => setEditing(null)} /></td></tr>
                 )}
@@ -162,6 +236,62 @@ function Facts({ d }: { d: VaultDocument }) {
       {d.amount && <span>{formatAmount(d.amount)}</span>}
       {d.reference && <span title="The full number is in the details (pencil)">No. {showReference(d.reference)}</span>}
     </div>
+  );
+}
+
+/** Family mode: everyone sees your documents unless you keep one private. */
+function PrivateForm({ d, onSave, onCancel }: { d: VaultDocument; onSave: (isPrivate: boolean) => void; onCancel: () => void }) {
+  const [isPrivate, setIsPrivate] = useState(d.private);
+  return (
+    <form className="share-form" onSubmit={(e) => { e.preventDefault(); onSave(isPrivate); }}>
+      <strong style={{ fontSize: 14 }}>Who can see “{d.filename}”?</strong>
+      <div className="share-people">
+        <label className="check"><input type="radio" name="who" checked={!isPrivate} onChange={() => setIsPrivate(false)} />Everyone in the family</label>
+        <label className="check"><input type="radio" name="who" checked={isPrivate} onChange={() => setIsPrivate(true)} />Only me (private)</label>
+      </div>
+      <p className="faint" style={{ margin: 0, fontSize: 12.5 }}>
+        The family can view it, search it and ask about it. Only you can change or delete it, and reminders for it come to you.
+      </p>
+      <div style={{ display: "flex", gap: 8 }}>
+        <button className="btn primary" type="submit">Save</button>
+        <button className="btn" type="button" onClick={onCancel}>Cancel</button>
+      </div>
+    </form>
+  );
+}
+
+/** Private mode: pick who else can see one of your documents. */
+function ShareForm({ d, family, onSave, onCancel }:
+  { d: VaultDocument; family: Person[] | null; onSave: (ids: number[]) => void; onCancel: () => void }) {
+  const [chosen, setChosen] = useState<Set<number>>(new Set(d.shared_with.map((p) => p.id)));
+  const toggle = (id: number) => setChosen((c) => { const n = new Set(c); if (n.has(id)) n.delete(id); else n.add(id); return n; });
+  if (family === null) return <p className="muted" style={{ margin: 0 }}>Loading…</p>;
+  if (family.length === 0) {
+    return (
+      <div className="share-form">
+        <p className="muted" style={{ margin: 0 }}>There&apos;s nobody to share with yet. The admin can add family members in Settings.</p>
+        <div><button className="btn" type="button" onClick={onCancel}>Close</button></div>
+      </div>
+    );
+  }
+  return (
+    <form className="share-form" onSubmit={(e) => { e.preventDefault(); onSave([...chosen]); }}>
+      <strong style={{ fontSize: 14 }}>Who else can see “{d.filename}”?</strong>
+      <div className="share-people">
+        {family.map((p) => (
+          <label key={p.id} className="check">
+            <input type="checkbox" checked={chosen.has(p.id)} onChange={() => toggle(p.id)} />{p.name}
+          </label>
+        ))}
+      </div>
+      <p className="faint" style={{ margin: 0, fontSize: 12.5 }}>
+        They can view it, search it and ask questions about it, and get its reminders. Only you can change or delete it.
+      </p>
+      <div style={{ display: "flex", gap: 8 }}>
+        <button className="btn primary" type="submit">Save</button>
+        <button className="btn" type="button" onClick={onCancel}>Cancel</button>
+      </div>
+    </form>
   );
 }
 

@@ -80,7 +80,7 @@ def test_resort_fixes_automatic_types_and_leaves_chosen_ones(tmp_path):
     other = store.for_user(store._ensure_user("sunita"))
     (tmp_path / "hers.txt").write_text(BILL + " Hers.")
     ingest_file(tmp_path / "hers.txt", other, emb, tok, "other")
-    other.update_category(next(iter(other.documents)), "other", source="auto", confidence=20)
+    other.update_category(other.own_documents()[0]["doc_id"], "other", source="auto", confidence=20)
 
     embed = lambda texts: emb.encode_passages(texts)  # noqa: E731
     preview = resort(store, Classifier(emb), embed, apply=False)

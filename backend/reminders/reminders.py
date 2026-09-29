@@ -51,7 +51,9 @@ def describe(doc: dict, kind: str, when: date, days_left: int) -> tuple[str, str
         verb = {"expires": "expired", "warranty ends": "warranty ended", "is due": "was due"}[verb]
     title = f"{title_of(doc)} {verb} {when_text}"
     amount = f"Rs. {float(doc['amount']):,.2f}".replace(".00", "") if doc.get("amount") else None
-    body = " · ".join(x for x in (f"{when.day} {when:%b %Y}", amount, doc.get("issuer"), doc.get("reference")) if x)
+    shared = f"{doc['owner']}'s" if doc.get("mine") is False else None  # shared with this person (Phase 12)
+    body = " · ".join(x for x in (f"{when.day} {when:%b %Y}", amount, doc.get("issuer"), doc.get("reference"), shared)
+                      if x)
     return title, body
 
 
@@ -109,6 +111,8 @@ class Reminders:
     def _dated(self, view) -> list[tuple[dict, str, date]]:
         out = []
         for doc in view.documents.values():
+            if doc.get("via") == "family":  # others' documents seen in family mode: theirs to be reminded of
+                continue
             for kind, field in KINDS.items():
                 if doc.get(field):
                     out.append((doc, kind, date.fromisoformat(doc[field])))
@@ -133,6 +137,7 @@ class Reminders:
                                 if when - timedelta(days=d) >= today), None)
             title, body = describe(doc, kind, when, left)
             out.append({"doc_id": doc["doc_id"], "filename": doc["filename"], "category": doc["category"],
+                        "owner": doc.get("owner"), "mine": doc.get("mine", True),
                         "kind": kind, "date": when.isoformat(), "days_left": left, "done": is_done,
                         "status": "done" if is_done else "overdue" if left < 0 else "today" if left == 0
                         else "soon" if left <= 7 else "upcoming",

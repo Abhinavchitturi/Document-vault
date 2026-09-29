@@ -30,7 +30,7 @@ def resort(store, classifier: Classifier, embed_passages, apply: bool) -> list[d
     report = []
     for user_id in user_ids:
         view = store.for_user(user_id)
-        for doc in list(view.documents.values()):
+        for doc in view.own_documents():  # shared ones are handled in their owner's turn
             if doc.get("category_source") == "person":
                 continue
             chunks = view.chunks_of(doc["doc_id"])

@@ -55,6 +55,7 @@ def test_each_owner_sees_only_their_documents(tmp_path):
     policy = write(tmp_path / "policy.txt", "Car insurance policy expires 1 August")
 
     arjun = DocumentStore(root, url, owner="arjun")
+    arjun.set_family_mode(False)  # private mode (Phase 12): each owner only sees their own
     ingest_file(bill, arjun, emb, TOK)
     kavya = DocumentStore(root, url, owner="kavya")
     ingest_file(policy, kavya, emb, TOK)

@@ -35,8 +35,10 @@ class DocumentsScreenState extends State<DocumentsScreen> {
     final ok = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text('Remove from the vault?'),
-        content: Text('${d.filename} and its search data will be deleted from the Mac.'),
+        title: Text(d.mine ? 'Remove from the vault?' : 'Remove from your list?'),
+        content: Text(d.mine
+            ? '${d.filename} and its search data will be deleted from the Mac.'
+            : '${d.owner} shared ${d.filename} with you. They keep it; you just stop seeing it.'),
         actions: [
           TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Cancel')),
           FilledButton(onPressed: () => Navigator.pop(context, true), child: const Text('Remove')),
@@ -45,7 +47,8 @@ class DocumentsScreenState extends State<DocumentsScreen> {
     );
     if (ok != true || !mounted) return;
     try {
-      await VaultScope.of(context).api.deleteDocument(d.id);
+      final api = VaultScope.of(context).api;
+      await (d.mine ? api.deleteDocument(d.id) : api.leaveShare(d.id));
       await reload();
     } catch (e) {
       if (mounted) VaultScope.handle(context, e);
@@ -110,17 +113,21 @@ class DocumentsScreenState extends State<DocumentsScreen> {
                       if (d.dueOn != null) 'due ${_day(d.dueOn!)}',
                       if (d.amount != null) 'Rs. ${d.amount}',
                       if (d.reference != null) 'No. ${showReference(d.reference!)}',
+                      if (!d.mine) d.via == 'family' ? "${_name(d.owner)}'s" : 'shared by ${_name(d.owner)}',
                       if (d.ocrPages > 0) 'scanned',
                       if (d.needsReview) '⚠ check type (on the Mac)',
                       if (d.hardToRead) '⚠ hard to read',
                     ].join(' · ')),
                     onTap: () => Navigator.of(context)
                         .push(MaterialPageRoute(builder: (_) => SourceScreen(source: Source.firstPage(d)))),
-                    trailing: IconButton(
-                      tooltip: 'Remove',
-                      icon: const Icon(Icons.delete_outline),
-                      onPressed: () => _delete(d),
-                    ),
+                    // Family-mode documents are everyone's to see: nothing to remove from one list.
+                    trailing: d.via == 'family'
+                        ? null
+                        : IconButton(
+                            tooltip: d.mine ? 'Remove' : 'Remove from my list',
+                            icon: Icon(d.mine ? Icons.delete_outline : Icons.close),
+                            onPressed: () => _delete(d),
+                          ),
                   ),
               ]),
             ),
@@ -130,6 +137,8 @@ class DocumentsScreenState extends State<DocumentsScreen> {
   }
 
   static const _months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+
+  String _name(String n) => n.isEmpty ? n : n[0].toUpperCase() + n.substring(1);
 
   String _day(DateTime d) => '${d.day} ${_months[d.month - 1]} ${d.year}';
 
