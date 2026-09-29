@@ -1,6 +1,7 @@
 """Phase 2 metadata schema (PostgreSQL).
 
     users            family members: who owns documents, and their sign-in (Phase 6)
+    devices          paired phones (Phase 7): the SHA-256 of each phone's access key
     passkeys         Touch ID / Face ID / fingerprint sign-ins: each device's public key
     sessions         who is signed in, on which browser (the cookie holds a random token;
                      only its SHA-256 is stored, so a copied database can't sign anyone in)
@@ -53,6 +54,18 @@ sessions = Table(
     Column("expires_at", DateTime(timezone=True), nullable=False),
 )
 Index("ix_sessions_user_id", sessions.c.user_id)
+
+devices = Table(  # paired phones (Phase 7): each holds its own long-lived, revocable key
+    "devices",
+    metadata,
+    Column("id", Integer, primary_key=True, autoincrement=True),
+    Column("user_id", Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False),
+    Column("name", String(100), nullable=False),  # "Abhinav's iPhone"
+    Column("token_hash", String(64), nullable=False, unique=True),  # SHA-256 of the key the phone keeps
+    Column("created_at", DateTime(timezone=True), nullable=False),
+    Column("last_seen_at", DateTime(timezone=True)),
+)
+Index("ix_devices_user_id", devices.c.user_id)
 
 passkeys = Table(  # Touch ID / Face ID / fingerprint sign-in (WebAuthn), see backend/auth/passkeys.py
     "passkeys",

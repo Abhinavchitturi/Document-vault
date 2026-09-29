@@ -22,7 +22,8 @@ and the privacy decisions.
 | 4 | OCR | ✅ Photos and scanned PDFs: auto-rotated, cleaned up, answers highlighted on the scan, blurry scans flagged |
 | 5 | Better retrieval (BM25 + vector) | ✅ Hybrid search: meaning (vector) + exact words and numbers (BM25), fused; exact ID matches first |
 | 6 | Authentication | ✅ Password and passkey (Touch ID / Face ID / fingerprint) sign-in, one account per family member, each sees only their own documents; admin adds members and resets passwords |
-| 7–13 | Mobile, classification, expiry, reminders, security, sharing, deployment | ⏳ |
+| 7 | Mobile app | ✅ Flutter app (`mobile/`): chat, documents, scan with the camera; paired by QR code over the home Wi-Fi, HTTPS pinned to the vault's own certificate, Face ID / fingerprint lock |
+| 8–13 | Classification, expiry, reminders, security, sharing, deployment | ⏳ |
 
 ## Privacy
 - For our family only. The repository is private and contains **code and fictional samples only**.
@@ -106,6 +107,17 @@ Where things live:
 - **Search vectors and original files**: `data/index/` (git-ignored).
 - **Owner**: before sign-in is set up, the vault belongs to your computer's user name (and follows
   it if you rename your Mac user). The setup screen turns that owner into your account.
+
+## Phone app (Phase 7)
+Start the vault with phone access, then pair each phone once:
+```bash
+python -m backend.api.app --phones
+```
+Mac: **Settings → Phones → Pair a phone** shows a QR code. Phone: open the Document Vault app →
+**Scan pairing code**. The phone must be on the same Wi-Fi. Phones connect over HTTPS on port
+8443 to a certificate made on this Mac; the app is locked to that exact certificate, and only
+paired phones are served (no web pages or password sign-in on the network). Remove a phone in
+Settings → Phones. How to install the app on an iPhone or Android phone: [mobile/README.md](mobile/README.md).
 
 ## Family accounts (Phase 6)
 - **First visit**: *Set up your vault*. Your name is filled in; choose a password (8+ characters).
@@ -224,7 +236,9 @@ Layout:
 | `backend/embeddings/` | Snowflake Arctic Embed M v1.5; offline mode once downloaded |
 | `backend/database/` | PostgreSQL schema (`users`, `documents`, `document_chunks`) and connection |
 | `backend/vector_store/` | The vault: records in the database, vectors in FAISS, original files on disk |
-| `backend/auth/` | Sign-in: password hashing (`passwords.py`), accounts and sessions (`accounts.py`), passkeys (`passkeys.py`), terminal tool (`cli.py`) |
+| `backend/auth/` | Sign-in: password hashing (`passwords.py`), accounts and sessions (`accounts.py`), passkeys (`passkeys.py`), paired phones (`devices.py`), terminal tool (`cli.py`) |
+| `backend/api/lan.py` | The phone listener's certificate and the Mac's Wi-Fi address |
+| `mobile/` | The Flutter phone app (see `mobile/README.md`) |
 | `backend/retriever/` | Question → passages: hybrid fusion (`retriever.py`), keyword search (`bm25.py`) |
 | `backend/llm/` | Local Ollama client and the answer-with-citations prompt |
 | `backend/viewer/` | Finds the passage and the answer's facts on a page (PDF boxes, Word/text spans) |

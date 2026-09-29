@@ -41,6 +41,21 @@ export interface Passkey {
   last_used_at: string | null;
 }
 
+export interface Device {
+  id: number;
+  name: string;
+  created_at: string;
+  last_seen_at: string | null;
+}
+
+export interface Pairing {
+  code: string;
+  expires_in: number;
+  url: string;
+  fingerprint: string;
+  qr_svg: string;
+}
+
 interface Ceremony {
   ceremony: string;
   options: string; // WebAuthn options as JSON text
@@ -161,6 +176,9 @@ export const api = {
     postJson("/api/passkeys", { ceremony, credential, name }).then((r) => json<{ id: string; name: string }>(r)),
   removePasskey: (id: string) =>
     fetch(`/api/passkeys/${encodeURIComponent(id)}`, { method: "DELETE" }).then((r) => json<{ removed: string }>(r)),
+  devices: () => fetch("/api/devices").then((r) => json<{ enabled: boolean; url: string | null; devices: Device[] }>(r)),
+  startPairing: () => fetch("/api/mobile/pairing", { method: "POST" }).then((r) => json<Pairing>(r)),
+  removeDevice: (id: number) => fetch(`/api/devices/${id}`, { method: "DELETE" }).then((r) => json<{ removed: number }>(r)),
   members: () => fetch("/api/users").then((r) => json<Member[]>(r)),
   addMember: (name: string, password: string, is_admin: boolean) =>
     postJson("/api/users", { name, password, is_admin }).then((r) => json<User>(r)),
