@@ -26,7 +26,8 @@ and the privacy decisions.
 | 8 | Classification | ✅ Uploads sorted into insurance / warranty / bill / property / other by keywords + meaning, asking the local answer model only when unsure; unsure ones flagged "check type" |
 | 9 | Expiry and key facts | ✅ Expiry, due date, amount, reference number and issuer read from each document (Needle 3 when installed, else the answer model, else text patterns), checked against the text; "Coming up" on the dashboard |
 | 10 | Reminders | ✅ Before expiries and due dates: phone notifications (even with the Mac off), Mac notifications, a calendar file, and the Dashboard; days, time and "Paid / Done" per person |
-| 11–13 | Security, sharing, deployment | ⏳ |
+| 11 | Security | ✅ Documents, scans, search index, file names and ID numbers encrypted on disk (AES-256), key in the macOS Keychain with a paper recovery key; encrypted one-file backups; an activity log of sign-ins and document access |
+| 12–13 | Sharing, deployment | ⏳ |
 
 ## Privacy
 - For our family only. The repository is private and contains **code and fictional samples only**.
@@ -36,6 +37,37 @@ and the privacy decisions.
   embedding model runs offline once downloaded, and the web page loads nothing from the internet.
 - Every family member signs in with their own password, and the server only ever shows them their own
   documents. The app still listens on `127.0.0.1` only: until HTTPS arrives (Phase 13), don't expose it to a network.
+
+## Security (Phase 11)
+**Encrypted on disk.** Everything the vault keeps about your documents is encrypted with AES-256-GCM:
+the files themselves, OCR results of scans, the search index, and in the database the file names,
+passage text and ID / policy numbers (PAN, Aadhaar...). A copy of `data/` (a backup disk, a synced
+folder, a lost laptop's drive) is unreadable without the key. A vault from before Phase 11 is
+encrypted in place the first time you start the new version.
+
+**The key** lives in the macOS **Keychain** (Keychain Access → search "Document Vault"), never in the
+vault folder. Write down the **recovery key** once and keep it with your important papers:
+```bash
+cd ~/"Document Secure"
+python -m backend.security.cli recovery-key    # 13 groups of 4 letters/digits: write them on paper
+python -m backend.security.cli status          # encrypted? where is the key?
+python -m backend.security.cli restore-key     # new Mac / Keychain lost: type the recovery key
+```
+
+**Encrypted backups**: one `.dvbackup` file with everyone's documents, accounts, passkeys, phones and
+reminders, locked with a backup password (10+ characters). Safe on a USB drive or in the cloud.
+From Settings → Security (admin), or:
+```bash
+python -m backend.security.cli backup ~/Desktop
+python -m backend.security.cli restore ~/Desktop/"Document Vault backup 2026-09-29 21.00.dvbackup"
+```
+Restoring works on a Mac that has never seen the vault (the backup carries the key, wrapped by the
+backup password). Afterwards everyone signs in again; paired phones keep working.
+
+**Activity log**: sign-ins (and failed ones), documents added, opened, changed and removed, phones
+paired and removed, backups. Settings → Activity shows your own; the admin can see everyone's.
+Kept for a year; document names in it are encrypted too. From the terminal:
+`python -m backend.security.cli activity`.
 
 ## Setup (once)
 Python packages:
@@ -341,6 +373,7 @@ Layout:
 | `backend/embeddings/` | Snowflake Arctic Embed M v1.5; offline mode once downloaded |
 | `backend/database/` | PostgreSQL schema (`users`, `documents`, `document_chunks`) and connection |
 | `backend/vector_store/` | The vault: records in the database, vectors in FAISS, original files on disk |
+| `backend/security/` | Encryption at rest (`crypto.py`), the vault key in the Keychain (`keys.py`), encrypted backups (`backup.py`), activity log (`access_log.py`), terminal tool (`cli.py`) |
 | `backend/auth/` | Sign-in: password hashing (`passwords.py`), accounts and sessions (`accounts.py`), passkeys (`passkeys.py`), paired phones (`devices.py`), terminal tool (`cli.py`) |
 | `backend/api/lan.py` | The phone listener's certificate and the Mac's Wi-Fi address |
 | `mobile/` | The Flutter phone app (see `mobile/README.md`) |
@@ -358,7 +391,7 @@ Layout:
 ```bash
 pytest -q
 ```
-76 tests. They use a fake embedder and a fake LLM, so they run in a few seconds without
+148 tests. They use a fake embedder and a fake LLM, so they run in a few seconds without
 downloading models or running Ollama. By default they use SQLite; to run them against
 PostgreSQL (each test gets a throwaway database):
 ```bash

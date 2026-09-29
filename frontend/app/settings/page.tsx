@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import AppShell, { useVault } from "@/components/AppShell";
 import Icon from "@/components/Icon";
 import { useTheme, type Theme } from "@/components/ThemeToggle";
-import { api, formatDate, type Device, type Member, type Pairing, type Passkey, type PhoneAccess, type ReminderSettings, type Settings } from "@/lib/api";
+import { api, formatDate, type ActivityEntry, type Device, type Member, type Pairing, type Passkey, type PhoneAccess, type ReminderSettings, type Settings } from "@/lib/api";
 import { cancelled, createPasskey, deviceName, passkeysSupported } from "@/lib/passkey";
 
 const SEARCH_LABEL: Record<string, string> = {
@@ -85,6 +85,10 @@ function SettingsView() {
         <Phones />
 
         {s?.is_admin && <FamilyMembers />}
+
+        <Security settings={s} />
+
+        <Activity isAdmin={!!s?.is_admin} />
 
         <section className="card">
           <h2>Assistant</h2>
@@ -541,6 +545,110 @@ function FamilyMembers() {
         <div className="row"><button className="btn primary" type="submit" disabled={busy || !name.trim() || password.length < 8}>
           <Icon name="plus" size={14} />Add member</button></div>
       </form>
+    </section>
+  );
+}
+
+function Security({ settings }: { settings: Settings | null }) {
+  const [password, setPassword] = useState("");
+  const [again, setAgain] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [message, setMessage] = useState<{ ok: boolean; text: string } | null>(null);
+
+  const backup = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setBusy(true);
+    setMessage(null);
+    try {
+      const name = await api.downloadBackup(password);
+      setPassword(""); setAgain("");
+      setMessage({ ok: true, text: `Saved ${name}. Copy it to a USB drive or cloud storage; keep the backup password somewhere else.` });
+    } catch (err) {
+      setMessage({ ok: false, text: (err as Error).message });
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <section className="card">
+      <h2>Security</h2>
+      <div className="setting-row">
+        <div className="label">
+          <strong>Encryption</strong>
+          <span>Documents, scans, the search index, file names and ID numbers are stored encrypted (AES-256).
+            The key is kept in {settings?.key_kept_in ?? "…"}, not in the vault folder.</span>
+        </div>
+        <span className="pill ready"><Icon name="lock" size={11} />On</span>
+      </div>
+      <div className="setting-row">
+        <div className="label">
+          <strong>Recovery key</strong>
+          <span>For a new Mac, or if the Keychain is lost. Show it once in Terminal, write it on paper:
+            <code> python -m backend.security.cli recovery-key</code></span>
+        </div>
+      </div>
+      {settings?.is_admin && (
+        <form className="stack-form" onSubmit={backup} style={{ marginTop: 12 }}>
+          <strong style={{ fontSize: 14 }}>Encrypted backup</strong>
+          <span className="muted" style={{ fontSize: 14 }}>
+            One file with everyone&apos;s documents, accounts and reminders. It opens only with the backup password,
+            so it&apos;s safe on a USB drive or in the cloud. If you forget the password, the backup can&apos;t be opened.
+          </span>
+          <label><span>Backup password (10 or more characters)</span>
+            <input className="input" type="password" autoComplete="new-password" value={password}
+                   onChange={(e) => setPassword(e.target.value)} minLength={10} required /></label>
+          <label><span>Type it again</span>
+            <input className="input" type="password" autoComplete="new-password" value={again}
+                   onChange={(e) => setAgain(e.target.value)} required /></label>
+          {message && <div className={`notice ${message.ok ? "good" : "bad"}`} role="status"><Icon name={message.ok ? "ok" : "warn"} />{message.text}</div>}
+          <div className="row"><button className="btn primary" type="submit" disabled={busy || password.length < 10 || password !== again}>
+            {busy ? "Making the backup…" : "Download backup"}</button></div>
+        </form>
+      )}
+    </section>
+  );
+}
+
+function Activity({ isAdmin }: { isAdmin: boolean }) {
+  const [everyone, setEveryone] = useState(false);
+  const [entries, setEntries] = useState<ActivityEntry[] | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    api.activity(everyone).then((r) => setEntries(r.entries)).catch((e) => setError(e.message));
+  }, [everyone]);
+
+  const when = (iso: string) => new Date(iso).toLocaleString(undefined, { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" });
+
+  return (
+    <section className="card">
+      <h2>Activity</h2>
+      <div className="setting-row">
+        <div className="label">
+          <span>Sign-ins and what was opened, added or removed{everyone ? " by everyone" : " with your account"}.
+            Anything you don&apos;t recognise? Change your password and remove unknown phones.</span>
+        </div>
+        {isAdmin && (
+          <div className="segmented" role="group" aria-label="Whose activity">
+            <button type="button" aria-pressed={!everyone} onClick={() => setEveryone(false)}>Mine</button>
+            <button type="button" aria-pressed={everyone} onClick={() => setEveryone(true)}>Everyone</button>
+          </div>
+        )}
+      </div>
+      {error && <div className="notice bad" role="status"><Icon name="warn" />{error}</div>}
+      {entries && entries.length === 0 && <p className="muted">Nothing yet.</p>}
+      {entries && entries.length > 0 && (
+        <ul className="activity">
+          {entries.slice(0, 100).map((e) => (
+            <li key={e.id} className={e.ok ? "" : "failed"}>
+              <time dateTime={e.at}>{when(e.at)}</time>
+              <span className="who">{everyone ? <strong>{e.user_name || "?"} </strong> : null}{e.what}{e.detail ? `: ${e.detail}` : ""}</span>
+              <span className="via faint">{e.via === "web" ? "browser" : e.via}</span>
+            </li>
+          ))}
+        </ul>
+      )}
     </section>
   );
 }

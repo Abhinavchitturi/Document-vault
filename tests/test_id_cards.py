@@ -61,7 +61,7 @@ def test_an_e_aadhaar_is_unlocked_once_and_kept_unlocked_in_the_vault(tmp_path):
     assert added["status"] == "added"
     doc = added["document"]
     assert doc["category"] == "identity" and doc["reference"] == "2345 6789 0124" and doc["ocr_pages"] == 1
-    stored = store.file_path(doc["doc_id"])
-    assert len(open_pdf(stored)) == 1  # the copy in the vault opens without the password
+    with store.plain_copy(doc["doc_id"]) as stored:
+        assert len(open_pdf(stored)) == 1  # the copy in the vault opens without the password
     assert client.get(f"/api/documents/{doc['doc_id']}/pages/1/image").status_code == 200
     assert client.get("/api/search", params={"q": "2345 6789 0124"}).json()["results"][0]["doc_id"] == doc["doc_id"]

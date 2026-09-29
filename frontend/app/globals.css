@@ -395,3 +395,15 @@ mark { background: var(--mark); color: inherit; border-radius: 3px; padding: 0 1
 .result .unlock { display: flex; gap: 6px; margin-top: 8px; width: 100%; }
 .result .unlock .input { flex: 1; min-width: 0; }
 .result { flex-wrap: wrap; }
+
+/* Settings → Activity (Phase 11) */
+.activity { list-style: none; margin: 8px 0 0; padding: 0; font-size: 14px; }
+.activity li { display: grid; grid-template-columns: 9.5em 1fr auto; gap: 10px; padding: 7px 0; border-top: 1px solid var(--border); align-items: baseline; }
+.activity li:first-child { border-top: 0; }
+.activity time { color: var(--muted); font-variant-numeric: tabular-nums; }
+.activity .who { overflow-wrap: anywhere; }
+.activity .via { font-size: 12px; }
+.activity li.failed .who { color: var(--bad); }
+@media (max-width: 560px) {
+  .activity li { grid-template-columns: 1fr; gap: 2px; }
+}

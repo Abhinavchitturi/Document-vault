@@ -39,9 +39,11 @@ def test_upload_writes_rows_with_owner_type_date_and_path(tmp_path):
             select(documents, users.c.name.label("owner")).join(users, users.c.id == documents.c.owner_id)
         ).mappings().one()
         chunk_texts = conn.execute(select(document_chunks.c.text)).scalars().all()
-    assert (row["owner"], row["name"], row["doc_type"]) == ("arjun", "bike_policy.txt", "insurance")
+    # Names and passages are encrypted in the database (Phase 11); the vault's key opens them.
+    assert (row["owner"], store.cipher.open_text(row["name"]), row["doc_type"]) == ("arjun", "bike_policy.txt", "insurance")
     assert row["uploaded_at"] is not None and (store.files_dir / row["file_path"]).exists()
-    assert chunk_texts and "14 March 2027" in chunk_texts[0]
+    assert chunk_texts and "14 March 2027" in store.cipher.open_text(chunk_texts[0])
+    assert "bike_policy" not in row["name"] and "March" not in chunk_texts[0]
     assert store.counts_by_category() == {"insurance": 1}
 
 

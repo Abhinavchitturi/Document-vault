@@ -174,6 +174,21 @@ export interface Settings {
   ocr_available: boolean;
   search_method: "hybrid" | "vector" | "keyword";
   facts_reader: "needle" | "ollama" | "rules";
+  key_kept_in: string;
+}
+
+export interface ActivityEntry {
+  id: number;
+  at: string;
+  user_id: number | null;
+  user_name: string;
+  via: string;
+  action: string;
+  what: string;
+  document_id: string | null;
+  detail: string | null;
+  client: string;
+  ok: boolean;
 }
 
 export interface Highlights {
@@ -277,6 +292,19 @@ export const api = {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(changes),
     }).then((r) => json<Settings>(r)),
+  activity: (everyone = false) =>
+    fetch(`/api/activity?everyone=${everyone}`).then((r) => json<{ entries: ActivityEntry[] }>(r)),
+  /** The whole vault as one encrypted file, saved by the browser (admin only). */
+  downloadBackup: async (password: string) => {
+    const res = await postJson("/api/backup", { password });
+    if (!res.ok) await json(res);
+    const name = /filename\*?=(?:utf-8'')?"?([^";]+)/i.exec(res.headers.get("content-disposition") ?? "")?.[1];
+    const url = URL.createObjectURL(await res.blob());
+    const a = Object.assign(document.createElement("a"), { href: url, download: decodeURIComponent(name ?? "Document Vault.dvbackup") });
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(url), 10_000);
+    return a.download;
+  },
   highlights: (docId: string, page: number, body: { chunk_id?: string; answer?: string }) =>
     fetch(`/api/documents/${encodeURIComponent(docId)}/pages/${page}/highlights`, {
       method: "POST",

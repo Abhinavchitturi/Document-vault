@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import hashlib
 import os
+import tempfile
 
 import pytest
 from sqlalchemy import create_engine, text
@@ -22,6 +23,8 @@ from backend.vector_store import store as store_module
 
 ADMIN_URL = os.environ.get("VAULT_TEST_DATABASE_URL")
 os.environ.setdefault("VAULT_FACTS_READER", "rules")  # never reach for Needle's download during tests
+os.environ["VAULT_KEYCHAIN"] = "off"  # test vaults' keys never go in your real Keychain...
+os.environ["VAULT_KEY_DIR"] = tempfile.mkdtemp(prefix="vault-test-keys-")  # ...but in a throwaway folder
 _created: list[str] = []
 
 

@@ -129,8 +129,8 @@ documents = Table(
     Column("expires_on", Date),  # a policy, cover or warranty ends
     Column("due_on", Date),  # a bill must be paid
     Column("amount", String(32)),  # the main amount, digits only
-    Column("reference", String(120)),  # policy / account / serial / receipt number
-    Column("issuer", String(200)),
+    Column("reference", Text),  # policy / account / serial / receipt number (encrypted, Phase 11)
+    Column("issuer", Text),  # encrypted
     Column("facts_method", String(16)),  # needle / ollama / rules / person
     Column("num_chunks", Integer, nullable=False),
     Column("size_bytes", BigInteger, nullable=False),
@@ -152,6 +152,22 @@ Index("ix_document_chunks_document_id", document_chunks.c.document_id)
 
 # Columns added after a table first shipped. create_all() never alters existing tables, so
 # connect() adds these to older vaults: (table, column, SQL type).
+access_log = Table(
+    "access_log",  # Phase 11: who signed in, opened, added or removed what, and when
+    metadata,
+    Column("id", Integer, primary_key=True, autoincrement=True),
+    Column("at", DateTime(timezone=True), nullable=False, index=True),
+    Column("user_id", Integer, ForeignKey("users.id", ondelete="SET NULL")),
+    Column("user_name", String(100)),  # as typed, for failed sign-ins (no user id then)
+    Column("via", String(120)),  # "web", or the phone's name
+    Column("action", String(40), nullable=False),
+    Column("document_id", String(64)),
+    Column("detail", Text),  # encrypted: may name a document
+    Column("client", String(64)),  # the address the request came from
+    Column("ok", Boolean, nullable=False, default=True),
+)
+
+
 ADDED_COLUMNS = [
     ("documents", "ocr_confidence", "INTEGER"),
     ("documents", "category_source", "VARCHAR(16)"),
@@ -159,11 +175,17 @@ ADDED_COLUMNS = [
     ("documents", "expires_on", "DATE"),
     ("documents", "due_on", "DATE"),
     ("documents", "amount", "VARCHAR(32)"),
-    ("documents", "reference", "VARCHAR(120)"),
-    ("documents", "issuer", "VARCHAR(200)"),
+    ("documents", "reference", "TEXT"),
+    ("documents", "issuer", "TEXT"),
     ("documents", "facts_method", "VARCHAR(16)"),
     ("users", "password_hash", "TEXT"),
     ("users", "is_admin", "BOOLEAN NOT NULL DEFAULT FALSE"),
+]
+
+# Columns that became wider (encrypted values are longer than the plain ones): PostgreSQL only.
+WIDENED_COLUMNS = [
+    ("documents", "reference", "TEXT"),
+    ("documents", "issuer", "TEXT"),
 ]
 
 vault_meta = Table(

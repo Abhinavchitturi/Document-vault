@@ -72,7 +72,7 @@ class Devices:
             return None
         with self.engine.connect() as conn:
             row = conn.execute(
-                select(users, devices.c.id.label("device_id"), devices.c.last_seen_at)
+                select(users, devices.c.id.label("device_id"), devices.c.name.label("device_name"), devices.c.last_seen_at)
                 .join(devices, devices.c.user_id == users.c.id).where(devices.c.token_hash == _hash(token))
             ).first()
         if row is None or not row.password_hash:
@@ -81,7 +81,7 @@ class Devices:
         if seen is None or _now() - seen > SEEN_EVERY:
             with self.engine.begin() as conn:
                 conn.execute(devices.update().where(devices.c.id == row.device_id).values(last_seen_at=_now()))
-        return {**_public(row), "device_id": row.device_id}
+        return {**_public(row), "device_id": row.device_id, "device_name": row.device_name}
 
     def list_for(self, user_id: int) -> list[dict]:
         with self.engine.connect() as conn:

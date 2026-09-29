@@ -31,7 +31,6 @@ from backend.extract.facts import default_reader
 from backend.parser.categories import CATEGORIES
 from backend.chunker.chunker import SpanTokenizer, chunk_text
 from backend.parser.extract import SUPPORTED_SUFFIXES, extract_pages, unlock_pdf
-from backend.parser.ocr import save_ocr
 from backend.vector_store.store import DocumentStore
 from backend.embeddings.embedder import format_passage
 
@@ -140,12 +139,12 @@ def ingest_file(
             )
 
     stored_as = f"{doc_id}{suffix}"
-    shutil.copyfile(unlocked or path, store.files_dir / stored_as)
+    store.put_file(stored_as, unlocked or path)  # encrypted (Phase 11)
     if unlocked:
         shutil.rmtree(unlocked.parent, ignore_errors=True)
     scanned = {p.number: p.ocr_data for p in pages if p.ocr_data is not None}
     if scanned:  # word positions, so answers can be highlighted on the scan later
-        save_ocr(store.files_dir / stored_as, scanned)
+        store.put_ocr(stored_as, scanned)
     confidences = [d.confidence for d in scanned.values() if d.confidence is not None]
     document = {
         "doc_id": doc_id,

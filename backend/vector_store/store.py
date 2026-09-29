@@ -5,6 +5,11 @@
     <root>/files/                    the original uploads, as <doc_id><ext>, plus <doc_id>.ocr.json
                                      (word positions of scanned pages, for highlighting)
 
+Everything above is encrypted at rest (Phase 11, backend/security/): the files, OCR results and
+vector index are sealed with AES-256-GCM, and so are the database's file names, passage text and
+ID / policy numbers. The key is in the macOS Keychain, not in the vault folder. A vault made
+before Phase 11 is encrypted in place the first time it is opened.
+
 `root` defaults to data/index/ (git-ignored: it holds personal documents).
 
 Each DocumentStore is one family member's view: searches and listings only see that
@@ -25,7 +30,11 @@ from __future__ import annotations
 import json
 import logging
 import os
+import shutil
+import tempfile
 import threading
+import uuid
+from contextlib import contextmanager
 from datetime import date, datetime, timezone
 from pathlib import Path
 
@@ -35,7 +44,9 @@ from sqlalchemy import delete, func, insert, select
 
 from backend.database.db import connect, fallback_owner
 from backend.database.schema import document_chunks, documents, users, vault_meta
-from backend.parser.ocr import ocr_sidecar
+from backend.parser.ocr import OcrPage, ocr_sidecar
+from backend.security import keys
+from backend.security.crypto import Cipher, DecryptError, is_sealed, new_key
 
 
 logger = logging.getLogger(__name__)
@@ -43,14 +54,20 @@ logger = logging.getLogger(__name__)
 
 FACT_FIELDS = ("expires_on", "due_on", "amount", "reference", "issuer", "facts_method")
 DATE_FACTS = ("expires_on", "due_on")
+SEALED_FACTS = ("reference", "issuer")  # PAN / Aadhaar / policy numbers and who issued them
+KEY_CHECK = "document-vault"
 
 
-def _fact_columns(document: dict) -> dict:
-    """Phase 9 facts as database values (dates as date objects)."""
+def _fact_columns(document: dict, cipher: Cipher, fields=FACT_FIELDS) -> dict:
+    """Phase 9 facts as database values (dates as date objects, numbers sealed)."""
     out = {}
-    for f in FACT_FIELDS:
+    for f in fields:
         value = document.get(f)
-        out[f] = date.fromisoformat(value) if f in DATE_FACTS and isinstance(value, str) else value
+        if f in DATE_FACTS and isinstance(value, str):
+            value = date.fromisoformat(value)
+        elif f in SEALED_FACTS:
+            value = cipher.seal_text(value)
+        out[f] = value
     return out
 
 
@@ -91,11 +108,52 @@ class _Vault:
         self.files_dir.mkdir(parents=True, exist_ok=True)
         self.engine = connect(database_url)
         self.lock = threading.RLock()
+        self.cipher, self.vault_id, self.key_is_new = self._unlock()
         index_path = root / "vectors.faiss"
-        self.index: faiss.Index | None = faiss.read_index(str(index_path)) if index_path.exists() else None
+        self.index: faiss.Index | None = None
+        if index_path.exists():
+            raw = self.cipher.open(index_path.read_bytes(), "index")
+            self.index = faiss.deserialize_index(np.frombuffer(raw, dtype=np.uint8))
         with self.engine.connect() as conn:
             self.model = conn.execute(select(vault_meta.c.value).where(vault_meta.c.key == "embedding_model")).scalar()
         self.views: dict[int, "DocumentStore"] = {}  # user id -> that member's view
+
+    def _meta(self, key: str) -> str | None:
+        with self.engine.connect() as conn:
+            return conn.execute(select(vault_meta.c.value).where(vault_meta.c.key == key)).scalar()
+
+    def _put_meta(self, key: str, value: str) -> None:
+        with self.engine.begin() as conn:
+            conn.execute(delete(vault_meta).where(vault_meta.c.key == key))
+            conn.execute(insert(vault_meta).values(key=key, value=value))
+
+    def _unlock(self) -> tuple[Cipher, str, bool]:
+        """This vault's cipher. A new vault (or one from before Phase 11) gets a new key, saved
+        to the Keychain before anything is encrypted with it."""
+        vault_id = self._meta("vault_id")
+        if vault_id is None:
+            vault_id = f"vault-{uuid.uuid4()}"
+            self._put_meta("vault_id", vault_id)
+        check = self._meta("key_check")
+        key = keys.load(vault_id)
+        if key is None:
+            if check is not None:
+                raise keys.KeyMissingError(
+                    "This vault is encrypted and its key is not on this Mac. Put it back with your recovery key:\n"
+                    "    python -m backend.security.cli restore-key")
+            key = new_key()
+            logger.info("New vault key saved to %s", keys.save(vault_id, key))
+        cipher = Cipher(key)
+        if check is not None:
+            try:
+                ok = cipher.open_text(check) == KEY_CHECK
+            except DecryptError:
+                ok = False
+            if not ok:
+                raise keys.KeyMissingError(
+                    "The vault key on this Mac does not open this vault. Put the right one back with your recovery key:\n"
+                    "    python -m backend.security.cli restore-key")
+        return cipher, vault_id, check is None
 
 
 class DocumentStore:
@@ -106,6 +164,7 @@ class DocumentStore:
             _vault = _Vault(root, database_url or _default_url(root))
         self._vault = _vault
         self.root, self.files_dir, self.engine, self._lock = _vault.root, _vault.files_dir, _vault.engine, _vault.lock
+        self.cipher = _vault.cipher
         if _user_id is None:
             self.owner = owner or self._owner_for_this_computer()
             self.owner_id = self._ensure_user(self.owner)
@@ -119,6 +178,8 @@ class DocumentStore:
         with self._lock:
             _vault.views.setdefault(self.owner_id, self)
         self._migrate_json_vault()
+        if _vault.key_is_new:
+            self._encrypt_existing()
         self._load()
 
     def for_user(self, user_id: int) -> "DocumentStore":
@@ -212,33 +273,33 @@ class DocumentStore:
         conn.execute(delete(vault_meta).where(vault_meta.c.key == key))
         conn.execute(insert(vault_meta).values(key=key, value=value))
 
-    @staticmethod
-    def _doc_row(document: dict, owner_id: int) -> dict:
+    def _doc_row(self, document: dict, owner_id: int) -> dict:
         return {
-            "id": document["doc_id"], "owner_id": owner_id, "name": document["filename"],
+            "id": document["doc_id"], "owner_id": owner_id, "name": self.cipher.seal_text(document["filename"]),
             "doc_type": document["category"], "uploaded_at": datetime.fromisoformat(document["added_at"]),
             "file_path": document["stored_as"], "pages": document["pages"], "ocr_pages": document.get("ocr_pages", 0),
             "ocr_confidence": document.get("ocr_confidence"),
             "category_source": document.get("category_source"),
             "category_confidence": document.get("category_confidence"),
-            **_fact_columns(document),
+            **_fact_columns(document, self.cipher),
             "num_chunks": document["num_chunks"], "size_bytes": document["size_bytes"], "sha256": document["sha256"],
         }
 
-    @staticmethod
-    def _chunk_row(chunk: dict, index_in_doc: int) -> dict:
+    def _chunk_row(self, chunk: dict, index_in_doc: int) -> dict:
         return {"id": chunk["vid"], "document_id": chunk["doc_id"], "page": chunk["page"],
-                "chunk_index": index_in_doc, "text": chunk["text"], "n_tokens": chunk["n_tokens"]}
+                "chunk_index": index_in_doc, "text": self.cipher.seal_text(chunk["text"]), "n_tokens": chunk["n_tokens"]}
 
     def _load(self) -> None:
+        open_text = self.cipher.open_text
         with self.engine.connect() as conn:
             rows = conn.execute(select(documents).where(documents.c.owner_id == self.owner_id)).mappings().all()
             self.documents = {
                 r["id"]: {
-                    "doc_id": r["id"], "filename": r["name"], "category": r["doc_type"], "owner": self.owner,
+                    "doc_id": r["id"], "filename": open_text(r["name"]), "category": r["doc_type"], "owner": self.owner,
                     "pages": r["pages"], "ocr_pages": r["ocr_pages"], "ocr_confidence": r["ocr_confidence"],
                     "category_source": r["category_source"], "category_confidence": r["category_confidence"],
-                    **{f: (r[f].isoformat() if f in DATE_FACTS and r[f] else r[f]) for f in FACT_FIELDS},
+                    **{f: (r[f].isoformat() if f in DATE_FACTS and r[f] else open_text(r[f]) if f in SEALED_FACTS else r[f])
+                       for f in FACT_FIELDS},
                     "num_chunks": r["num_chunks"],
                     "size_bytes": r["size_bytes"], "sha256": r["sha256"], "stored_as": r["file_path"],
                     "added_at": _as_utc(r["uploaded_at"]).isoformat(timespec="seconds"),
@@ -256,7 +317,7 @@ class DocumentStore:
                 "vid": r["id"], "chunk_id": f"{r['document_id']}-p{r['page']}-{r['chunk_index']}",
                 "doc_id": r["document_id"], "filename": self.documents[r["document_id"]]["filename"],
                 "category": self.documents[r["document_id"]]["category"], "page": r["page"],
-                "text": r["text"], "n_tokens": r["n_tokens"],
+                "text": open_text(r["text"]), "n_tokens": r["n_tokens"],
             }
             for r in chunk_rows
         ]
@@ -266,7 +327,7 @@ class DocumentStore:
         index_path = self.root / "vectors.faiss"
         if self.index is not None and self.index.ntotal:
             tmp = self.root / "vectors.faiss.tmp"
-            faiss.write_index(self.index, str(tmp))
+            tmp.write_bytes(self.cipher.seal(faiss.serialize_index(self.index).tobytes(), "index"))
             os.replace(tmp, index_path)
         else:
             index_path.unlink(missing_ok=True)
@@ -327,8 +388,53 @@ class DocumentStore:
         return next((d for d in self.documents.values() if d["sha256"] == sha256), None)
 
     def file_path(self, doc_id: str) -> Path | None:
+        """Where the (encrypted) file is kept. Use read_file or plain_copy to get at its contents."""
         doc = self.documents.get(doc_id)
         return self.files_dir / doc["stored_as"] if doc else None
+
+    def read_file(self, doc_id: str) -> bytes | None:
+        path = self.file_path(doc_id)
+        if path is None or not path.exists():
+            return None
+        return self.cipher.open(path.read_bytes(), "file")
+
+    @contextmanager
+    def plain_copy(self, doc_id: str):
+        """A decrypted copy of a document (and its OCR results) in a private temporary folder,
+        for the PDF / image libraries that need a path; deleted as soon as the block ends.
+        OCR results worked out meanwhile (a page read for the first time) are sealed and kept."""
+        path = self.file_path(doc_id)
+        if path is None or not path.exists():
+            yield None
+            return
+        folder = Path(tempfile.mkdtemp(prefix="vault-"))  # mode 0700: only this user
+        try:
+            plain = folder / path.name
+            plain.write_bytes(self.cipher.open(path.read_bytes(), "file"))
+            sidecar = ocr_sidecar(path)
+            before = self.cipher.open(sidecar.read_bytes(), "ocr") if sidecar.exists() else None
+            if before is not None:
+                ocr_sidecar(plain).write_bytes(before)
+            yield plain
+            after = ocr_sidecar(plain).read_bytes() if ocr_sidecar(plain).exists() else None
+            if after is not None and after != before:
+                with self._lock:  # two page views of one scan at once
+                    self._write_sealed(sidecar, after, "ocr")
+        finally:
+            shutil.rmtree(folder, ignore_errors=True)
+
+    def _write_sealed(self, path: Path, data: bytes, kind: str) -> None:
+        tmp = path.with_name(path.name + ".tmp")
+        tmp.write_bytes(self.cipher.seal(data, kind))
+        os.replace(tmp, path)
+
+    def put_file(self, stored_as: str, source: Path) -> None:
+        """Keep an upload in the vault, encrypted."""
+        self._write_sealed(self.files_dir / stored_as, Path(source).read_bytes(), "file")
+
+    def put_ocr(self, stored_as: str, pages: dict[int, OcrPage]) -> None:
+        raw = json.dumps({str(n): p.to_dict() for n, p in sorted(pages.items())}).encode("utf-8")
+        self._write_sealed(ocr_sidecar(self.files_dir / stored_as), raw, "ocr")
 
     def search(
         self,
@@ -435,7 +541,8 @@ class DocumentStore:
             values = {f: facts.get(f) for f in FACT_FIELDS if f != "facts_method" and f in facts}
             values["facts_method"] = method
             with self.engine.begin() as conn:
-                conn.execute(documents.update().where(documents.c.id == doc_id).values(**_fact_columns(values)))
+                conn.execute(documents.update().where(documents.c.id == doc_id)
+                             .values(**_fact_columns(values, self.cipher, fields=values.keys())))
             doc.update(values)
             return doc
 
@@ -472,7 +579,9 @@ class DocumentStore:
                     .join(documents, documents.c.id == document_chunks.c.document_id)
                     .order_by(document_chunks.c.id)
                 ).all()
-            everyone = [{"vid": r.id, "text": r.text, "filename": r.name, "category": r.doc_type} for r in rows]
+            open_text = self.cipher.open_text
+            everyone = [{"vid": r.id, "text": open_text(r.text), "filename": open_text(r.name), "category": r.doc_type}
+                        for r in rows]
             self.index = None
             if everyone:
                 vectors = np.ascontiguousarray(embed_passages(everyone), dtype=np.float32)
@@ -482,3 +591,35 @@ class DocumentStore:
             with self.engine.begin() as conn:
                 self._set_meta(conn, "embedding_model", model)
             self.model = model
+
+    # ---------- encryption of a vault made before Phase 11 ----------
+
+    def _encrypt_existing(self) -> None:
+        """Seal everything written before encryption was switched on, then record the key check.
+        Safe to repeat after an interruption: sealed values are left as they are."""
+        seal = self.cipher.seal_text
+        with self._lock:
+            with self.engine.begin() as conn:
+                for r in conn.execute(select(documents.c.id, documents.c.name, documents.c.reference,
+                                             documents.c.issuer)).all():
+                    conn.execute(documents.update().where(documents.c.id == r.id).values(
+                        name=seal(r.name), reference=seal(r.reference), issuer=seal(r.issuer)))
+                for r in conn.execute(select(document_chunks.c.id, document_chunks.c.text)).all():
+                    conn.execute(document_chunks.update().where(document_chunks.c.id == r.id).values(text=seal(r.text)))
+            count = 0
+            for path in sorted(self.files_dir.iterdir()):
+                if not path.is_file() or path.name.endswith(".tmp"):
+                    continue
+                data = path.read_bytes()
+                if not is_sealed(data):
+                    self._write_sealed(path, data, "ocr" if path.name.endswith(".ocr.json") else "file")
+                    count += 1
+            index_path = self.root / "vectors.faiss"
+            if index_path.exists() and not is_sealed(index_path.read_bytes()):
+                self._save_index()
+            self._vault._put_meta("key_check", self.cipher.seal_text(KEY_CHECK))
+            self._vault.key_is_new = False
+        if count:
+            logger.info("Encrypted %d existing files in the vault", count)
+        logger.warning("The vault is encrypted; its key is in %s. Write down the recovery key once: "
+                       "python -m backend.security.cli recovery-key", keys.where(self._vault.vault_id))
