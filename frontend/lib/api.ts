@@ -48,6 +48,19 @@ export interface Device {
   last_seen_at: string | null;
 }
 
+export interface Upcoming {
+  doc_id: string;
+  filename: string;
+  category: Category;
+  kind: "expires" | "due";
+  date: string;
+  days_left: number;
+  amount: string | null;
+  issuer: string | null;
+}
+
+export type DocumentChanges = Partial<Pick<VaultDocument, "category" | "expires_on" | "due_on" | "amount" | "reference" | "issuer">>;
+
 export interface PhoneAccess {
   enabled: boolean;
   url: string | null;
@@ -94,6 +107,13 @@ export interface VaultDocument {
   category_source: "auto" | "person" | null; // who chose the type (null: added before Phase 8)
   category_confidence: number | null;
   needs_review: boolean; // sorted automatically, but not sure: ask the person to check the type
+  // Phase 9: key facts read from the document (or corrected by a person)
+  expires_on: string | null; // YYYY-MM-DD
+  due_on: string | null;
+  amount: string | null; // digits, e.g. "2486"
+  reference: string | null;
+  issuer: string | null;
+  facts_method: "needle" | "ollama" | "rules" | "person" | null;
   num_chunks: number;
   size_bytes: number;
   added_at: string;
@@ -128,6 +148,7 @@ export interface Settings {
   index_dir: string;
   ocr_available: boolean;
   search_method: "hybrid" | "vector" | "keyword";
+  facts_reader: "needle" | "ollama" | "rules";
 }
 
 export interface Highlights {
@@ -199,6 +220,13 @@ export const api = {
   documents: () => fetch("/api/documents").then((r) => json<VaultDocument[]>(r)),
   deleteDocument: (id: string) =>
     fetch(`/api/documents/${encodeURIComponent(id)}`, { method: "DELETE" }).then((r) => json<{ deleted: string }>(r)),
+  updateDocument: (id: string, changes: DocumentChanges) =>
+    fetch(`/api/documents/${encodeURIComponent(id)}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(changes),
+    }).then((r) => json<VaultDocument>(r)),
+  upcoming: (days = 90) => fetch(`/api/upcoming?days=${days}`).then((r) => json<Upcoming[]>(r)),
   setCategory: (id: string, category: Category) =>
     fetch(`/api/documents/${encodeURIComponent(id)}`, {
       method: "PATCH",
@@ -275,6 +303,22 @@ export function formatBytes(n: number): string {
   if (n < 1024) return `${n} B`;
   if (n < 1024 * 1024) return `${(n / 1024).toFixed(0)} KB`;
   return `${(n / 1024 / 1024).toFixed(1)} MB`;
+}
+
+export const formatAmount = (amount: string | null) =>
+  amount ? `Rs. ${Number(amount).toLocaleString("en-IN", { maximumFractionDigits: 2 })}` : "";
+
+/** "in 12 days", "tomorrow", "today", "3 days ago" */
+export function relativeDays(days: number): string {
+  if (days === 0) return "today";
+  if (days === 1) return "tomorrow";
+  if (days === -1) return "yesterday";
+  return days > 0 ? `in ${days} days` : `${-days} days ago`;
+}
+
+export function daysUntil(iso: string): number {
+  const today = new Date(); today.setHours(0, 0, 0, 0);
+  return Math.round((new Date(`${iso}T00:00:00`).getTime() - today.getTime()) / 86_400_000);
 }
 
 export function formatDate(iso: string): string {

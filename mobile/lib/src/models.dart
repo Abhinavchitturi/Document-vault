@@ -36,7 +36,7 @@ class Info {
 class VaultDocument {
   VaultDocument({required this.id, required this.filename, required this.category, required this.pages,
       required this.ocrPages, required this.ocrConfidence, required this.sizeBytes, required this.addedAt,
-      this.needsReview = false});
+      this.needsReview = false, this.expiresOn, this.dueOn, this.amount});
 
   final String id;
   final String filename;
@@ -50,6 +50,11 @@ class VaultDocument {
   /// Sorted automatically, but the vault wasn't sure of the type (Phase 8).
   final bool needsReview;
 
+  /// Key facts read from the document (Phase 9).
+  final DateTime? expiresOn;
+  final DateTime? dueOn;
+  final String? amount;
+
   bool get hardToRead => ocrConfidence != null && ocrConfidence! < lowConfidence;
 
   factory VaultDocument.fromJson(Map<String, dynamic> j) => VaultDocument(
@@ -62,6 +67,9 @@ class VaultDocument {
         sizeBytes: j['size_bytes'] as int? ?? 0,
         addedAt: DateTime.tryParse(j['added_at'] as String? ?? '') ?? DateTime.now(),
         needsReview: j['needs_review'] as bool? ?? false,
+        expiresOn: DateTime.tryParse(j['expires_on'] as String? ?? ''),
+        dueOn: DateTime.tryParse(j['due_on'] as String? ?? ''),
+        amount: j['amount'] as String?,
       );
 }
 

@@ -26,6 +26,7 @@ from typing import Protocol
 import numpy as np
 
 from backend.classify.classifier import Classifier
+from backend.extract.facts import default_reader
 from backend.parser.categories import CATEGORIES
 from backend.chunker.chunker import SpanTokenizer, chunk_text
 from backend.parser.extract import SUPPORTED_SUFFIXES, extract_pages
@@ -69,6 +70,14 @@ def passage_texts(chunks: list[dict]) -> list[str]:
     return [format_passage(f"{Path(c['filename']).stem.replace('_', ' ')} ({c['category']})", c["text"]) for c in chunks]
 
 
+def _facts_for(category: str, facts) -> dict:
+    """A bill's billing period isn't an expiry, whichever reader was fooled by it."""
+    fields = facts.as_document_fields()
+    if category == "bill":
+        fields["expires_on"] = None
+    return fields
+
+
 def ingest_file(
     path: str | Path,
     store: DocumentStore,
@@ -79,6 +88,7 @@ def ingest_file(
     chunk_size: int = 300,
     overlap: int = 60,
     classifier=None,
+    facts_reader=None,
 ) -> IngestResult:
     """Add one file. `filename` is the name to show (uploads arrive as temp files,
     saved with the upload's extension so the right parser is picked)."""
@@ -138,6 +148,7 @@ def ingest_file(
         "ocr_confidence": min(confidences) if confidences else None,  # the hardest page to read
         "category_source": category_source,
         "category_confidence": category_confidence,
+        **_facts_for(category, (facts_reader or default_reader()).read(full_text)),  # Phase 9: expiry, due date, amount...
         "num_chunks": len(chunks),
         "size_bytes": path.stat().st_size,
         "sha256": sha256,

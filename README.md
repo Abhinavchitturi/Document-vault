@@ -24,7 +24,8 @@ and the privacy decisions.
 | 6 | Authentication | ✅ Password and passkey (Touch ID / Face ID / fingerprint) sign-in, one account per family member, each sees only their own documents; admin adds members and resets passwords |
 | 7 | Mobile app | ✅ Flutter app (`mobile/`): chat, documents, scan with the camera; paired by QR code over the home Wi-Fi, HTTPS pinned to the vault's own certificate, Face ID / fingerprint lock |
 | 8 | Classification | ✅ Uploads sorted into insurance / warranty / bill / property / other by keywords + meaning, asking the local answer model only when unsure; unsure ones flagged "check type" |
-| 9–13 | Expiry, reminders, security, sharing, deployment | ⏳ |
+| 9 | Expiry and key facts | ✅ Expiry, due date, amount, reference number and issuer read from each document (Needle 3 when installed, else the answer model, else text patterns), checked against the text; "Coming up" on the dashboard |
+| 10–13 | Reminders, security, sharing, deployment | ⏳ |
 
 ## Privacy
 - For our family only. The repository is private and contains **code and fictional samples only**.
@@ -131,6 +132,31 @@ Why no new model: sorting into five types is easy work for the two models alread
 Granite or NuExtract would each be another 2–3 GB download for little gain, and Needle 3 is
 new and needs its own runtime. They're worth a look for reading dates and amounts (Phase 9)
 only if the answer model proves too slow or inaccurate there.
+
+## Expiry dates and key facts (Phase 9)
+Each document's **expiry** (policy end, warranty until), **payment due date**, **amount**,
+**reference number** and **issuer** are read when it's uploaded. They show under the file
+name in Documents and in **Coming up** on the Dashboard (the next 90 days, plus anything
+missed in the last 30). Click the pencil on a document to correct them; the vault never
+overwrites your corrections.
+
+Who reads them, best first:
+1. **Needle 3** (Cactus Compute, Apache-2.0, 35 MB) if installed. Set it up once (this is the
+   only step that downloads anything), after which it runs with the internet off:
+   ```bash
+   pip install cactus-needle
+   python -m backend.extract.needle_setup
+   ```
+   Needle's anonymous usage counts are switched off by the vault.
+2. The **answer model** in Ollama, if Needle isn't set up.
+3. **Text patterns** ("Due date: 18 September 2026"), always there as the fallback, and used
+   to fill any field the model missed.
+
+Whatever reads them, a date, amount or number that doesn't appear in the document is
+dropped, and bills never get an "expiry" (a billing period isn't one). Fill in facts for
+documents uploaded earlier with `python -m backend.extract.run` (preview), then `--apply`.
+Compare the readers on the samples: `python -m backend.eval.facts_eval` (or `--pdfs`).
+Settings → About shows which reader is in use.
 
 ## Phone app (Phase 7)
 Start the vault with phone access, then pair each phone once:
@@ -281,6 +307,7 @@ Layout:
 | `backend/auth/` | Sign-in: password hashing (`passwords.py`), accounts and sessions (`accounts.py`), passkeys (`passkeys.py`), paired phones (`devices.py`), terminal tool (`cli.py`) |
 | `backend/api/lan.py` | The phone listener's certificate and the Mac's Wi-Fi address |
 | `mobile/` | The Flutter phone app (see `mobile/README.md`) |
+| `backend/extract/` | Key facts: readers and checks (`facts.py`), filling in older documents (`run.py`), Needle setup (`needle_setup.py`) |
 | `backend/classify/` | Sorting documents into types (`classifier.py`), re-sorting older ones (`run.py`) |
 | `backend/retriever/` | Question → passages: hybrid fusion (`retriever.py`), keyword search (`bm25.py`) |
 | `backend/llm/` | Local Ollama client and the answer-with-citations prompt |

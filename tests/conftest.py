@@ -21,6 +21,7 @@ from sqlalchemy.engine import make_url
 from backend.vector_store import store as store_module
 
 ADMIN_URL = os.environ.get("VAULT_TEST_DATABASE_URL")
+os.environ.setdefault("VAULT_FACTS_READER", "rules")  # never reach for Needle's download during tests
 _created: list[str] = []
 
 

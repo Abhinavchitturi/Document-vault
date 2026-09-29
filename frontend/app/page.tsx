@@ -6,7 +6,7 @@ import { useEffect, useState } from "react";
 import AppShell, { useVault } from "@/components/AppShell";
 import { displayName, FileIcon } from "@/components/DocBits";
 import Icon from "@/components/Icon";
-import { api, CATEGORIES, CATEGORY_LABEL, formatBytes, formatDate, type VaultDocument } from "@/lib/api";
+import { api, CATEGORIES, CATEGORY_LABEL, formatAmount, formatBytes, formatDate, relativeDays, type Upcoming, type VaultDocument } from "@/lib/api";
 
 const QUICK = ["When does my bike insurance expire?", "Find the washing machine warranty", "When is the electricity bill due?"];
 
@@ -15,8 +15,12 @@ function Dashboard() {
   const router = useRouter();
   const [docs, setDocs] = useState<VaultDocument[] | null>(null);
   const [question, setQuestion] = useState("");
+  const [upcoming, setUpcoming] = useState<Upcoming[] | null>(null);
 
-  useEffect(() => { api.documents().then(setDocs).catch(() => setDocs([])); }, []);
+  useEffect(() => {
+    api.documents().then(setDocs).catch(() => setDocs([]));
+    api.upcoming(90).then(setUpcoming).catch(() => setUpcoming([]));
+  }, []);
 
   const ask = (q: string) => { if (q.trim()) router.push(`/chat/?q=${encodeURIComponent(q.trim())}`); };
   const total = info?.num_documents ?? 0;
@@ -48,6 +52,29 @@ function Dashboard() {
             </form>
             <div className="quick">
               {QUICK.map((q) => <button key={q} type="button" className="chip" onClick={() => ask(q)}>{q}</button>)}
+            </div>
+          </section>
+
+          <section className="card">
+            <h2 style={{ marginTop: 0 }}>Coming up</h2>
+            {upcoming === null && <p className="muted">Loading…</p>}
+            {upcoming?.length === 0 && (
+              <p className="muted" style={{ margin: 0 }}>Nothing expires or falls due in the next 90 days.</p>
+            )}
+            <div className="rows">
+              {upcoming?.map((u) => (
+                <div key={`${u.doc_id}-${u.kind}`} className={`row upcoming${u.days_left < 0 ? " overdue" : u.days_left <= 14 ? " soon" : ""}`}>
+                  <FileIcon category={u.category} size={32} />
+                  <div className="info">
+                    <div className="name">{displayName(u.filename)}</div>
+                    <div className="meta">
+                      {u.kind === "expires" ? "Expires" : "Due"} {formatDate(u.date)}
+                      {u.amount && ` · ${formatAmount(u.amount)}`}
+                    </div>
+                  </div>
+                  <span className="when">{u.days_left < 0 && u.kind === "due" ? `overdue, ${relativeDays(u.days_left)}` : relativeDays(u.days_left)}</span>
+                </div>
+              ))}
             </div>
           </section>
 
