@@ -1,6 +1,7 @@
 """Phase 2 metadata schema (PostgreSQL).
 
     users            family members: who owns documents, and their sign-in (Phase 6)
+    passkeys         Touch ID / Face ID / fingerprint sign-ins: each device's public key
     sessions         who is signed in, on which browser (the cookie holds a random token;
                      only its SHA-256 is stored, so a copied database can't sign anyone in)
     documents        one row per uploaded file: name, type, upload date, owner, file path
@@ -22,6 +23,7 @@ from sqlalchemy import (
     ForeignKey,
     Index,
     Integer,
+    LargeBinary,
     MetaData,
     String,
     Table,
@@ -51,6 +53,19 @@ sessions = Table(
     Column("expires_at", DateTime(timezone=True), nullable=False),
 )
 Index("ix_sessions_user_id", sessions.c.user_id)
+
+passkeys = Table(  # Touch ID / Face ID / fingerprint sign-in (WebAuthn), see backend/auth/passkeys.py
+    "passkeys",
+    metadata,
+    Column("id", String(512), primary_key=True),  # credential id (base64url), chosen by the device
+    Column("user_id", Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False),
+    Column("public_key", LargeBinary, nullable=False),  # COSE public key; the private key never leaves the device
+    Column("sign_count", BigInteger, nullable=False, default=0),
+    Column("name", String(100), nullable=False),  # "Mac", "iPhone"... shown in Settings
+    Column("created_at", DateTime(timezone=True), nullable=False),
+    Column("last_used_at", DateTime(timezone=True)),
+)
+Index("ix_passkeys_user_id", passkeys.c.user_id)
 
 documents = Table(
     "documents",
