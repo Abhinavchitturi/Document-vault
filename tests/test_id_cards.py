@@ -60,8 +60,48 @@ def test_an_e_aadhaar_is_unlocked_once_and_kept_unlocked_in_the_vault(tmp_path):
     added = upload(password="ARJU1988")
     assert added["status"] == "added"
     doc = added["document"]
-    assert doc["category"] == "identity" and doc["reference"] == "2345 6789 0124" and doc["ocr_pages"] == 1
+    # the Aadhaar number, not the VID printed under it (16 digits, "VID : 9134 5678 2345 6781")
+    assert doc["category"] == "identity" and doc["reference"] == "2345 6789 0124" and doc["ocr_pages"] == 2
+    address = next(c["text"] for c in store.chunks if "Address" in c["text"])
+    assert "H.No 2-11/A" in address  # the house number with its digits, from the address page
     with store.plain_copy(doc["doc_id"]) as stored:
-        assert len(open_pdf(stored)) == 1  # the copy in the vault opens without the password
+        assert len(open_pdf(stored)) == 2  # the copy in the vault opens without the password (card + address)
     assert client.get(f"/api/documents/{doc['doc_id']}/pages/1/image").status_code == 200
     assert client.get("/api/search", params={"q": "2345 6789 0124"}).json()["results"][0]["doc_id"] == doc["doc_id"]
+
+
+def test_a_vid_is_never_taken_for_the_aadhaar_number():
+    from backend.extract.facts import Facts, RulesReader, grounded
+
+    vid_first = "Government of India\nVID : 9134 5678 2345 6781\n2345 6789 0124"
+    assert RulesReader().read(vid_first).reference == "2345 6789 0124"
+    assert RulesReader().read("VID : 9134 5678 2345 6781").reference is None  # only a VID: no Aadhaar number
+    assert grounded(Facts(reference="9134 5678 2345 6781"), vid_first).reference == "2345 6789 0124"  # a model's slip
+    from backend.llm.answer import SYSTEM_PROMPT
+    assert "VID" in SYSTEM_PROMPT and "NOT the Aadhaar number" in SYSTEM_PROMPT
+
+
+def test_a_doubtful_house_number_is_read_again_as_digits(monkeypatch):
+    """Mixed Hindi-English reading can turn the 2 of 'H.No 2-11/A' into R. A doubtful word that mixes
+    letters and digits is read again on its own; the clearly more confident reading wins."""
+    import pytesseract
+    from PIL import Image
+
+    calls = []
+
+    def second_opinion(crop, lang, config, output_type):
+        calls.append(config)
+        digits = "whitelist" in config
+        return {"text": ["2-11/A" if not digits else "2-11/4"], "conf": [93 if not digits else 70]}
+
+    monkeypatch.setattr(pytesseract, "image_to_data", second_opinion)
+    image = Image.new("L", (400, 100), 255)
+    assert ocr._reread_mixed(image, "R-11/A", 58, [10, 10, 80, 30]) == ("2-11/A", 93)
+    assert len(calls) == 2
+    calls.clear()
+    assert ocr._reread_mixed(image, "B-11", 96, [10, 10, 80, 30]) == ("B-11", 96)  # read confidently: left alone
+    assert ocr._reread_mixed(image, "Hyderabad", 40, [10, 10, 80, 30]) == ("Hyderabad", 40)  # no digits: not a candidate
+    assert calls == []
+    monkeypatch.setattr(pytesseract, "image_to_data",
+                        lambda crop, lang, config, output_type: {"text": ["2-11/A"], "conf": [66]})
+    assert ocr._reread_mixed(image, "R-11/A", 60, [10, 10, 80, 30]) == ("R-11/A", 60)  # not clearly better: kept

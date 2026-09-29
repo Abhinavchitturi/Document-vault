@@ -9,6 +9,7 @@ import 'phone_reminders.dart';
 import 'screens/home_screen.dart';
 import 'screens/lock_screen.dart';
 import 'screens/pair_screen.dart';
+import 'share_inbox.dart';
 import 'upload_queue.dart';
 import 'vault_client.dart';
 
@@ -32,7 +33,11 @@ ThemeData _theme(Brightness b) {
 /// What every screen can reach: the vault connection, and what to do when the phone gets unpaired.
 class VaultScope extends InheritedWidget {
   const VaultScope({super.key, required this.api, required this.pairing, required this.store,
-      required this.onUnpaired, required this.queue, required this.reminders, required super.child});
+      required this.onUnpaired, required this.queue, required this.reminders, required this.shares,
+      required super.child});
+
+  /// Files shared to the vault from other apps ("Send to → Document Vault").
+  final ShareInbox shares;
 
   /// The phone's notification system, for reminders.
   final ReminderScheduler reminders;
@@ -66,7 +71,10 @@ class VaultScope extends InheritedWidget {
 
 class VaultApp extends StatefulWidget {
   const VaultApp({super.key, required this.store, required this.connect, this.authenticate, this.storageDir,
-      this.reminders});
+      this.reminders, this.shares});
+
+  /// Files shared from other apps; replaced in tests.
+  final ShareInbox? shares;
 
   /// Phone notifications for reminders; replaced in tests.
   final ReminderScheduler? reminders;
@@ -89,6 +97,7 @@ class _VaultAppState extends State<VaultApp> with WidgetsBindingObserver {
   VaultApi? _api;
   UploadQueue? _queue;
   late final ReminderScheduler _reminders = widget.reminders ?? PhoneNotifications();
+  late final ShareInbox _shares = widget.shares ?? ShareInbox.platform(); // kept while locked or unpaired
   bool _loading = true;
   bool _locked = false;
   DateTime? _backgroundSince;
@@ -184,7 +193,7 @@ class _VaultAppState extends State<VaultApp> with WidgetsBindingObserver {
       // Above the navigator, so screens opened on top (a source page) can reach the vault too.
       builder: (context, child) => signedIn
           ? VaultScope(api: _api!, pairing: _pairing!, store: widget.store, onUnpaired: _unpaired, queue: _queue!,
-              reminders: _reminders, child: child!)
+              reminders: _reminders, shares: _shares, child: child!)
           : child!,
       home: home,
     );

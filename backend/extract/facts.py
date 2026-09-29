@@ -68,7 +68,10 @@ _DATE = re.compile(r"\b(\d{1,2})[\s\-./]+([A-Za-z]{3,9})[\s\-.,/]+(\d{4})\b|\b(\
 _ORG = re.compile(r"(?:\bco\.|\b(?:ltd|limited|pvt|company|corporation|department|insurance|electronics|appliances|"
                   r"broadband|systems|bank|authority|board|services|india)\b)", re.I)
 _PAN = re.compile(r"\b[A-Z]{5}\d{4}[A-Z]\b")  # e.g. ABCPM1234K
-_AADHAAR = re.compile(r"(?<!\d)\d{4} \d{4} \d{4}(?!\d)")  # 12 digits in groups of four
+# 12 digits in groups of four, and not part of a longer run: an e-Aadhaar also prints a 16-digit
+# VID (Virtual ID, "VID : 9134 5678 2345 6781") whose first 12 digits would otherwise match.
+_AADHAAR = re.compile(r"(?<!\d)(?<!\d )\d{4} \d{4} \d{4}(?! ?\d)")
+_VID = re.compile(r"(?<!\d)\d{4} ?\d{4} ?\d{4} ?\d{4}(?!\d)")
 _AMOUNT = re.compile(r"(?:Rs\.?|INR|₹)\s*([\d,]+(?:\.\d{1,2})?)", re.I)
 
 
@@ -130,6 +133,8 @@ def grounded(facts: Facts, text: str) -> Facts:
         amounts = {_digits(a) for a in _AMOUNT.findall(text)} | {_digits(a) for a in re.findall(r"\d[\d,]*(?:\.\d+)?", text)}
         wanted = _digits(facts.amount)
         facts.amount = wanted if wanted and wanted in amounts else None
+    if facts.reference and _VID.fullmatch(str(facts.reference).strip()) and _AADHAAR.search(text):
+        facts.reference = _AADHAAR.search(text).group()  # a model picked the VID: the Aadhaar number is the ID
     squashed = re.sub(r"\s+", "", text).lower()
     for field in ("reference", "issuer"):
         value = getattr(facts, field)

@@ -25,6 +25,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 import shutil
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
@@ -184,28 +185,68 @@ def _read(image, rotation: int, width: int) -> OcrPage:
     cleaned, scale = _cleaned(image, width)
     data = pytesseract.image_to_data(cleaned, lang=ocr_languages(), output_type=pytesseract.Output.DICT)
 
-    text, words, confs = "", [], []
-    last_line = last_block = None
+    entries = []  # (word, confidence, box in the cleaned image, line key, block key)
     for i, word in enumerate(data["text"]):
         word = (word or "").strip()
         conf = float(data["conf"][i])
         if not word or conf < 0:
             continue
         block = (data["block_num"][i], data["par_num"][i])
-        line = (*block, data["line_num"][i])
+        box = [data[k][i] for k in ("left", "top", "width", "height")]
+        entries.append((ftfy.fix_text(word), conf, box, (*block, data["line_num"][i]), block))
+    entries = [(*_reread_mixed(cleaned, w, c, box), box, line, block) for w, c, box, line, block in entries]
+
+    text, words, confs = "", [], []
+    last_line = last_block = None
+    for word, conf, box, line, block in entries:
         if last_line is not None:
             text += "\n\n" if block != last_block else "\n" if line != last_line else " "
         last_line, last_block = line, block
-        word = ftfy.fix_text(word)
         start = len(text)
         text += word
-        box = [round(data[k][i] / scale) for k in ("left", "top", "width", "height")]
-        words.append([*box, start, len(text)])
+        words.append([*(round(v / scale) for v in box), start, len(text)])
         if _is_word(word):  # specks from logos and photos don't count against the page
             confs.append((conf, len(word)))
     total = sum(n for _, n in confs)
     confidence = round(sum(c * n for c, n in confs) / total) if total else None
     return OcrPage(text, image.width, image.height, rotation, confidence, words)
+
+
+# House / door numbers and similar: "2-11", "2-11/A", "12/B". Mixed Hindi-English reading sometimes
+# turns a digit into a look-alike letter ("R-11", "Z-11") in exactly these.
+_MIXED = re.compile(r"^(?=.*\d)(?=.*[A-Za-z])[A-Za-z0-9]{1,4}(?:[-/][A-Za-z0-9]{1,4}){1,3}$")
+SURE = 85  # words read at least this confidently are left alone ("B-11" really is B-11)
+BETTER_BY = 10  # a second reading must be this much more confident to replace the first
+
+
+def _reread_mixed(image, word: str, conf: float, box: list[int]) -> tuple[str, float]:
+    """A doubtful letters-and-digits word is read again on its own, in English only and as digits
+    only; the most confident reading wins, if it is clearly more confident than the first."""
+    if conf >= SURE or not _MIXED.match(word):
+        return word, conf
+    import pytesseract
+
+    x, y, w, h = box
+    pad = max(4, h // 3)
+    crop = image.crop((max(0, x - pad), max(0, y - pad), x + w + pad, y + h + pad))
+    best = (word, conf)
+    for config in ("--psm 7", "--psm 7 -c tessedit_char_whitelist=0123456789-/"):
+        try:
+            data = pytesseract.image_to_data(crop, lang="eng", config=config, output_type=pytesseract.Output.DICT)
+        except Exception:  # noqa: BLE001 (a second opinion is optional)
+            continue
+        found = [(t.strip(), float(c)) for t, c in zip(data["text"], data["conf"]) if (t or "").strip() and float(c) >= 0]
+        if len(found) != 1:
+            continue  # it split or merged words: not a like-for-like reading
+        text, c = found[0]
+        # Only swap look-alikes: same length, same separators, digits where the first reading had a letter.
+        same_shape = len(text) == len(word) and all(a == b for a, b in zip(text, word) if not a.isalnum() or not b.isalnum())
+        if same_shape and c > best[1]:
+            best = (text, c)
+    if best[0] != word and best[1] >= conf + BETTER_BY:
+        logger.debug("OCR: re-read %r as %r (%d -> %d)", word, best[0], conf, best[1])
+        return best
+    return word, conf
 
 
 def page_image_from_pdf(path, page: int, scale: float):

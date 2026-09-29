@@ -267,6 +267,10 @@ Nothing is sent by email or through any online service: phone reminders are sche
 phone itself.
 
 ## Phone app (Phase 7)
+**Send to the vault from any app:** in WhatsApp, Files, Gmail or Photos, tap **Share → Document Vault**.
+The app opens on **Scan** and uploads it like a scan (locked PDFs ask for their password; with the Mac
+off it waits on the phone). PDFs, photos and Word files.
+
 Start the vault with phone access, then pair each phone once:
 ```bash
 python -m backend.api.app --phones
