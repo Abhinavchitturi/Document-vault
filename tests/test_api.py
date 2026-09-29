@@ -52,7 +52,7 @@ def test_duplicate_bad_type_and_bad_category(client):
     upload(client, "a.txt", b"Water bill due 15 July")
     assert upload(client, "copy_of_a.txt", b"Water bill due 15 July")[0]["status"] == "duplicate"
     bad = upload(client, "sheet.xlsx", b"x")[0]
-    assert bad["status"] == "error" and "Unsupported" in bad["error"]
+    assert bad["status"] == "error" and "can't be read" in bad["error"]
     assert upload(client, "empty.txt", b"   ")[0]["status"] == "error"
     res = client.post("/api/documents", files=[("files", ("x.txt", b"hi"))], data={"category": "cars"})
     assert res.status_code == 400

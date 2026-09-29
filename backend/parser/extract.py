@@ -23,7 +23,7 @@ import ftfy
 from backend.parser.ocr import OcrPage, OcrUnavailableError, ocr_available, read_image, require_ocr
 
 TEXT_SUFFIXES = {".txt", ".md"}
-IMAGE_SUFFIXES = {".png", ".jpg", ".jpeg", ".webp", ".tif", ".tiff"}
+IMAGE_SUFFIXES = {".png", ".jpg", ".jpeg", ".webp", ".tif", ".tiff", ".heic", ".heif"}  # HEIC: iPhones, many Androids
 SUPPORTED_SUFFIXES = {".pdf", ".docx"} | TEXT_SUFFIXES | IMAGE_SUFFIXES
 
 MIN_PAGE_CHARS = 25  # a PDF page with less text than this is treated as a scan
@@ -32,6 +32,67 @@ OCR_RENDER_SCALE = 3  # render scanned PDF pages at 216 dpi before OCR
 
 class UnsupportedFileError(ValueError):
     pass
+
+
+_HEIF_BRANDS = {b"heic", b"heix", b"hevc", b"hevx", b"heim", b"heis", b"mif1", b"msf1"}
+
+
+def sniff(path: str | Path) -> str | None:
+    """The file's real type from its first bytes, as a suffix (".pdf", ".jpg"…), or None.
+
+    Phones and chat apps often send files with no extension ("Aadhaar"), a wrong one (a JPEG called
+    ".pdf") or an unusual one (".JPG", ".jfif"); the contents say what it is."""
+    with open(path, "rb") as f:
+        head = f.read(2048)
+    if b"%PDF-" in head[:1024]:
+        return ".pdf"
+    if head[:3] == b"\xff\xd8\xff":
+        return ".jpg"
+    if head[:8] == b"\x89PNG\r\n\x1a\n":
+        return ".png"
+    if head[:4] == b"RIFF" and head[8:12] == b"WEBP":
+        return ".webp"
+    if head[:4] in (b"II*\x00", b"MM\x00*"):
+        return ".tif"
+    if head[4:8] == b"ftyp" and head[8:12] in _HEIF_BRANDS:
+        return ".heic"
+    if head[:4] == b"PK\x03\x04":
+        import zipfile
+
+        try:
+            with zipfile.ZipFile(path) as z:
+                return ".docx" if "word/document.xml" in z.namelist() else None
+        except zipfile.BadZipFile:
+            return None
+    if head[:8] == b"\xd0\xcf\x11\xe0\xa1\xb1\x1a\xe1":
+        raise UnsupportedFileError("This is an old Word (.doc) or Excel file. Open it and save it as PDF or .docx, "
+                                   "then upload that.")
+    if head:
+        try:
+            sample = head.decode("utf-8")
+        except UnicodeDecodeError:
+            try:  # a multi-byte character cut at the end of the sample
+                sample = head[:-3].decode("utf-8")
+            except UnicodeDecodeError:
+                return None
+        if sum(ch.isprintable() or ch in "\n\r\t" for ch in sample) / len(sample) > 0.95:
+            return ".txt"
+    return None
+
+
+def file_type(path: str | Path, name: str = "") -> str:
+    """The suffix to read a file as: its contents first, then its name. Raises UnsupportedFileError."""
+    found = sniff(path)
+    suffix = Path(name or str(path)).suffix.lower()
+    if found == ".txt" and suffix and suffix not in TEXT_SUFFIXES:
+        found = None  # text-looking bytes in a ".xlsx" / ".csv"…: not a document we read
+    if found:
+        return found
+    if suffix in SUPPORTED_SUFFIXES and suffix not in (".pdf", ".docx", *IMAGE_SUFFIXES):
+        return suffix  # .md: the contents looked binary, but trust the name for text
+    raise UnsupportedFileError(
+        "This file isn't a PDF, photo, Word (.docx) or text file, so it can't be read. "
+        "If it's a document, save or print it as PDF and upload that.")
 
 
 class PasswordRequiredError(ValueError):
@@ -148,6 +209,12 @@ def _image_pages(path: Path) -> list[Page]:
     from PIL import Image
 
     require_ocr()  # say what to install before failing on anything else
+    try:  # HEIC photos (iPhones, many Androids), whatever the file is called
+        import pillow_heif
+
+        pillow_heif.register_heif_opener()
+    except ImportError:
+        pass
     with Image.open(path) as image:
         data = read_image(image)
     return [Page(1, clean_text(data.text), ocr=True, ocr_data=data)]
@@ -158,6 +225,8 @@ def extract_pages(path: str | Path, password: str | None = None) -> list[Page]:
     PasswordRequiredError (a locked PDF: pass its `password`)."""
     path = Path(path)
     suffix = path.suffix.lower()
+    if suffix not in SUPPORTED_SUFFIXES or sniff(path) not in (None, suffix, ".txt"):
+        suffix = file_type(path)  # no extension, or the wrong one: go by the contents
     if suffix == ".pdf":
         return _pdf_pages(path, password)
     if suffix == ".docx":

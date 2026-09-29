@@ -74,3 +74,30 @@ def test_clean_text_repairs_encoding():
 )
 def test_guess_category(filename, text, expected):
     assert guess_category(filename, text) == expected
+
+
+def test_files_are_recognised_by_their_contents_not_their_names(tmp_path):
+    """Phones and chat apps send files with no extension, a wrong one, or as HEIC photos."""
+    from PIL import Image
+
+    from backend.parser.extract import file_type, sniff
+
+    pdf = tmp_path / "Aadhaar"  # WhatsApp: no extension
+    pdf.write_bytes(b"%PDF-1.7\n%\xe2\xe3\xcf\xd3\n")
+    assert sniff(pdf) == ".pdf" and file_type(pdf, "Aadhaar") == ".pdf"
+    photo = tmp_path / "bill.pdf"  # a photo with the wrong name
+    Image.new("RGB", (20, 20)).save(photo, "JPEG")
+    assert file_type(photo, "bill.pdf") == ".jpg"
+    heic = tmp_path / "IMG_2031.HEIC"
+    import pillow_heif
+
+    pillow_heif.register_heif_opener()
+    Image.new("RGB", (64, 64), "white").save(heic, "HEIF")
+    assert file_type(heic, heic.name) == ".heic"
+    note = tmp_path / "note"
+    note.write_text("Water bill due 15 July")
+    assert file_type(note, "note") == ".txt"
+    old_word = tmp_path / "letter.doc"
+    old_word.write_bytes(b"\xd0\xcf\x11\xe0\xa1\xb1\x1a\xe1" + b"\x00" * 100)
+    with pytest.raises(UnsupportedFileError, match="save it as PDF"):
+        file_type(old_word, "letter.doc")

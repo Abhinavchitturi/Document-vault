@@ -77,7 +77,7 @@ from backend.retriever.retriever import METHODS, Retriever
 from backend.viewer.highlight import highlights_for, page_image
 
 from backend.parser.categories import CATEGORIES
-from backend.parser.extract import IMAGE_SUFFIXES, SUPPORTED_SUFFIXES, PasswordRequiredError, OcrUnavailableError, UnsupportedFileError, ocr_available
+from backend.parser.extract import IMAGE_SUFFIXES, SUPPORTED_SUFFIXES, PasswordRequiredError, file_type, OcrUnavailableError, UnsupportedFileError, ocr_available
 from backend.upload.ingest import EmbedderLike, EmptyDocumentError, ingest_file
 from backend.vector_store.store import DocumentStore
 
@@ -659,14 +659,8 @@ def create_app(
         results = []
         for upload_file in files:
             name = Path(upload_file.filename or "document").name
-            suffix = Path(name).suffix.lower()
-            if suffix not in SUPPORTED_SUFFIXES:
-                results.append({"filename": name, "status": "error",
-                                "error": f"Unsupported file type. Supported: {', '.join(sorted(SUPPORTED_SUFFIXES))}"})
-                continue
             with tempfile.TemporaryDirectory() as tmp:
-                # Keep the extension: extraction picks its parser from it.
-                tmp_path = Path(tmp) / f"upload{suffix}"
+                tmp_path = Path(tmp) / "upload.bin"
                 size = 0
                 with open(tmp_path, "wb") as out:
                     while block := upload_file.file.read(1 << 20):
@@ -678,6 +672,14 @@ def create_app(
                     results.append({"filename": name, "status": "error",
                                     "error": f"File is larger than {MAX_UPLOAD_BYTES // (1024 * 1024)} MB"})
                     continue
+                try:  # what it really is, from its contents (no extension, a wrong one, .heic…)
+                    suffix = file_type(tmp_path, name)
+                except UnsupportedFileError as e:
+                    results.append({"filename": name, "status": "error", "error": str(e)})
+                    continue
+                tmp_path = tmp_path.rename(tmp_path.with_suffix(suffix))
+                if not Path(name).suffix:
+                    name += suffix  # "Aadhaar" from WhatsApp -> "Aadhaar.pdf", so it opens later
                 try:
                     result = ingest_file(tmp_path, mine, embedder, tokenizer, category, filename=name,
                                          classifier=classifier, facts_reader=facts_reader, password=password)

@@ -26,6 +26,7 @@ pypdfium2      # PDF text + rendering scanned pages for OCR
 python-docx    # Word files
 cactus-needle  # Needle 3: reads expiry dates, amounts, numbers (Phase 9); 35 MB, downloaded once, runs offline
 pytesseract    # OCR for photos/scans; also needs the Tesseract program: brew install tesseract
+pillow-heif    # HEIC photos (iPhones, many Android phones)
 pillow
 ftfy           # repairs mis-encoded characters in extracted text
 

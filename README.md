@@ -185,6 +185,15 @@ Where things live:
 - **Owner**: before sign-in is set up, the vault belongs to your computer's user name (and follows
   it if you rename your Mac user). The setup screen turns that owner into your account.
 
+**A file won't upload, or is "hard to read"?** Files are recognised by their contents, so photos
+without an extension, ones with a wrong one, and iPhone / Android **HEIC** photos work. Scanned pages
+are read twice (as they are, and with shadows and glare evened out), and unclear ones again larger and
+English-only; the fullest, surest reading wins. To see what the vault makes of one file (no text is
+printed, so it's safe to share):
+```bash
+python -m backend.parser.diagnose ~/Downloads/the-file
+```
+
 ## ID cards and locked PDFs
 - **Identity** is a document type of its own: PAN, Aadhaar, passport, driving licence, voter ID.
   Their number (PAN, Aadhaar, passport or licence number) is read as the document's reference, and

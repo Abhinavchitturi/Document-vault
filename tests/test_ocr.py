@@ -4,7 +4,6 @@ import io
 from pathlib import Path
 
 import pytest
-from fastapi.testclient import TestClient
 from PIL import Image, ImageFilter, ImageOps
 
 from backend.api.app import create_app
@@ -80,3 +79,32 @@ def test_answers_are_highlighted_on_scans(tmp_path):
 
     client.delete(f"/api/documents/{doc['doc_id']}")
     assert not stored.exists() and not ocr_sidecar(stored).exists()
+
+
+def test_a_heic_phone_photo_and_a_pdf_without_extension_upload_and_read(tmp_path):
+    import pillow_heif
+
+    pillow_heif.register_heif_opener()
+    heic = io.BytesIO()
+    with Image.open(PHOTO) as photo:
+        ImageOps.exif_transpose(photo).save(heic, "HEIF")
+    client = signed_in(create_app(DocumentStore(tmp_path / "index"), FakeEmbedder(), RegexTokenizer(), frontend_dir=None))
+    added = client.post("/api/documents", files=[("files", ("IMG_2031", heic.getvalue())),
+                                                 ("files", ("Gas bill from WhatsApp", GAS_BILL.read_bytes()))]).json()
+    assert [(a["status"], a["document"]["filename"]) for a in added] == [
+        ("added", "IMG_2031.heic"), ("added", "Gas bill from WhatsApp.pdf")]
+    assert all(a["document"]["ocr_pages"] == 1 for a in added)  # both were read
+
+
+def test_a_photo_with_a_shadow_across_it_is_still_read(tmp_path):
+    """A hand's or phone's shadow over part of the card: the lighting is evened out and read again."""
+    import numpy as np
+
+    with Image.open(PHOTO) as photo:
+        pixels = np.asarray(ImageOps.exif_transpose(photo).convert("RGB")).astype(float)
+    h, w = pixels.shape[:2]
+    light = 0.35 + 0.65 * np.clip(0.72 * np.linspace(0, 1, w)[None, :, None] + 0.6 * np.linspace(0, 1, h)[:, None, None], 0, 1)
+    shadowed = Image.fromarray(np.clip(pixels * light, 0, 255).astype(np.uint8)).filter(ImageFilter.GaussianBlur(0.8))
+    page = read_image(shadowed)
+    assert page.confidence >= LOW_CONFIDENCE + 10  # not "hard to read"
+    assert "warranty" in page.text.lower()
