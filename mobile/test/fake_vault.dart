@@ -14,6 +14,7 @@ class FakeVault implements VaultApi {
   final uploads = <List<({String path, String name})>>[];
   bool unpairedCalled = false;
   Object? failWith;
+  bool macOff = false; // uploads fail as if the Mac were switched off
 
   final docs = [
     VaultDocument(id: 'd1', filename: 'Electricity Bill 2026 08.pdf', category: 'bill', pages: 1, ocrPages: 0,
@@ -65,6 +66,7 @@ class FakeVault implements VaultApi {
 
   @override
   Future<List<UploadResult>> upload(List<({String path, String name})> files, String category) async {
+    if (macOff) throw VaultException("Can't reach the vault.", offline: true);
     uploads.add(files);
     return [UploadResult(filename: files.first.name, status: 'added', document: docs[1])];
   }

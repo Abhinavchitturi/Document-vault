@@ -1,9 +1,14 @@
+import 'dart:async';
+import 'dart:io';
+
 import 'package:flutter/material.dart';
+import 'package:path_provider/path_provider.dart';
 
 import 'pairing.dart';
 import 'screens/home_screen.dart';
 import 'screens/lock_screen.dart';
 import 'screens/pair_screen.dart';
+import 'upload_queue.dart';
 import 'vault_client.dart';
 
 const brand = Color(0xFF5B4FE9);
@@ -26,9 +31,12 @@ ThemeData _theme(Brightness b) {
 /// What every screen can reach: the vault connection, and what to do when the phone gets unpaired.
 class VaultScope extends InheritedWidget {
   const VaultScope({super.key, required this.api, required this.pairing, required this.store,
-      required this.onUnpaired, required super.child});
+      required this.onUnpaired, required this.queue, required super.child});
 
   final VaultApi api;
+
+  /// Scans waiting for the Mac to be reachable.
+  final UploadQueue queue;
   final Pairing pairing;
   final PairingStore store;
   final Future<void> Function() onUnpaired;
@@ -50,13 +58,16 @@ class VaultScope extends InheritedWidget {
 }
 
 class VaultApp extends StatefulWidget {
-  const VaultApp({super.key, required this.store, required this.connect, this.authenticate});
+  const VaultApp({super.key, required this.store, required this.connect, this.authenticate, this.storageDir});
 
   final PairingStore store;
   final VaultApi Function(Pairing) connect;
 
   /// Face ID / fingerprint check; replaced in tests.
   final Future<bool> Function()? authenticate;
+
+  /// Where the upload queue lives (default: the app's private documents folder).
+  final Directory? storageDir;
 
   @override
   State<VaultApp> createState() => _VaultAppState();
@@ -65,6 +76,7 @@ class VaultApp extends StatefulWidget {
 class _VaultAppState extends State<VaultApp> with WidgetsBindingObserver {
   Pairing? _pairing;
   VaultApi? _api;
+  UploadQueue? _queue;
   bool _loading = true;
   bool _locked = false;
   DateTime? _backgroundSince;
@@ -79,8 +91,10 @@ class _VaultAppState extends State<VaultApp> with WidgetsBindingObserver {
   Future<void> _load() async {
     final pairing = await widget.store.load();
     final lock = pairing != null && await widget.store.lockEnabled();
+    final queue = UploadQueue(widget.storageDir ?? await getApplicationDocumentsDirectory());
     if (!mounted) return;
     setState(() {
+      _queue = queue;
       _pairing = pairing;
       _api = pairing == null ? null : widget.connect(pairing);
       _locked = lock;
@@ -124,6 +138,15 @@ class _VaultAppState extends State<VaultApp> with WidgetsBindingObserver {
       _pairing = null;
       _api = null;
     });
+    // Waiting scans belonged to that pairing (and a removed phone may be a lost one): don't keep them.
+    final queue = _queue;
+    if (queue != null) unawaited(_clear(queue));
+  }
+
+  static Future<void> _clear(UploadQueue queue) async {
+    for (final item in await queue.list()) {
+      await queue.remove(item.id);
+    }
   }
 
   @override
@@ -147,7 +170,7 @@ class _VaultAppState extends State<VaultApp> with WidgetsBindingObserver {
       darkTheme: _theme(Brightness.dark),
       // Above the navigator, so screens opened on top (a source page) can reach the vault too.
       builder: (context, child) => signedIn
-          ? VaultScope(api: _api!, pairing: _pairing!, store: widget.store, onUnpaired: _unpaired, child: child!)
+          ? VaultScope(api: _api!, pairing: _pairing!, store: widget.store, onUnpaired: _unpaired, queue: _queue!, child: child!)
           : child!,
       home: home,
     );

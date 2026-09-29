@@ -14,9 +14,12 @@ import 'pairing.dart';
 
 /// Something the person can act on; [message] is safe to show.
 class VaultException implements Exception {
-  VaultException(this.message, {this.unpaired = false});
+  VaultException(this.message, {this.unpaired = false, this.offline = false});
 
   final String message;
+
+  /// The Mac didn't answer (off, asleep, vault not running, or no network): worth trying again later.
+  final bool offline;
 
   /// The vault no longer knows this phone (removed in Settings, or the password was reset): pair again.
   final bool unpaired;
@@ -133,7 +136,7 @@ class VaultClient implements VaultApi {
       throw VaultException("Reached a server that isn't your vault (the certificate doesn't match). "
           'If you replaced the Mac\'s certificate, pair this phone again.');
     } on _Unreachable {
-      throw VaultException(_offline);
+      throw VaultException(_offline, offline: true);
     }
   }
 

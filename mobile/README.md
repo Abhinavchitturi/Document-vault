@@ -7,7 +7,7 @@ home Wi-Fi. Documents, search and answers all stay on the Mac.
 |---|---|
 | **Chat** | Ask about your documents. Answers stream in with numbered sources; tap one to see the page with the answer highlighted |
 | **Documents** | Browse and search by name or type; open a document's page or the original file; remove one |
-| **Scan** | Photograph a bill, policy or warranty card (or pick a photo, PDF or Word file). The Mac reads photos with OCR and says if one was hard to read |
+| **Scan** | Photograph a bill, policy or warranty card (or pick a photo, PDF or Word file). The Mac reads photos with OCR and says if one was hard to read. If the Mac is off, the scan waits on the phone and is sent automatically once the Mac is reachable (checked when the app opens and every 45 seconds while it's open) |
 | **Settings** | Face ID / fingerprint lock, which vault it's paired with, unpair |
 
 ## How it connects (and why it's safe on the Wi-Fi)
@@ -74,6 +74,7 @@ certificate pinning.
 | File | What |
 |---|---|
 | `lib/src/vault_client.dart` | HTTPS client pinned to the vault's certificate; every API call; chat stream parsing |
+| `lib/src/upload_queue.dart` | Scans waiting for the Mac, kept in the app's private storage and deleted once sent |
 | `lib/src/pairing.dart` | Reading the QR code; keeping the pairing in the Keychain / Keystore |
 | `lib/src/app.dart` | Pairing → lock → tabs; returns to pairing if the Mac removed this phone |
 | `lib/src/screens/` | Pair, Lock, Chat, Documents, Source (highlighted page), Scan, Settings |
