@@ -6,7 +6,7 @@ import AppShell, { useVault } from "@/components/AppShell";
 import { displayName, FileIcon } from "@/components/DocBits";
 import Icon from "@/components/Icon";
 import PageViewer from "@/components/PageViewer";
-import { api, CATEGORIES, CATEGORY_LABEL, daysUntil, fileUrl, formatAmount, formatBytes, formatDate, hardToRead, type Category, type DocumentChanges, type Source, type VaultDocument } from "@/lib/api";
+import { api, CATEGORIES, CATEGORY_LABEL, daysUntil, fileUrl, formatAmount, formatBytes, formatDate, hardToRead, showReference, type Category, type DocumentChanges, type Source, type VaultDocument } from "@/lib/api";
 
 function Documents() {
   const { refresh } = useVault();
@@ -160,7 +160,7 @@ function Facts({ d }: { d: VaultDocument }) {
       {d.expires_on && when(d.expires_on, d.category === "warranty" ? "Warranty until" : "Expires")}
       {d.due_on && when(d.due_on, "Due")}
       {d.amount && <span>{formatAmount(d.amount)}</span>}
-      {d.reference && <span>No. {d.reference}</span>}
+      {d.reference && <span title="The full number is in the details (pencil)">No. {showReference(d.reference)}</span>}
     </div>
   );
 }

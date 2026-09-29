@@ -6,6 +6,13 @@
                     enlarge small images so letters are big enough to read.
     3. Read         Tesseract returns every word with its box and a confidence (0-100).
 
+Languages: English, plus Hindi when its Tesseract data is installed (`brew install tesseract-lang`
+on macOS). PAN and Aadhaar cards are half Hindi; read as English only, those lines turn into
+gibberish that also drags the confidence down. VAULT_OCR_LANGS overrides (e.g. "eng+hin+mar").
+
+The confidence counts real words only (two or more letters or digits), not the specks a logo,
+emblem, signature or photo leaves behind, so a clean card isn't flagged as hard to read.
+
 The result keeps the word boxes (in the coordinates of the straightened page) so the viewer
 can highlight the answer on a scan exactly like on a normal PDF, and a confidence score so
 the app can warn when a photo is too blurry to trust.
@@ -27,6 +34,7 @@ import ftfy
 logger = logging.getLogger(__name__)
 
 MIN_OCR_WIDTH = 1600  # smaller images are enlarged before reading
+RETRY_WIDTH = 2400  # an unclear small image is read once more at this size
 MIN_ORIENTATION_CONFIDENCE = 2.0  # below this Tesseract is guessing; leave the page as it is
 LOW_CONFIDENCE = 70  # pages read with less confidence than this get a "check the original" warning
 
@@ -72,6 +80,29 @@ def load_ocr(path: Path) -> dict[int, OcrPage]:
         return {}
 
 
+_langs: str | None = None
+
+
+def ocr_languages() -> str:
+    """"eng+hin" when Hindi is installed, else "eng" (or VAULT_OCR_LANGS)."""
+    global _langs
+    if _langs is None:
+        import os
+
+        wanted = os.environ.get("VAULT_OCR_LANGS")
+        if wanted:
+            _langs = wanted
+        else:
+            try:
+                import pytesseract
+
+                installed = set(pytesseract.get_languages(config=""))
+            except Exception:
+                installed = {"eng"}
+            _langs = "+".join(lang for lang in ("eng", "hin") if lang in installed) or "eng"
+    return _langs
+
+
 def ocr_available() -> bool:
     return shutil.which("tesseract") is not None
 
@@ -111,16 +142,20 @@ def _detect_rotation(image) -> int:
     return int(osd.get("rotate", 0)) % 360
 
 
-def _cleaned(image):
-    """Grayscale, contrast stretched, enlarged if small. Returns (image, scale factor)."""
+def _cleaned(image, width: int = MIN_OCR_WIDTH):
+    """Grayscale, contrast stretched, enlarged if narrower than `width`. Returns (image, scale factor)."""
     from PIL import Image, ImageOps
 
     gray = ImageOps.autocontrast(image.convert("L"), cutoff=1)
     scale = 1.0
-    if gray.width < MIN_OCR_WIDTH:
-        scale = MIN_OCR_WIDTH / gray.width
-        gray = gray.resize((MIN_OCR_WIDTH, round(gray.height * scale)), Image.LANCZOS)
+    if gray.width < width:
+        scale = width / gray.width
+        gray = gray.resize((width, round(gray.height * scale)), Image.LANCZOS)
     return gray, scale
+
+
+def _is_word(token: str) -> bool:
+    return sum(ch.isalnum() for ch in token) >= 2
 
 
 def read_image(image, rotation: int | None = None) -> OcrPage:
@@ -135,8 +170,19 @@ def read_image(image, rotation: int | None = None) -> OcrPage:
 
         image = ImageOps.exif_transpose(image).convert("RGB")
     image = rotate(image, rotation)
-    cleaned, scale = _cleaned(image)
-    data = pytesseract.image_to_data(cleaned, output_type=pytesseract.Output.DICT)
+    page = _read(image, rotation, MIN_OCR_WIDTH)
+    if (page.confidence is None or page.confidence < LOW_CONFIDENCE) and image.width < RETRY_WIDTH:
+        bigger = _read(image, rotation, RETRY_WIDTH)  # small print (ID cards, receipts) reads better larger
+        if (bigger.confidence or 0) > (page.confidence or 0):
+            page = bigger
+    return page
+
+
+def _read(image, rotation: int, width: int) -> OcrPage:
+    import pytesseract
+
+    cleaned, scale = _cleaned(image, width)
+    data = pytesseract.image_to_data(cleaned, lang=ocr_languages(), output_type=pytesseract.Output.DICT)
 
     text, words, confs = "", [], []
     last_line = last_block = None
@@ -155,7 +201,8 @@ def read_image(image, rotation: int | None = None) -> OcrPage:
         text += word
         box = [round(data[k][i] / scale) for k in ("left", "top", "width", "height")]
         words.append([*box, start, len(text)])
-        confs.append((conf, len(word)))
+        if _is_word(word):  # specks from logos and photos don't count against the page
+            confs.append((conf, len(word)))
     total = sum(n for _, n in confs)
     confidence = round(sum(c * n for c, n in confs) / total) if total else None
     return OcrPage(text, image.width, image.height, rotation, confidence, words)

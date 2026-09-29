@@ -12,6 +12,24 @@ function Upload() {
   const [over, setOver] = useState(false);
   const [busy, setBusy] = useState<number>(0);
   const [results, setResults] = useState<UploadResult[]>([]);
+  const [sent, setSent] = useState<File[]>([]); // the last batch, to retry a locked PDF with its password
+  const [passwords, setPasswords] = useState<Record<number, string>>({});
+
+  const unlock = async (i: number) => {
+    const file = sent.find((f) => f.name === results[i].filename);
+    if (!file || !passwords[i]) return;
+    setBusy(1);
+    try {
+      const [r] = await api.upload([file], category, passwords[i]);
+      setResults((all) => all.map((x, j) => (j === i ? r : x)));
+      setPasswords((p) => ({ ...p, [i]: "" }));
+      if (r.status === "added") refresh();
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setBusy(0);
+    }
+  };
   const [error, setError] = useState<string | null>(null);
   const input = useRef<HTMLInputElement>(null);
 
@@ -22,6 +40,8 @@ function Upload() {
     setError(null);
     try {
       setResults(await api.upload(files, category));
+      setSent(files);
+      setPasswords({});
       refresh();
     } catch (e) {
       setError((e as Error).message);
@@ -78,6 +98,16 @@ function Upload() {
                   {r.status === "duplicate" && " is already in the vault."}
                   {r.status === "error" && `: ${r.error}`}
                 </span>
+                {r.code && (
+                  <form className="unlock" onSubmit={(e) => { e.preventDefault(); unlock(i); }}>
+                    <input className="input" type="password" autoComplete="off" placeholder="PDF password"
+                           aria-label={`Password for ${r.filename}`} value={passwords[i] ?? ""}
+                           onChange={(e) => setPasswords((p) => ({ ...p, [i]: e.target.value }))} autoFocus />
+                    <button className="btn primary small" type="submit" disabled={!!busy || !passwords[i]}>
+                      <Icon name="lock" size={13} />Unlock
+                    </button>
+                  </form>
+                )}
               </div>
             ))}
           </div>

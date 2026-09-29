@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import re
 
-CATEGORIES = ["insurance", "warranty", "bill", "property", "other"]
+CATEGORIES = ["insurance", "warranty", "bill", "property", "identity", "other"]
 
 _KEYWORDS = {
     "insurance": ["insurance", "policy", "insured", "premium", "sum insured", "idv", "claim", "nominee", "policyholder"],
@@ -17,6 +17,10 @@ _KEYWORDS = {
                  "date of purchase", "compressor"],
     "bill": ["bill", "invoice", "amount due", "due date", "units consumed", "billing period", "account number",
              "consumer number", "late fee", "gst"],
+    "identity": ["aadhaar", "aadhar", "unique identification", "income tax department", "permanent account number",
+                 "pan card", "passport", "republic of india", "driving licence", "driving license", "voter",
+                 "election commission", "date of birth", "dob", "father's name", "enrolment no", "government of india",
+                 "आधार", "आयकर", "जन्म तिथि", "पहचान"],
     "property": ["sale deed", "property", "registration", "sub-registrar", "khata", "carpet area", "flat no",
                  "property tax", "survey no", "stamp duty"],
 }

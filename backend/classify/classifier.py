@@ -41,7 +41,9 @@ DESCRIPTIONS = {
             "amount due, due date, billing period, units consumed, account or consumer number.",
     "property": "A property document: sale deed, registration, property tax receipt, khata, flat or land details, "
                 "carpet area, survey number, stamp duty.",
-    "other": "Some other personal document: an ID card, bank statement, letter, certificate, medical report, "
+    "identity": "An identity document or ID card: Aadhaar, PAN card, passport, driving licence, voter ID; name, "
+                "date of birth, father's name, photo, an ID number such as a PAN or Aadhaar number.",
+    "other": "Some other personal document: a bank statement, letter, certificate, medical report, "
              "school or office document.",
 }
 
@@ -81,7 +83,9 @@ def keyword_scores(filename: str, text: str) -> dict[str, float]:
     hits = {c: 0.0 for c in CATEGORIES}
     for category, words in _KEYWORDS.items():
         for w in words:
-            hits[category] += 3 * (w in name) + len(re.findall(r"\b" + re.escape(w) + r"\b", body))
+            # Hindi words end in vowel signs that regex word boundaries don't see: count those as substrings.
+            found = len(re.findall(r"\b" + re.escape(w) + r"\b", body)) if w.isascii() else body.count(w)
+            hits[category] += 3 * (w in name) + found
     total = sum(hits.values())
     if total == 0:
         return {c: (0.6 if c == "other" else 0.1) for c in CATEGORIES}

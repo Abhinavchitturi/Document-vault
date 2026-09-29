@@ -17,6 +17,7 @@ import argparse
 import hashlib
 import logging
 import shutil
+import tempfile
 import uuid
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -29,7 +30,7 @@ from backend.classify.classifier import Classifier
 from backend.extract.facts import default_reader
 from backend.parser.categories import CATEGORIES
 from backend.chunker.chunker import SpanTokenizer, chunk_text
-from backend.parser.extract import SUPPORTED_SUFFIXES, extract_pages
+from backend.parser.extract import SUPPORTED_SUFFIXES, extract_pages, unlock_pdf
 from backend.parser.ocr import save_ocr
 from backend.vector_store.store import DocumentStore
 from backend.embeddings.embedder import format_passage
@@ -89,6 +90,7 @@ def ingest_file(
     overlap: int = 60,
     classifier=None,
     facts_reader=None,
+    password: str | None = None,
 ) -> IngestResult:
     """Add one file. `filename` is the name to show (uploads arrive as temp files,
     saved with the upload's extension so the right parser is picked)."""
@@ -103,7 +105,11 @@ def ingest_file(
     if existing:
         return IngestResult(existing, created=False)
 
-    pages = extract_pages(path)
+    unlocked = None
+    if suffix == ".pdf" and password:  # a locked PDF: keep an unlocked copy inside the vault
+        tmp = tempfile.mkdtemp(prefix="vault-unlock-")
+        unlocked = unlock_pdf(path, password, Path(tmp) / "unlocked.pdf")
+    pages = extract_pages(unlocked or path)  # raises PasswordRequiredError if it's locked and no password was given
     full_text = "\n".join(p.text for p in pages)
     if not full_text.strip():
         if any(p.ocr for p in pages):
@@ -134,7 +140,9 @@ def ingest_file(
             )
 
     stored_as = f"{doc_id}{suffix}"
-    shutil.copyfile(path, store.files_dir / stored_as)
+    shutil.copyfile(unlocked or path, store.files_dir / stored_as)
+    if unlocked:
+        shutil.rmtree(unlocked.parent, ignore_errors=True)
     scanned = {p.number: p.ocr_data for p in pages if p.ocr_data is not None}
     if scanned:  # word positions, so answers can be highlighted on the scan later
         save_ocr(store.files_dir / stored_as, scanned)

@@ -66,7 +66,7 @@ class FakeVault implements VaultApi {
   Future<Uint8List> file(String docId) async => Uint8List(0);
 
   @override
-  Future<List<UploadResult>> upload(List<({String path, String name})> files, String category) async {
+  Future<List<UploadResult>> upload(List<({String path, String name})> files, String category, {String? password}) async {
     if (macOff) throw VaultException("Can't reach the vault.", offline: true);
     uploads.add(files);
     return [UploadResult(filename: files.first.name, status: 'added', document: docs[1])];

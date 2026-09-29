@@ -11,6 +11,7 @@
   --c-warranty: #15803d; --c-warranty-soft: #e7f6ec;
   --c-bill: #b45309; --c-bill-soft: #fdf1e3;
   --c-property: #7c3aed; --c-property-soft: #f1ebff;
+  --c-identity: #0e7490; --c-identity-soft: #e0f4f8;
   --c-other: #52525b; --c-other-soft: #f0f0f2;
   --sidebar: 232px;
 }
@@ -26,7 +27,9 @@
     --c-warranty: #6ee7a0; --c-warranty-soft: #10291b;
     --c-bill: #f5b36b; --c-bill-soft: #2e1f0c;
     --c-property: #c4a5ff; --c-property-soft: #24193d;
-    --c-other: #b4b4bd; --c-other-soft: #23242b;
+    --c-identity: #67d3e6; --c-identity-soft: #0c2a31;
+    --c-identity: #67d3e6; --c-identity-soft: #0c2a31;
+  --c-other: #b4b4bd; --c-other-soft: #23242b;
   }
 }
 :root[data-theme="dark"] {
@@ -388,3 +391,7 @@ mark { background: var(--mark); color: inherit; border-radius: 3px; padding: 0 1
 .row.upcoming.done .name { text-decoration: line-through; }
 .day-chips { display: flex; flex-wrap: wrap; gap: 6px; }
 .day-chips button[aria-pressed="true"] { background: var(--accent); color: #fff; border-color: var(--accent); }
+
+.result .unlock { display: flex; gap: 6px; margin-top: 8px; width: 100%; }
+.result .unlock .input { flex: 1; min-width: 0; }
+.result { flex-wrap: wrap; }

@@ -34,6 +34,58 @@ class UnsupportedFileError(ValueError):
     pass
 
 
+class PasswordRequiredError(ValueError):
+    """A locked PDF (e-Aadhaar, e-PAN, bank statements): ask for its password."""
+
+    def __init__(self, wrong: bool):
+        self.wrong = wrong
+        super().__init__("That password didn't open this PDF. Try again." if wrong else
+                         "This PDF is locked with a password. Enter it to add the document (e-Aadhaar: the first "
+                         "4 letters of your name in capitals + year of birth; e-PAN: date of birth as DDMMYYYY).")
+
+
+def open_pdf(path, password: str | None = None):
+    import pypdfium2 as pdfium
+
+    try:
+        return pdfium.PdfDocument(path, password=password or None)
+    except pdfium.PdfiumError as e:
+        if "password" in str(e).lower():
+            raise PasswordRequiredError(wrong=bool(password)) from e
+        raise
+
+
+def unlock_pdf(path: Path, password: str, dest: Path) -> Path:
+    """Save an unlocked copy, so the vault can show and search it later without the password.
+    (The copy stays inside the vault, which is where the protection lives.)"""
+    import pypdfium2.raw as raw
+
+    pdf = open_pdf(path, password)
+    try:
+        pdf.save(str(dest), flags=raw.FPDF_REMOVE_SECURITY)
+    finally:
+        pdf.close()
+    return dest
+
+
+MIN_IMAGE_SHARE = 0.4  # a page this much covered by pictures is also read with OCR
+
+
+def _image_share(page) -> float:
+    """How much of the page is covered by pictures (a photo of an ID card pasted into a PDF)."""
+    import pypdfium2.raw as raw
+
+    width, height = page.get_size()
+    covered = 0.0
+    try:
+        for obj in page.get_objects(filter=[raw.FPDF_PAGEOBJ_IMAGE], max_depth=2):
+            left, bottom, right, top = obj.get_bounds()
+            covered += max(0.0, right - left) * max(0.0, top - bottom)
+    except Exception:
+        return 0.0
+    return min(1.0, covered / (width * height)) if width and height else 0.0
+
+
 @dataclass
 class Page:
     number: int  # 1-based
@@ -52,20 +104,23 @@ def clean_text(text: str) -> str:
     return text.strip()
 
 
-def _pdf_pages(path: Path) -> list[Page]:
-    import pypdfium2 as pdfium
-
+def _pdf_pages(path: Path, password: str | None = None) -> list[Page]:
     pages = []
-    pdf = pdfium.PdfDocument(path)
+    pdf = open_pdf(path, password)
     try:
         for i, page in enumerate(pdf, start=1):
             textpage = page.get_textpage()
             text = clean_text(textpage.get_text_range())
             textpage.close()
             data = None
-            if len(text) < MIN_PAGE_CHARS and ocr_available():
-                data = read_image(page.render(scale=OCR_RENDER_SCALE).to_pil())
-                text = clean_text(data.text)
+            scanned = len(text) < MIN_PAGE_CHARS
+            # A page with a little text around a big picture (an ID card pasted into a PDF, a scan with a
+            # typed header) is read with OCR too, and keeps whichever reading has more to say.
+            mostly_picture = not scanned and len(text) < 600 and _image_share(page) >= MIN_IMAGE_SHARE
+            if (scanned or mostly_picture) and ocr_available():
+                read = read_image(page.render(scale=OCR_RENDER_SCALE).to_pil())
+                if scanned or len(clean_text(read.text)) > len(text):
+                    data, text = read, clean_text(read.text)
             page.close()
             pages.append(Page(i, text, data is not None, data))
     finally:
@@ -98,12 +153,13 @@ def _image_pages(path: Path) -> list[Page]:
     return [Page(1, clean_text(data.text), ocr=True, ocr_data=data)]
 
 
-def extract_pages(path: str | Path) -> list[Page]:
-    """Return the text of each page. Raises UnsupportedFileError / OcrUnavailableError."""
+def extract_pages(path: str | Path, password: str | None = None) -> list[Page]:
+    """Return the text of each page. Raises UnsupportedFileError / OcrUnavailableError /
+    PasswordRequiredError (a locked PDF: pass its `password`)."""
     path = Path(path)
     suffix = path.suffix.lower()
     if suffix == ".pdf":
-        return _pdf_pages(path)
+        return _pdf_pages(path, password)
     if suffix == ".docx":
         return _docx_pages(path)
     if suffix in TEXT_SUFFIXES:

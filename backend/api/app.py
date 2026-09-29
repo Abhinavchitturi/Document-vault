@@ -70,7 +70,7 @@ from backend.retriever.retriever import METHODS, Retriever
 from backend.viewer.highlight import highlights_for, page_image
 
 from backend.parser.categories import CATEGORIES
-from backend.parser.extract import IMAGE_SUFFIXES, SUPPORTED_SUFFIXES, OcrUnavailableError, UnsupportedFileError, ocr_available
+from backend.parser.extract import IMAGE_SUFFIXES, SUPPORTED_SUFFIXES, PasswordRequiredError, OcrUnavailableError, UnsupportedFileError, ocr_available
 from backend.upload.ingest import EmbedderLike, EmptyDocumentError, ingest_file
 from backend.vector_store.store import DocumentStore
 
@@ -549,7 +549,10 @@ def create_app(
 
     @app.post("/api/documents")
     def upload(files: list[UploadFile] = File(...), category: str = Form("auto"),
+               password: str | None = Form(None, max_length=200),
                user: dict = Depends(current_user)) -> list[dict]:
+        """`password` opens a locked PDF (e-Aadhaar, e-PAN); without it such a file comes back with
+        status "error" and code "password_required", and the page asks for it."""
         mine = vault_of(user)
         if category != "auto" and category not in CATEGORIES:
             raise HTTPException(400, f"category must be 'auto' or one of {CATEGORIES}")
@@ -577,7 +580,11 @@ def create_app(
                     continue
                 try:
                     result = ingest_file(tmp_path, mine, embedder, tokenizer, category, filename=name,
-                                         classifier=classifier, facts_reader=facts_reader)
+                                         classifier=classifier, facts_reader=facts_reader, password=password)
+                except PasswordRequiredError as e:
+                    results.append({"filename": name, "status": "error", "error": str(e),
+                                    "code": "wrong_password" if e.wrong else "password_required"})
+                    continue
                 except (UnsupportedFileError, OcrUnavailableError, EmptyDocumentError, ValueError) as e:
                     results.append({"filename": name, "status": "error", "error": str(e)})
                     continue

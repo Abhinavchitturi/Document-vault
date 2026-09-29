@@ -22,7 +22,7 @@ def upload(client, name, content, category="auto"):
 def test_page_and_empty_library(client):
     assert "Document Vault" in client.get("/").text
     info = client.get("/api/info").json()
-    assert info["num_documents"] == 0 and set(info["categories"]) == {"insurance", "warranty", "bill", "property", "other"}
+    assert info["num_documents"] == 0 and set(info["categories"]) == {"insurance", "warranty", "bill", "property", "identity", "other"}
     assert client.get("/api/search", params={"q": "anything"}).json()["results"] == []
 
 
