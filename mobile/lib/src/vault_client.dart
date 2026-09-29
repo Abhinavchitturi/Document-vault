@@ -52,7 +52,7 @@ abstract class VaultApi {
   Future<Highlights> highlights(String docId, int page, {String? chunkId, String? answer});
   Future<Uint8List> pageImage(String docId, int page);
   Future<Uint8List> file(String docId);
-  Future<List<UploadResult>> upload(List<({String path, String name})> files, String category);
+  Future<List<UploadResult>> upload(List<({String path, String name})> files, String category, {String? password});
   Future<void> unpair(int deviceId);
 
   /// Every upcoming reminder for this person, to schedule on the phone (Phase 10).
@@ -239,13 +239,14 @@ class VaultClient implements VaultApi {
   Future<Uint8List> file(String docId) => _bytes('/api/documents/${Uri.encodeComponent(docId)}/file');
 
   @override
-  Future<List<UploadResult>> upload(List<({String path, String name})> files, String category) async {
+  Future<List<UploadResult>> upload(List<({String path, String name})> files, String category, {String? password}) async {
     final parts = [for (final f in files) (f, await File(f.path).readAsBytes())];
     // OCR of a photo can take a little while on the Mac.
     final res = await http.Response.fromStream(await _request((base) {
       final req = http.MultipartRequest('POST', base.replace(path: '/api/documents'))
         ..headers.addAll(_auth)
         ..fields['category'] = category;
+      if (password != null && password.isNotEmpty) req.fields['password'] = password;
       for (final (f, bytes) in parts) {
         req.files.add(http.MultipartFile.fromBytes('files', bytes, filename: f.name));
       }

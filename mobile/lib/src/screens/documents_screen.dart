@@ -109,6 +109,7 @@ class DocumentsScreenState extends State<DocumentsScreen> {
                       if (d.expiresOn != null) '${d.category == 'warranty' ? 'warranty until' : 'expires'} ${_day(d.expiresOn!)}',
                       if (d.dueOn != null) 'due ${_day(d.dueOn!)}',
                       if (d.amount != null) 'Rs. ${d.amount}',
+                      if (d.reference != null) 'No. ${showReference(d.reference!)}',
                       if (d.ocrPages > 0) 'scanned',
                       if (d.needsReview) '⚠ check type (on the Mac)',
                       if (d.hardToRead) '⚠ hard to read',
@@ -137,6 +138,7 @@ class DocumentsScreenState extends State<DocumentsScreen> {
         'warranty' => Icons.verified_outlined,
         'bill' => Icons.receipt_long_outlined,
         'property' => Icons.home_outlined,
+        'identity' => Icons.badge_outlined,
         _ => Icons.description_outlined,
       };
 }

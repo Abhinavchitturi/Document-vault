@@ -34,9 +34,11 @@ FIELDS = ("expires_on", "due_on", "amount", "reference", "issuer")
 DESCRIPTIONS = {
     "issuer": "The company, insurer, utility or government office that issued the document.",
     "reference": "The main identifying number: policy number, consumer or account number, serial number, "
-                 "receipt number or registration number. Copy it exactly.",
+                 "receipt or registration number, or for an ID card its PAN, Aadhaar, passport or licence number. "
+                 "Copy it exactly.",
     "expires_on": "The date the policy, cover or warranty ends: the end of the policy period, 'valid until', "
-                  "'covered until'. Not the purchase or start date. As YYYY-MM-DD.",
+                  "'covered until', 'date of expiry' of a passport or licence. Not the purchase, start or birth date. "
+                  "As YYYY-MM-DD.",
     "due_on": "The date by which a bill must be paid (due date). As YYYY-MM-DD.",
     "amount": "The main amount in rupees: total amount due or payable, total premium, or total tax paid. "
               "Digits only, like 2486 or 1355.82.",
@@ -65,6 +67,8 @@ MONTHS.update({m[:3]: i for m, i in list(MONTHS.items())})
 _DATE = re.compile(r"\b(\d{1,2})[\s\-./]+([A-Za-z]{3,9})[\s\-.,/]+(\d{4})\b|\b(\d{4})-(\d{2})-(\d{2})\b|\b(\d{1,2})[/.-](\d{1,2})[/.-](\d{4})\b")
 _ORG = re.compile(r"(?:\bco\.|\b(?:ltd|limited|pvt|company|corporation|department|insurance|electronics|appliances|"
                   r"broadband|systems|bank|authority|board|services|india)\b)", re.I)
+_PAN = re.compile(r"\b[A-Z]{5}\d{4}[A-Z]\b")  # e.g. ABCPM1234K
+_AADHAAR = re.compile(r"(?<!\d)\d{4} \d{4} \d{4}(?!\d)")  # 12 digits in groups of four
 _AMOUNT = re.compile(r"(?:Rs\.?|INR|₹)\s*([\d,]+(?:\.\d{1,2})?)", re.I)
 
 
@@ -160,11 +164,18 @@ class RulesReader:
                 if m and not re.search(r"own damage|third party|net premium|charges:", low):
                     facts.amount = _digits(m.group(1))
             if facts.reference is None:
-                m = re.search(r"(policy|consumer|account|connection|receipt|registration|serial)\s*(number|no\.?|id)\s*:\s*(\S+)", line, re.I)
+                m = re.search(r"(policy|consumer|account|connection|receipt|registration|serial|passport|licence|license|"
+                              r"enrolment|epic)\s*(number|no\.?|id)\s*[:.]?\s*([A-Z0-9][\w/-]{4,})", line, re.I)
                 if m:
                     facts.reference = m.group(3).strip(".,;")
             if facts.issuer is None and i < 8 and _ORG.search(line) and not re.search(r"sample document", low):
-                facts.issuer = re.sub(r"^#+\s*|\s*\(fictional\)\s*$", "", line).strip()
+                issuer = re.sub(r"^#+\s*|\s*\(fictional\)\s*$", "", line).strip()
+                latin = re.sub(r"[\u0900-\u097f]+", " ", issuer)  # "आयकर विभाग INCOME TAX DEPARTMENT": keep one script
+                facts.issuer = " ".join(latin.split()) if re.search(r"[A-Za-z]{3}", latin) else issuer
+        if facts.reference is None:  # ID cards: the number itself is the reference
+            m = _PAN.search(text) or _AADHAAR.search(text)
+            if m:
+                facts.reference = m.group()
         # A later "Total …" line (the grand total) beats an earlier subtotal.
         totals = [(_AMOUNT.search(l), l.lower()) for l in lines if re.search(r"\btotal\b", l, re.I)]
         totals = [(m, l) for m, l in totals if m]

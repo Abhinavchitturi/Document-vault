@@ -1,13 +1,14 @@
 // Typed client for the vault's FastAPI backend (backend/api/app.py). Same origin: the Python
 // server serves these pages, and `npm run dev` forwards /api to it.
 
-export const CATEGORIES = ["insurance", "warranty", "bill", "property", "other"] as const;
+export const CATEGORIES = ["insurance", "warranty", "bill", "property", "identity", "other"] as const;
 export type Category = (typeof CATEGORIES)[number];
 export const CATEGORY_LABEL: Record<Category, string> = {
   insurance: "Insurance",
   warranty: "Warranties",
   bill: "Bills",
   property: "Property",
+  identity: "Identity",
   other: "Other",
 };
 
@@ -158,6 +159,7 @@ export interface UploadResult {
   status: "added" | "duplicate" | "error";
   document?: VaultDocument;
   error?: string;
+  code?: "password_required" | "wrong_password"; // a locked PDF: ask for its password
 }
 
 export interface Settings {
@@ -261,10 +263,11 @@ export const api = {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ category }),
     }).then((r) => json<VaultDocument>(r)),
-  upload: (files: File[], category: Category | "auto") => {
+  upload: (files: File[], category: Category | "auto", password?: string) => {
     const form = new FormData();
     files.forEach((f) => form.append("files", f));
     form.append("category", category);
+    if (password) form.append("password", password);
     return fetch("/api/documents", { method: "POST", body: form }).then((r) => json<UploadResult[]>(r));
   },
   settings: () => fetch("/api/settings").then((r) => json<Settings>(r)),
@@ -347,6 +350,11 @@ export function relativeDays(days: number): string {
 export function daysUntil(iso: string): number {
   const today = new Date(); today.setHours(0, 0, 0, 0);
   return Math.round((new Date(`${iso}T00:00:00`).getTime() - today.getTime()) / 86_400_000);
+}
+
+/** An Aadhaar number shown on screen keeps only its last four digits (like the "masked Aadhaar"). */
+export function showReference(ref: string): string {
+  return /^\d{4} \d{4} \d{4}$/.test(ref) ? `XXXX XXXX ${ref.slice(-4)}` : ref;
 }
 
 export function formatDate(iso: string): string {

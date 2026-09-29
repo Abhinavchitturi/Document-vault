@@ -82,7 +82,16 @@ class _ScanScreenState extends State<ScanScreen> with WidgetsBindingObserver {
       _queuedNote = null;
     });
     try {
-      final results = await scope.api.upload(files, _category);
+      var results = await scope.api.upload(files, _category);
+      // A locked PDF (e-Aadhaar, e-PAN): ask for its password and try that file again.
+      for (var i = 0; i < results.length; i++) {
+        while (results[i].code != null && mounted) {
+          final password = await _askPassword(results[i]);
+          if (password == null) break;
+          final file = files.firstWhere((f) => f.name == results[i].filename, orElse: () => files[i]);
+          results = [...results]..[i] = (await scope.api.upload([file], _category, password: password)).single;
+        }
+      }
       setState(() => _results = results);
       if (results.any((r) => r.status == 'added')) widget.onUploaded?.call();
     } on VaultException catch (e) {
@@ -104,6 +113,29 @@ class _ScanScreenState extends State<ScanScreen> with WidgetsBindingObserver {
     } finally {
       if (mounted) setState(() => _busy = false);
     }
+  }
+
+  Future<String?> _askPassword(UploadResult r) {
+    final controller = TextEditingController();
+    return showDialog<String>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text(r.code == 'wrong_password' ? 'Wrong password, try again' : 'This PDF is locked'),
+        content: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Text(r.filename, style: const TextStyle(fontWeight: FontWeight.w600)),
+          const SizedBox(height: 8),
+          const Text('e-Aadhaar: first 4 letters of your name in capitals + year of birth.\n'
+              'e-PAN: date of birth as DDMMYYYY.'),
+          const SizedBox(height: 12),
+          TextField(controller: controller, obscureText: true, autofocus: true,
+              decoration: const InputDecoration(hintText: 'PDF password')),
+        ]),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context), child: const Text('Skip')),
+          FilledButton(onPressed: () => Navigator.pop(context, controller.text), child: const Text('Unlock')),
+        ],
+      ),
+    );
   }
 
   Future<void> _photo(ImageSource source) async {

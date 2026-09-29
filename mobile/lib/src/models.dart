@@ -1,11 +1,12 @@
 // Data shapes returned by the vault's API (backend/api/app.py).
 
-const categories = ['insurance', 'warranty', 'bill', 'property', 'other'];
+const categories = ['insurance', 'warranty', 'bill', 'property', 'identity', 'other'];
 const categoryLabels = {
   'insurance': 'Insurance',
   'warranty': 'Warranties',
   'bill': 'Bills',
   'property': 'Property',
+  'identity': 'Identity',
   'other': 'Other',
 };
 
@@ -36,7 +37,7 @@ class Info {
 class VaultDocument {
   VaultDocument({required this.id, required this.filename, required this.category, required this.pages,
       required this.ocrPages, required this.ocrConfidence, required this.sizeBytes, required this.addedAt,
-      this.needsReview = false, this.expiresOn, this.dueOn, this.amount});
+      this.needsReview = false, this.expiresOn, this.dueOn, this.amount, this.reference});
 
   final String id;
   final String filename;
@@ -54,6 +55,7 @@ class VaultDocument {
   final DateTime? expiresOn;
   final DateTime? dueOn;
   final String? amount;
+  final String? reference;
 
   bool get hardToRead => ocrConfidence != null && ocrConfidence! < lowConfidence;
 
@@ -70,6 +72,7 @@ class VaultDocument {
         expiresOn: DateTime.tryParse(j['expires_on'] as String? ?? ''),
         dueOn: DateTime.tryParse(j['due_on'] as String? ?? ''),
         amount: j['amount'] as String?,
+        reference: j['reference'] as String?,
       );
 }
 
@@ -140,18 +143,22 @@ class Highlights {
 }
 
 class UploadResult {
-  UploadResult({required this.filename, required this.status, this.document, this.error});
+  UploadResult({required this.filename, required this.status, this.document, this.error, this.code});
 
   final String filename;
   final String status; // added | duplicate | error
   final VaultDocument? document;
   final String? error;
 
+  /// "password_required" / "wrong_password": a locked PDF (e-Aadhaar, e-PAN): ask for its password.
+  final String? code;
+
   factory UploadResult.fromJson(Map<String, dynamic> j) => UploadResult(
         filename: j['filename'] as String,
         status: j['status'] as String,
         document: j['document'] == null ? null : VaultDocument.fromJson(j['document'] as Map<String, dynamic>),
         error: j['error'] as String?,
+        code: j['code'] as String?,
       );
 }
 
@@ -184,3 +191,7 @@ class ErrorEvent extends ChatEvent {
   ErrorEvent(this.message);
   final String message;
 }
+
+/// An Aadhaar number shown on screen keeps only its last four digits.
+String showReference(String ref) =>
+    RegExp(r'^\d{4} \d{4} \d{4}$').hasMatch(ref) ? 'XXXX XXXX ${ref.substring(ref.length - 4)}' : ref;

@@ -23,7 +23,7 @@ class SorterLLM:
 
     def generate_json(self, system, prompt, schema):
         self.calls += 1
-        assert schema["properties"]["category"]["enum"] == ["insurance", "warranty", "bill", "property", "other"]
+        assert schema["properties"]["category"]["enum"] == ["insurance", "warranty", "bill", "property", "identity", "other"]
         if self.fail:
             raise ConnectionError("Ollama is off")
         return self.answer
@@ -42,7 +42,7 @@ def test_unclear_documents_ask_the_assistant_and_fall_back_when_it_is_off():
     assert (asked.category, asked.confidence, asked.method) == ("warranty", 70, "assistant")
 
     off = Classifier(FakeEmbedder(), SorterLLM(fail=True)).classify("x.pdf", text)
-    assert off.method != "assistant" and off.category in {"insurance", "warranty", "bill", "property", "other"}
+    assert off.method != "assistant" and off.category in {"insurance", "warranty", "bill", "property", "identity", "other"}
     assert Classifier(FakeEmbedder(), SorterLLM({"category": "cars", "confidence": "high"})).classify("x.pdf", text).method != "assistant"
 
 
