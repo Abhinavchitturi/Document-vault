@@ -84,7 +84,10 @@ function SettingsView() {
 
         <Phones />
 
-        {s?.is_admin && <FamilyMembers />}
+        {s?.is_admin && <FamilyMembers familyMode={s.family_mode} onFamilyMode={async (on) => {
+          try { setS(await api.saveSettings({ family_mode: on })); refresh(); }
+          catch (e) { setMessage({ ok: false, text: (e as Error).message }); }
+        }} />}
 
         <Security settings={s} />
 
@@ -460,7 +463,7 @@ function PasswordChange({ onDone }: { onDone: (message: string) => void }) {
   );
 }
 
-function FamilyMembers() {
+function FamilyMembers({ familyMode, onFamilyMode }: { familyMode: boolean; onFamilyMode: (on: boolean) => void }) {
   const [members, setMembers] = useState<Member[] | null>(null);
   const [name, setName] = useState("");
   const [password, setPassword] = useState("");
@@ -507,8 +510,20 @@ function FamilyMembers() {
   return (
     <section className="card">
       <h2>Family members</h2>
-      <p className="muted" style={{ marginTop: 0, fontSize: 14 }}>
-        Each person signs in with their own password and sees only their own documents.
+      <div className="setting-row">
+        <div className="label">
+          <strong>Who sees which documents</strong>
+          <span>{familyMode
+            ? "Everyone sees every document, except ones their owner marked private. Only the owner can change or delete a document."
+            : "Each person sees their own documents, and ones others shared with them."}</span>
+        </div>
+        <div className="segmented" role="group" aria-label="Who sees which documents">
+          <button type="button" aria-pressed={familyMode} onClick={() => onFamilyMode(true)}>Whole family</button>
+          <button type="button" aria-pressed={!familyMode} onClick={() => onFamilyMode(false)}>Each their own</button>
+        </div>
+      </div>
+      <p className="muted" style={{ fontSize: 14 }}>
+        Each person signs in with their own password.
       </p>
       {message && <div className={`notice ${message.ok ? "good" : "bad"}`} role="status" style={{ marginBottom: 12 }}><Icon name={message.ok ? "ok" : "warn"} />{message.text}</div>}
       <ul className="members">

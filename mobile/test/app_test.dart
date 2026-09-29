@@ -74,7 +74,9 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(find.text('Documents'));
     await tester.pumpAndSettle();
-    expect(find.textContaining('shared by dad'), findsOneWidget);
+    expect(find.textContaining('shared by Dad'), findsOneWidget);
+    expect(find.textContaining("Mom's"), findsOneWidget); // seen through family mode: no remove button
+    expect(find.byTooltip('Remove from my list'), findsOneWidget);
 
     await tester.tap(find.byTooltip('Remove from my list'));
     await tester.pumpAndSettle();

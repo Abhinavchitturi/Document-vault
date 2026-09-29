@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from datetime import date, timedelta
+
 import pytest
 from fastapi.testclient import TestClient
 
@@ -24,6 +26,7 @@ def add(store, tmp_path, name, text):
 
 def test_a_shared_document_is_visible_and_searchable_but_only_the_owner_changes_it(tmp_path):
     dad = DocumentStore(tmp_path / "index", owner="dad")
+    dad.set_family_mode(False)  # sharing one by one: private mode
     mom = dad.for_user(dad._ensure_user("mom"))
     son = dad.for_user(dad._ensure_user("son"))
     doc = add(dad, tmp_path, "house insurance.txt", HOUSE)
@@ -65,6 +68,7 @@ def test_sharing_through_the_app(tmp_path):
     store = DocumentStore(tmp_path / "index")
     app = create_app(store, FakeEmbedder(), TOK, frontend_dir=None)
     dad = signed_in(app, "dad")
+    assert dad.post("/api/settings", json={"family_mode": False}).json()["family_mode"] is False
     assert dad.post("/api/users", json={"name": "mom", "password": "mom's long password"}).status_code == 200
     family = dad.get("/api/family").json()
     assert [p["name"] for p in family] == ["mom"]
@@ -98,3 +102,41 @@ def test_sharing_through_the_app(tmp_path):
 
     log = [e["action"] for e in dad.get("/api/activity", params={"everyone": True}).json()["entries"]]
     assert "document_shared" in log and "share_left" in log
+
+
+def test_in_family_mode_everyone_sees_everything_except_private_documents(tmp_path):
+    store = DocumentStore(tmp_path / "index")
+    app = create_app(store, FakeEmbedder(), TOK, frontend_dir=None)
+    dad = signed_in(app, "dad")
+    assert dad.get("/api/settings").json()["family_mode"] is True  # the default
+    dad.post("/api/users", json={"name": "mom", "password": "mom's long password"})
+    mom = TestClient(app)
+    mom.post("/api/auth/login", json={"name": "mom", "password": "mom's long password"})
+    assert mom.post("/api/settings", json={"family_mode": False}).status_code == 403  # admins only
+
+    house = dad.post("/api/documents", files=[("files", ("house insurance.txt", HOUSE.encode()))]).json()[0]["document"]
+    diary = dad.post("/api/documents", files=[("files", ("dad diary.txt", b"Private notes. Locker code 4471."))]).json()[0]["document"]
+    listed = {d["filename"]: d for d in mom.get("/api/documents").json()}
+    assert set(listed) == {"house insurance.txt", "dad diary.txt"}  # uploaded after mom logged in: still seen
+    assert listed["house insurance.txt"]["via"] == "family" and listed["house insurance.txt"]["owner"] == "dad"
+    assert mom.get("/api/search", params={"q": "HI-5521"}).json()["results"][0]["doc_id"] == house["doc_id"]
+    assert mom.get("/api/upcoming", params={"days": 730}).json()[0]["owner"] == "dad"
+    due = (date.today() + timedelta(days=3)).strftime("%d %B %Y")
+    dad.post("/api/documents", files=[("files", ("gas.txt", f"Gas bill. Amount due: Rs. 500. Due date: {due}".encode()))])
+    assert dad.get("/api/reminders").json()["items"]
+    assert mom.get("/api/reminders").json()["items"] == []  # dad's reminders stay dad's
+    assert mom.patch(f"/api/documents/{house['doc_id']}", json={"category": "bill"}).status_code == 403
+    assert mom.delete(f"/api/documents/{house['doc_id']}/shares/me").status_code == 409
+
+    assert mom.put(f"/api/documents/{diary['doc_id']}/private", json={"private": True}).status_code == 403
+    assert dad.put(f"/api/documents/{diary['doc_id']}/private", json={"private": True}).json()["private"] is True
+    assert sorted(d["filename"] for d in mom.get("/api/documents").json()) == ["gas.txt", "house insurance.txt"]
+    found = mom.get("/api/search", params={"q": "locker code 4471"}).json()["results"]
+    assert diary["doc_id"] not in {r["doc_id"] for r in found}
+    assert mom.get(f"/api/documents/{diary['doc_id']}/file").status_code == 404
+
+    dad.post("/api/settings", json={"family_mode": False})  # back to private mode: mom sees nothing of dad's
+    assert mom.get("/api/documents").json() == []
+    assert mom.get("/api/search", params={"q": "HI-5521"}).json()["results"] == []
+    log = [e["action"] for e in dad.get("/api/activity").json()["entries"]]
+    assert "document_private" in log and "family_mode_off" in log

@@ -100,6 +100,7 @@ def test_calendar_file(tmp_path):
 
 def test_reminder_api_is_per_person(tmp_path):
     store = DocumentStore(tmp_path / "index", owner="abhinav")
+    store.set_family_mode(False)  # private mode (Phase 12)
     app = create_app(store, FakeEmbedder(), RegexTokenizer(), frontend_dir=None)
     me = signed_in(app)
     due = (date.today() + timedelta(days=3)).strftime("%d %B %Y")

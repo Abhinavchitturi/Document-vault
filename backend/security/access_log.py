@@ -39,6 +39,10 @@ ACTIONS = {
     "document_shared": "Shared a document",
     "document_unshared": "Stopped sharing a document",
     "share_left": "Removed a shared document from their list",
+    "document_private": "Made a document private",
+    "document_unprivate": "Let the family see a document",
+    "family_mode_on": "Let everyone see all documents",
+    "family_mode_off": "Made documents private to their owners",
     "backup_made": "Made an encrypted backup",
 }
 

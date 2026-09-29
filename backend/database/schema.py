@@ -131,7 +131,8 @@ documents = Table(
     Column("amount", String(32)),  # the main amount, digits only
     Column("reference", Text),  # policy / account / serial / receipt number (encrypted, Phase 11)
     Column("issuer", Text),  # encrypted
-    Column("facts_method", String(16)),  # needle / ollama / rules / person
+    Column("facts_method", String(16)),
+    Column("private", Boolean, nullable=False, default=False),  # Phase 12: hidden from the family even in family mode  # needle / ollama / rules / person
     Column("num_chunks", Integer, nullable=False),
     Column("size_bytes", BigInteger, nullable=False),
     Column("sha256", String(64), nullable=False),
@@ -187,6 +188,7 @@ ADDED_COLUMNS = [
     ("documents", "reference", "TEXT"),
     ("documents", "issuer", "TEXT"),
     ("documents", "facts_method", "VARCHAR(16)"),
+    ("documents", "private", "BOOLEAN NOT NULL DEFAULT FALSE"),
     ("users", "password_hash", "TEXT"),
     ("users", "is_admin", "BOOLEAN NOT NULL DEFAULT FALSE"),
 ]

@@ -37,7 +37,7 @@ class Info {
 class VaultDocument {
   VaultDocument({required this.id, required this.filename, required this.category, required this.pages,
       required this.ocrPages, required this.ocrConfidence, required this.sizeBytes, required this.addedAt,
-      this.needsReview = false, this.expiresOn, this.dueOn, this.amount, this.reference, this.owner = '', this.mine = true});
+      this.needsReview = false, this.expiresOn, this.dueOn, this.amount, this.reference, this.owner = '', this.mine = true, this.via = 'own'});
 
   final String id;
   final String filename;
@@ -61,6 +61,9 @@ class VaultDocument {
   final String owner;
   final bool mine;
 
+  /// Why this person sees it: 'own', 'shared' (with them directly) or 'family' (family mode).
+  final String via;
+
   bool get hardToRead => ocrConfidence != null && ocrConfidence! < lowConfidence;
 
   factory VaultDocument.fromJson(Map<String, dynamic> j) => VaultDocument(
@@ -79,6 +82,7 @@ class VaultDocument {
         reference: j['reference'] as String?,
         owner: j['owner'] as String? ?? '',
         mine: j['mine'] as bool? ?? true,
+        via: j['via'] as String? ?? ((j['mine'] as bool? ?? true) ? 'own' : 'shared'),
       );
 }
 

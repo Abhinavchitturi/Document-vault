@@ -111,6 +111,8 @@ class Reminders:
     def _dated(self, view) -> list[tuple[dict, str, date]]:
         out = []
         for doc in view.documents.values():
+            if doc.get("via") == "family":  # others' documents seen in family mode: theirs to be reminded of
+                continue
             for kind, field in KINDS.items():
                 if doc.get(field):
                     out.append((doc, kind, date.fromisoformat(doc[field])))

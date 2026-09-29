@@ -113,18 +113,21 @@ class DocumentsScreenState extends State<DocumentsScreen> {
                       if (d.dueOn != null) 'due ${_day(d.dueOn!)}',
                       if (d.amount != null) 'Rs. ${d.amount}',
                       if (d.reference != null) 'No. ${showReference(d.reference!)}',
-                      if (!d.mine) 'shared by ${d.owner}',
+                      if (!d.mine) d.via == 'family' ? "${_name(d.owner)}'s" : 'shared by ${_name(d.owner)}',
                       if (d.ocrPages > 0) 'scanned',
                       if (d.needsReview) '⚠ check type (on the Mac)',
                       if (d.hardToRead) '⚠ hard to read',
                     ].join(' · ')),
                     onTap: () => Navigator.of(context)
                         .push(MaterialPageRoute(builder: (_) => SourceScreen(source: Source.firstPage(d)))),
-                    trailing: IconButton(
-                      tooltip: d.mine ? 'Remove' : 'Remove from my list',
-                      icon: Icon(d.mine ? Icons.delete_outline : Icons.close),
-                      onPressed: () => _delete(d),
-                    ),
+                    // Family-mode documents are everyone's to see: nothing to remove from one list.
+                    trailing: d.via == 'family'
+                        ? null
+                        : IconButton(
+                            tooltip: d.mine ? 'Remove' : 'Remove from my list',
+                            icon: Icon(d.mine ? Icons.delete_outline : Icons.close),
+                            onPressed: () => _delete(d),
+                          ),
                   ),
               ]),
             ),
@@ -134,6 +137,8 @@ class DocumentsScreenState extends State<DocumentsScreen> {
   }
 
   static const _months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+
+  String _name(String n) => n.isEmpty ? n : n[0].toUpperCase() + n.substring(1);
 
   String _day(DateTime d) => '${d.day} ${_months[d.month - 1]} ${d.year}';
 

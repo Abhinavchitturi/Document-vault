@@ -12,9 +12,10 @@ before Phase 11 is encrypted in place the first time it is opened.
 
 `root` defaults to data/index/ (git-ignored: it holds personal documents).
 
-Each DocumentStore is one family member's view: searches and listings only see that
-person's own documents and those shared with them (Phase 12; only the owner can change,
-re-share or delete a document). Views of the same vault share one database connection, vector index
+Each DocumentStore is one family member's view: what that person may see (Phase 12).
+In family mode (the default, vault_meta "visibility" = "family") that is every document
+except ones their owners marked private; in private mode, their own documents and those
+shared with them. Either way only a document's owner can change, share or delete it. Views of the same vault share one database connection, vector index
 and lock (the _Vault below); `store.for_user(user_id)` gives another member's view.
 
 The FAISS index is exact (IndexFlatIP): a family has hundreds of pages, not
@@ -118,6 +119,7 @@ class _Vault:
         with self.engine.connect() as conn:
             self.model = conn.execute(select(vault_meta.c.value).where(vault_meta.c.key == "embedding_model")).scalar()
         self.views: dict[int, "DocumentStore"] = {}  # user id -> that member's view
+        self.family_mode = self._meta("visibility") != "private"  # Phase 12: everyone sees everything
 
     def _meta(self, key: str) -> str | None:
         with self.engine.connect() as conn:
@@ -299,6 +301,9 @@ class DocumentStore:
         with self.engine.connect() as conn:
             shared_with_me = select(document_shares.c.document_id).where(document_shares.c.user_id == self.owner_id)
             visible = (documents.c.owner_id == self.owner_id) | documents.c.id.in_(shared_with_me)
+            if self._vault.family_mode:
+                visible = visible | documents.c.private.is_(False)
+            direct = set(conn.execute(shared_with_me).scalars())
             rows = conn.execute(select(documents, users.c.name.label("owner_name"))
                                 .join(users, users.c.id == documents.c.owner_id).where(visible)).mappings().all()
             recipients: dict[str, list[dict]] = {}
@@ -311,7 +316,9 @@ class DocumentStore:
                 r["id"]: {
                     "doc_id": r["id"], "filename": open_text(r["name"]), "category": r["doc_type"],
                     "owner": r["owner_name"], "owner_id": r["owner_id"], "mine": r["owner_id"] == self.owner_id,
-                    "shared_with": recipients.get(r["id"], []),
+                    # why this person sees it: their own, shared with them directly, or family mode
+                    "via": "own" if r["owner_id"] == self.owner_id else "shared" if r["id"] in direct else "family",
+                    "private": bool(r["private"]), "shared_with": recipients.get(r["id"], []),
                     "pages": r["pages"], "ocr_pages": r["ocr_pages"], "ocr_confidence": r["ocr_confidence"],
                     "category_source": r["category_source"], "category_confidence": r["category_confidence"],
                     **{f: (r[f].isoformat() if f in DATE_FACTS and r[f] else open_text(r[f]) if f in SEALED_FACTS else r[f])
@@ -359,6 +366,32 @@ class DocumentStore:
 
     # ---------- sharing (Phase 12) ----------
 
+    @property
+    def family_mode(self) -> bool:
+        return self._vault.family_mode
+
+    def set_family_mode(self, on: bool) -> None:
+        """Vault-wide: everyone sees every document not marked private (on), or only their own
+        and those shared with them (off)."""
+        with self._lock:
+            self._vault._put_meta("visibility", "family" if on else "private")
+            self._vault.family_mode = on
+            for view in list(self._vault.views.values()):
+                view._load()
+
+    def set_private(self, doc_id: str, private: bool) -> dict:
+        """Keep one of your documents to yourself even in family mode (people you shared it
+        with directly still see it)."""
+        with self._lock:
+            doc = self._own(doc_id)
+            with self.engine.begin() as conn:
+                conn.execute(documents.update().where(documents.c.id == doc_id).values(private=private))
+            doc["private"] = private
+            for view in list(self._vault.views.values()):
+                if view is not self:
+                    view._load()
+            return doc
+
     def share(self, doc_id: str, user_ids: list[int]) -> dict:
         """Share one of your documents with exactly these family members (an empty list: nobody)."""
         with self._lock:
@@ -383,10 +416,11 @@ class DocumentStore:
             return doc
 
     def leave(self, doc_id: str) -> bool:
-        """Take a document someone shared with you off your list (theirs is untouched)."""
+        """Take a document someone shared with you off your list (theirs is untouched). Not for
+        documents seen through family mode: those are everyone's to see."""
         with self._lock:
             doc = self.documents.get(doc_id)
-            if doc is None or doc["mine"]:
+            if doc is None or doc["via"] != "shared":
                 return False
             with self.engine.begin() as conn:
                 conn.execute(delete(document_shares).where(document_shares.c.document_id == doc_id,
@@ -578,9 +612,13 @@ class DocumentStore:
                 self._save_index()  # before commit: if this fails, the rows roll back
             self.model = model
             self.documents[document["doc_id"]] = {**document, "owner": self.owner, "owner_id": self.owner_id,
-                                                  "mine": True, "shared_with": []}
+                                                  "mine": True, "via": "own", "private": False, "shared_with": []}
             self.chunks.extend(chunks)
             self.revision += 1
+        if self.family_mode:  # the rest of the family sees it too
+            for view in list(self._vault.views.values()):
+                if view is not self:
+                    view._load()
 
     def update_category(self, doc_id: str, category: str, vectors: np.ndarray | None = None,
                         source: str = "person", confidence: int | None = 100) -> dict:

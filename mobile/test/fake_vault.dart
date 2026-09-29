@@ -23,7 +23,9 @@ class FakeVault implements VaultApi {
     VaultDocument(id: 'd2', filename: 'Blurry Receipt.jpg', category: 'warranty', pages: 1, ocrPages: 1,
         ocrConfidence: 31, sizeBytes: 7000, addedAt: DateTime(2026, 9, 2)),
     VaultDocument(id: 'd3', filename: 'House Insurance.pdf', category: 'insurance', pages: 2, ocrPages: 0,
-        ocrConfidence: null, sizeBytes: 50000, addedAt: DateTime(2026, 9, 3), owner: 'dad', mine: false),
+        ocrConfidence: null, sizeBytes: 50000, addedAt: DateTime(2026, 9, 3), owner: 'dad', mine: false, via: 'shared'),
+    VaultDocument(id: 'd4', filename: 'Car RC.pdf', category: 'other', pages: 1, ocrPages: 0,
+        ocrConfidence: null, sizeBytes: 30000, addedAt: DateTime(2026, 9, 4), owner: 'mom', mine: false, via: 'family'),
   ];
 
   @override

@@ -147,6 +147,7 @@ class DocumentUpdate(BaseModel):
 class SettingsUpdate(BaseModel):
     llm_model: str | None = Field(None, min_length=1, max_length=200)
     owner_name: str | None = Field(None, min_length=1, max_length=60)
+    family_mode: bool | None = None  # Phase 12: everyone sees every (non-private) document
 
 
 class HighlightRequest(BaseModel):
@@ -171,6 +172,10 @@ class PasswordChange(BaseModel):
 
 class PasswordReset(BaseModel):
     new_password: str = Field(..., max_length=500)
+
+
+class PrivateRequest(BaseModel):
+    private: bool
 
 
 class ShareRequest(BaseModel):
@@ -772,10 +777,27 @@ def create_app(
             audit("document_unshared", request, user, document_id=doc_id, detail=f"{doc['filename']} from {name}")
         return _public(doc)
 
+    @app.put("/api/documents/{doc_id}/private")
+    def set_private(doc_id: str, req: PrivateRequest, request: Request, user: dict = Depends(current_user)) -> dict:
+        """Keep one of your documents to yourself (family mode shows everything else to everyone)."""
+        doc = vault_of(user).get(doc_id)
+        if doc is None:
+            raise HTTPException(404, "document not found")
+        try:
+            doc = vault_of(user).set_private(doc_id, req.private)
+        except PermissionError as e:
+            raise HTTPException(403, str(e)) from e
+        audit("document_private" if req.private else "document_unprivate", request, user,
+              document_id=doc_id, detail=doc["filename"])
+        return _public(doc)
+
     @app.delete("/api/documents/{doc_id}/shares/me")
     def leave_document(doc_id: str, request: Request, user: dict = Depends(current_user)) -> dict:
         """Take a document someone shared with you off your list; the owner keeps it."""
         doc = vault_of(user).get(doc_id)
+        if doc is not None and doc["via"] == "family":
+            raise HTTPException(409, "Everyone in the family sees this document (family mode), so it can't be removed "
+                                     "from one list. Its owner can mark it private.")
         if doc is None or doc["mine"] or not vault_of(user).leave(doc_id):
             raise HTTPException(404, "no shared document with that id")
         audit("share_left", request, user, document_id=doc_id, detail=f"{doc['filename']} (from {doc['owner']})")
@@ -847,6 +869,7 @@ def create_app(
             "search_method": search_method,
             "facts_reader": facts_reader.name,
             "key_kept_in": vault_keys.where(store._vault.vault_id),  # Phase 11: encrypted at rest
+            "family_mode": store.family_mode,  # Phase 12
         }
 
     @app.get("/api/settings")
@@ -854,7 +877,13 @@ def create_app(
         return settings_view(user)
 
     @app.post("/api/settings")
-    def save_settings(req: SettingsUpdate, user: dict = Depends(current_user)) -> dict:
+    def save_settings(req: SettingsUpdate, request: Request, user: dict = Depends(current_user)) -> dict:
+        if req.family_mode is not None and req.family_mode != store.family_mode:
+            if not user["is_admin"]:
+                raise HTTPException(403, "Only an admin can change who sees which documents.")
+            store.set_family_mode(req.family_mode)
+            retrievers.clear()
+            audit("family_mode_on" if req.family_mode else "family_mode_off", request, user)
         if req.owner_name is not None:
             mine = vault_of(user)
             old = mine.owner

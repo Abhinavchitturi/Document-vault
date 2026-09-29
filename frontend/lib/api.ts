@@ -132,7 +132,9 @@ export interface VaultDocument {
   filename: string;
   category: Category;
   owner: string;
-  mine: boolean; // false: someone shared it with you (Phase 12): you can look, not change
+  mine: boolean; // false: someone else's (Phase 12): you can look, not change
+  via: "own" | "shared" | "family"; // why you see it: yours, shared with you, or family mode
+  private: boolean; // yours only, even in family mode
   shared_with: Person[]; // your documents: who else can see them
   pages: number;
   ocr_pages: number;
@@ -184,6 +186,7 @@ export interface Settings {
   search_method: "hybrid" | "vector" | "keyword";
   facts_reader: "needle" | "ollama" | "rules";
   key_kept_in: string;
+  family_mode: boolean; // everyone sees every document not marked private (Phase 12)
 }
 
 export interface ActivityEntry {
@@ -295,7 +298,7 @@ export const api = {
     return fetch("/api/documents", { method: "POST", body: form }).then((r) => json<UploadResult[]>(r));
   },
   settings: () => fetch("/api/settings").then((r) => json<Settings>(r)),
-  saveSettings: (changes: { llm_model?: string; owner_name?: string }) =>
+  saveSettings: (changes: { llm_model?: string; owner_name?: string; family_mode?: boolean }) =>
     fetch("/api/settings", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -307,6 +310,12 @@ export const api = {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ user_ids }),
+    }).then((r) => json<VaultDocument>(r)),
+  setPrivate: (docId: string, isPrivate: boolean) =>
+    fetch(`/api/documents/${encodeURIComponent(docId)}/private`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ private: isPrivate }),
     }).then((r) => json<VaultDocument>(r)),
   leaveShare: (docId: string) =>
     fetch(`/api/documents/${encodeURIComponent(docId)}/shares/me`, { method: "DELETE" }).then((r) => json<{ removed: string }>(r)),

@@ -118,6 +118,7 @@ def test_uploads_get_facts_people_can_correct_them_and_upcoming_lists_them(tmp_p
     assert DocumentStore(tmp_path / "index").get(policy["doc_id"])["expires_on"] == "2031-01-31"  # saved
 
     me.post("/api/users", json={"name": "Sunita", "password": PASSWORD + "2"})
+    store.set_family_mode(False)  # private mode (Phase 12)
     from fastapi.testclient import TestClient
 
     sunita = TestClient(app)

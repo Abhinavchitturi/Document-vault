@@ -27,7 +27,7 @@ and the privacy decisions.
 | 9 | Expiry and key facts | ✅ Expiry, due date, amount, reference number and issuer read from each document (Needle 3 when installed, else the answer model, else text patterns), checked against the text; "Coming up" on the dashboard |
 | 10 | Reminders | ✅ Before expiries and due dates: phone notifications (even with the Mac off), Mac notifications, a calendar file, and the Dashboard; days, time and "Paid / Done" per person |
 | 11 | Security | ✅ Documents, scans, search index, file names and ID numbers encrypted on disk (AES-256), key in the macOS Keychain with a paper recovery key; encrypted one-file backups; an activity log of sign-ins and document access |
-| 12 | Family sharing | ✅ Share a document with chosen family members: they can view, search and ask about it and get its reminders; only the owner changes, re-shares or deletes it; "Remove from my list" for the others; every share in the activity log |
+| 12 | Family sharing | ✅ Whole-family mode (default): everyone sees every document not marked private; or each person's own plus documents shared with chosen members. Only the owner changes or deletes a document; every change in the activity log |
 | 13 | Deployment | ⏳ |
 
 ## Privacy
@@ -40,12 +40,17 @@ and the privacy decisions.
   documents. The app still listens on `127.0.0.1` only: until HTTPS arrives (Phase 13), don't expose it to a network.
 
 ## Sharing with family (Phase 12)
-Documents are private to the person who added them until they share them. In **Documents**, click the
-people icon next to one of yours and tick who else may see it (for example the house insurance for
-Mom and Dad). They then see it (marked "Shared by ..."), find it in search and chat, and get its
-reminders; marking a shared bill "Paid" marks it for everyone. Only the owner can change its details,
-share it with someone else or delete it; the others can "Remove from my list". The phone app shows
-shared documents too. Sharing and un-sharing are recorded in Settings → Activity.
+**Whole family (the default):** everyone sees, searches and asks about every document anyone
+uploaded, marked "Dad's", "Mom's"... Keep one to yourself with the people icon → **Only me (private)**.
+Only a document's owner can change its details, make it private or delete it, and reminders go to
+the owner (and anyone it was shared with directly), so nobody is pinged about someone else's bills.
+"Coming up" on the dashboard shows the whole family's dates.
+
+**Each their own:** the admin can switch this in Settings → Family members. Then documents are
+private to whoever added them, and the owner shares single documents with chosen people (people
+icon → tick names); those can "Remove from my list".
+
+Switching modes, making a document private and sharing are all recorded in Settings → Activity.
 
 ## Security (Phase 11)
 **Encrypted on disk.** Everything the vault keeps about your documents is encrypted with AES-256-GCM:
@@ -400,7 +405,7 @@ Layout:
 ```bash
 pytest -q
 ```
-150 tests. They use a fake embedder and a fake LLM, so they run in a few seconds without
+151 tests. They use a fake embedder and a fake LLM, so they run in a few seconds without
 downloading models or running Ollama. By default they use SQLite; to run them against
 PostgreSQL (each test gets a throwaway database):
 ```bash
