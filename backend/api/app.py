@@ -52,6 +52,7 @@ from fastapi.responses import FileResponse, JSONResponse, Response, StreamingRes
 from pydantic import BaseModel, Field
 
 from backend.auth.accounts import SESSION_DAYS, Accounts, AuthError, TooManyAttempts
+from backend.auth.devices import Devices
 from backend.auth.passkeys import Passkeys
 from backend.llm.answer import LLM, answer_question, finalize, stream_answer
 from backend.llm.ollama import LLMUnavailableError
@@ -138,6 +139,11 @@ class PasskeyResponse(BaseModel):
     name: str | None = Field(None, max_length=100)
 
 
+class PairRequest(BaseModel):
+    code: str = Field(..., max_length=100)
+    device_name: str = Field("Phone", max_length=100)
+
+
 class NewMember(BaseModel):
     name: str = Field(..., max_length=100)
     password: str = Field(..., max_length=500)
@@ -145,6 +151,7 @@ class NewMember(BaseModel):
 
 
 SESSION_COOKIE = "vault_session"
+PHONE_PUBLIC_PATHS = {"/api/mobile/hello", "/api/mobile/pair"}  # the only calls a phone makes before pairing
 PUBLIC_PATHS = {"/api/auth/status", "/api/auth/login", "/api/auth/setup", "/api/auth/logout",
                 "/api/auth/passkey/options", "/api/auth/passkey"}
 
@@ -213,11 +220,21 @@ def create_app(
     search_method: str = "hybrid",
     accounts: Accounts | None = None,
     passkey_hosts: tuple[str, ...] = ("localhost",),
+    mode: Literal["web", "phone"] = "web",
+    devices: Devices | None = None,
+    phone_link: dict | None = None,
 ) -> FastAPI:
-    """`store` is any view of the vault; each request works on the signed-in person's own view."""
+    """`store` is any view of the vault; each request works on the signed-in person's own view.
+
+    mode="web"   the Mac's browser: pages + API, cookie sessions (http://localhost:8000)
+    mode="phone" the phone app on the home network (backend/api/lan.py): API only, paired phones
+                 only (Bearer device keys); run over HTTPS. `phone_link` = {"url", "fingerprint"}
+                 of that listener, given to the web app so it can show the pairing QR code.
+    """
     app = FastAPI(title="Secure Digital Document Vault", docs_url=None, redoc_url=None, openapi_url=None)
     accounts = accounts or Accounts(store.engine)
     keys = Passkeys(store.engine, passkey_hosts)
+    devices = devices or Devices(store.engine)
     retrievers: dict[tuple[int, str], Retriever] = {}
 
     def vault_of(user: dict) -> DocumentStore:
@@ -234,8 +251,22 @@ def create_app(
         """Every /api call needs a signed-in person, except signing in itself. Enforced here, for all
         routes at once, so a new endpoint can't forget it; endpoints read the person from request.state."""
         path = request.url.path
+        if mode == "phone":
+            if not path.startswith("/api/"):
+                return JSONResponse({"detail": "Not found"}, status_code=404)  # no web pages on the network
+            if path not in PHONE_PUBLIC_PATHS:
+                auth = request.headers.get("authorization", "")
+                token = auth[7:] if auth.lower().startswith("bearer ") else None
+                user = await run_in_threadpool(devices.user_for_token, token)
+                if user is None:
+                    return JSONResponse({"detail": "This phone isn't paired (or was removed). Pair it again."},
+                                        status_code=401)
+                request.state.user = user
+            return await call_next(request)
         if request.method not in ("GET", "HEAD", "OPTIONS") and not _same_origin(request):
             return JSONResponse({"detail": "Request from another website refused."}, status_code=403)
+        if path in PHONE_PUBLIC_PATHS:
+            return JSONResponse({"detail": "Not found"}, status_code=404)  # phone-only calls
         if path.startswith("/api/") and path not in PUBLIC_PATHS:
             user = await run_in_threadpool(accounts.user_for_token, request.cookies.get(SESSION_COOKIE))
             if user is None:
@@ -375,8 +406,59 @@ def create_app(
             accounts.set_password(user_id, req.new_password)
         except AuthError as e:
             raise HTTPException(400, str(e)) from e
+        devices.revoke_all(user_id)  # a reset is often "someone else may know it": unpair their phones too
         logger.info("%s reset the password of user %d", user["name"], user_id)
         return {"changed": True}
+
+    # ---------- phones (Phase 7) ----------
+
+    @app.get("/api/mobile/hello")
+    def mobile_hello() -> dict:
+        return {"app": "document-vault", "api": 1}
+
+    @app.post("/api/mobile/pairing")
+    def start_pairing(user: dict = Depends(current_user)) -> dict:
+        """A QR code for the phone app: the vault's network address, its certificate fingerprint,
+        and a one-time code (10 minutes)."""
+        if not phone_link:
+            raise HTTPException(409, "Phone access is off. Restart the vault with: python -m backend.api.app --phones")
+        code, seconds = devices.start_pairing(user["id"])
+        payload = json.dumps({"v": 1, "url": phone_link["url"], "fp": phone_link["fingerprint"], "code": code},
+                             separators=(",", ":"))
+        import io
+
+        import segno
+
+        svg = io.BytesIO()
+        segno.make(payload, error="m").save(svg, kind="svg", scale=6, border=2, dark="#111", light="#fff")
+        return {"code": code, "expires_in": seconds, "url": phone_link["url"],
+                "fingerprint": phone_link["fingerprint"], "qr_svg": svg.getvalue().decode()}
+
+    @app.post("/api/mobile/pair")
+    def pair_phone(req: PairRequest, request: Request) -> dict:
+        throttle = [f"pair:{_client(request)}"]
+        try:
+            accounts.throttle(throttle)
+            user, device, token = devices.pair(req.code, req.device_name)
+        except TooManyAttempts as e:
+            raise HTTPException(429, str(e)) from e
+        except AuthError as e:
+            accounts.record_failure(throttle)
+            raise HTTPException(401, str(e)) from e
+        logger.info("%s paired a phone (%s)", user["name"], device["name"])
+        return {"token": token, "user": user, "device": device}
+
+    @app.get("/api/devices")
+    def list_devices(user: dict = Depends(current_user)) -> dict:
+        return {"enabled": phone_link is not None, "url": phone_link["url"] if phone_link else None,
+                "devices": devices.list_for(user["id"])}
+
+    @app.delete("/api/devices/{device_id}")
+    def remove_device(device_id: int, user: dict = Depends(current_user)) -> dict:
+        if not devices.revoke(user["id"], device_id):
+            raise HTTPException(404, "phone not found")
+        logger.info("%s removed a paired phone", user["name"])
+        return {"removed": device_id}
 
     # ---------- documents ----------
 
@@ -642,6 +724,8 @@ def create_app(
             "took_ms": round((time.perf_counter() - t0) * 1000, 1),
         }
 
+    if mode == "phone":
+        return app
     if frontend_dir and (frontend_dir / "index.html").exists():
         from fastapi.staticfiles import StaticFiles
 
@@ -668,6 +752,9 @@ def main() -> None:
     parser.add_argument("--search", default="hybrid", choices=METHODS,
                         help="hybrid (meaning + exact words, default), vector (meaning only) or keyword (BM25 only)")
     parser.add_argument("--port", type=int, default=8000)
+    parser.add_argument("--phones", action="store_true",
+                        help="also serve the phone app over HTTPS on the home network (see backend/api/lan.py)")
+    parser.add_argument("--phone-port", type=int, default=8443)
     args = parser.parse_args()
 
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
@@ -699,15 +786,36 @@ def main() -> None:
     from sqlalchemy.engine import make_url
 
     db_label = make_url(database_url(args.database_url)).render_as_string(hide_password=True)
-    accounts = Accounts(store.engine)
-    app = create_app(store, embedder, HFTokenizer(embedder.model_name), llm, database_label=db_label,
-                     search_method=args.search, accounts=accounts)
+    accounts, devices = Accounts(store.engine), Devices(store.engine)
+    tokenizer = HFTokenizer(embedder.model_name)
+    phone_server, phone_link = None, None
+    if args.phones:
+        from backend.api.lan import ensure_certificate, lan_address
+
+        address = lan_address()
+        cert, key, fp = ensure_certificate(Path(args.index_dir).parent / "tls", address)
+        phone_link = {"url": f"https://{address}:{args.phone_port}", "fingerprint": fp}
+        phone_app = create_app(store, embedder, tokenizer, llm, search_method=args.search, accounts=accounts,
+                               mode="phone", devices=devices)
+        phone_server = uvicorn.Server(uvicorn.Config(phone_app, host="0.0.0.0", port=args.phone_port,
+                                                     ssl_certfile=str(cert), ssl_keyfile=str(key), log_level="warning"))
+        import threading
+
+        threading.Thread(target=phone_server.run, name="phones", daemon=True).start()
+        logger.info("Phone access on %s (certificate %s…). Pair phones in Settings -> Phones.",
+                    phone_link["url"], fp[:16])
+    app = create_app(store, embedder, tokenizer, llm, database_label=db_label, search_method=args.search,
+                     accounts=accounts, devices=devices, phone_link=phone_link)
     if accounts.setup_needed():
         logger.info("First start with sign-in: open http://localhost:%d and choose your password.", args.port)
     else:
         logger.info("%d family members. Answers: %s. Open http://localhost:%d",
                     len(accounts.list_users()), llm.name if llm else "off", args.port)
-    uvicorn.run(app, host="127.0.0.1", port=args.port)
+    try:
+        uvicorn.run(app, host="127.0.0.1", port=args.port)
+    finally:
+        if phone_server:
+            phone_server.should_exit = True
 
 
 if __name__ == "__main__":

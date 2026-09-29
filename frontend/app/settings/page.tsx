@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import AppShell, { useVault } from "@/components/AppShell";
 import Icon from "@/components/Icon";
 import { useTheme, type Theme } from "@/components/ThemeToggle";
-import { api, formatDate, type Member, type Passkey, type Settings } from "@/lib/api";
+import { api, formatDate, type Device, type Member, type Pairing, type Passkey, type Settings } from "@/lib/api";
 import { cancelled, createPasskey, deviceName, passkeysSupported } from "@/lib/passkey";
 
 const SEARCH_LABEL: Record<string, string> = {
@@ -79,6 +79,8 @@ function SettingsView() {
           <Passkeys />
           <PasswordChange onDone={(text) => setMessage({ ok: true, text })} />
         </section>
+
+        <Phones />
 
         {s?.is_admin && <FamilyMembers />}
 
@@ -224,6 +226,105 @@ function Passkeys() {
         )}
       </div>
     </div>
+  );
+}
+
+function Phones() {
+  const [state, setState] = useState<{ enabled: boolean; url: string | null; devices: Device[] } | null>(null);
+  const [pairing, setPairing] = useState<Pairing | null>(null);
+  const [left, setLeft] = useState(0);
+  const [message, setMessage] = useState<{ ok: boolean; text: string } | null>(null);
+
+  const load = () => api.devices().then(setState).catch((e) => setMessage({ ok: false, text: e.message }));
+  useEffect(() => { load(); }, []);
+
+  // While the QR code is up: count down, and notice when the phone has paired.
+  useEffect(() => {
+    if (!pairing) return;
+    const started = Date.now();
+    const before = state?.devices.length ?? 0;
+    const tick = setInterval(() => {
+      const remaining = pairing.expires_in - Math.floor((Date.now() - started) / 1000);
+      setLeft(remaining);
+      if (remaining <= 0) { setPairing(null); clearInterval(tick); }
+    }, 1000);
+    const poll = setInterval(() => {
+      api.devices().then((d) => {
+        setState(d);
+        if (d.devices.length > before) {
+          setPairing(null);
+          setMessage({ ok: true, text: `Paired ${d.devices[d.devices.length - 1].name}.` });
+        }
+      }).catch(() => {});
+    }, 2500);
+    return () => { clearInterval(tick); clearInterval(poll); };
+  }, [pairing]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const start = async () => {
+    setMessage(null);
+    try {
+      const p = await api.startPairing();
+      setLeft(p.expires_in);
+      setPairing(p);
+    } catch (e) {
+      setMessage({ ok: false, text: (e as Error).message });
+    }
+  };
+
+  const remove = async (d: Device) => {
+    if (!window.confirm(`Remove ${d.name}? It will need to be paired again.`)) return;
+    await api.removeDevice(d.id).catch((e) => setMessage({ ok: false, text: e.message }));
+    load();
+  };
+
+  const qrSrc = pairing ? `data:image/svg+xml;charset=utf-8,${encodeURIComponent(pairing.qr_svg)}` : "";
+  return (
+    <section className="card">
+      <h2>Phones</h2>
+      <p className="muted" style={{ marginTop: 0, fontSize: 14 }}>
+        Use the Document Vault app on your phone at home: chat, browse, and scan bills with the camera. The phone must be on
+        the same Wi-Fi as this Mac.
+      </p>
+      {message && <div className={`notice ${message.ok ? "good" : "bad"}`} role="status" style={{ marginBottom: 12 }}><Icon name={message.ok ? "ok" : "warn"} />{message.text}</div>}
+      {state && !state.enabled && (
+        <div className="notice"><Icon name="warn" /><span>Phone access is off. Stop the vault and start it with <code>python -m backend.api.app --phones</code>.</span></div>
+      )}
+      {state?.devices.length ? (
+        <ul className="passkey-list">
+          {state.devices.map((d) => (
+            <li key={d.id}>
+              <Icon name="phone" size={18} />
+              <div className="meta">
+                <strong>{d.name}</strong>
+                <span>Paired {formatDate(d.created_at)}{d.last_seen_at ? ` · last used ${formatDate(d.last_seen_at)}` : ""}</span>
+              </div>
+              <button className="icon-btn danger" type="button" aria-label={`Remove ${d.name}`} title="Remove" onClick={() => remove(d)}><Icon name="trash" /></button>
+            </li>
+          ))}
+        </ul>
+      ) : null}
+      {state?.enabled && !pairing && (
+        <button className="btn primary" type="button" onClick={start}><Icon name="phone" size={15} />Pair a phone</button>
+      )}
+      {pairing && (
+        <div className="pairing">
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src={qrSrc} alt="Pairing QR code" width={220} height={220} />
+          <div>
+            <ol>
+              <li>Open the <strong>Document Vault</strong> app on your phone.</li>
+              <li>Tap <strong>Scan pairing code</strong> and point the camera at this code.</li>
+              <li>That&apos;s it: the phone signs in as you.</li>
+            </ol>
+            <p className="faint" style={{ fontSize: 12.5 }}>
+              Works once, for {Math.floor(left / 60)}:{String(left % 60).padStart(2, "0")} more. Only show it to your own phone.
+              The code also locks the app to this vault&apos;s certificate ({pairing.fingerprint.slice(0, 8)}…).
+            </p>
+            <button className="btn small" type="button" onClick={() => setPairing(null)}>Cancel</button>
+          </div>
+        </div>
+      )}
+    </section>
   );
 }
 
