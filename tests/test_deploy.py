@@ -28,8 +28,6 @@ class FakeMac:
             case ["brew", "services"]:
                 self.postgres = True
                 return ok()
-            case ["tailscale", "ip"]:
-                return ok(self.tailscale + "\n") if self.tailscale else fail
             case ["tesseract", _]:
                 return ok("tesseract 5.4")
             case ["launchctl", "print"]:
@@ -63,7 +61,8 @@ def vault(tmp_path, mac, built=True):
         (root / "frontend" / "out" / "index.html").write_text("<html>")
     said = []
     v = Vault(root=root, python="/Users/abhinav/vault/venv/bin/python", run=mac.run, http_ok=mac.http_ok,
-              sleep=lambda s: None, home=tmp_path / "home", uid=501, say=said.append)
+              sleep=lambda s: None, home=tmp_path / "home", uid=501, say=said.append,
+              tailscale=lambda: mac.tailscale or None)
     return v, said
 
 

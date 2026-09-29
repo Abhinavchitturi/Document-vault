@@ -61,8 +61,11 @@ class Vault:
     """Everything the commands do, with the outside world (commands, HTTP, time) injectable for tests."""
 
     def __init__(self, root: Path = ROOT, python: str = sys.executable, run=_run, http_ok=_http_ok,
-                 sleep=time.sleep, home: Path | None = None, uid: int | None = None, say=print):
+                 sleep=time.sleep, home: Path | None = None, uid: int | None = None, say=print, tailscale=None):
         self.root, self.python, self.run, self.http_ok, self.sleep, self.say = root, python, run, http_ok, sleep, say
+        if tailscale is None:  # the same lookup the vault uses for the phones' QR code (App Store Tailscale too)
+            from backend.api.lan import tailscale_address as tailscale
+        self.tailscale = tailscale
         home = home or Path.home()
         self.login_agent = home / "Library" / "LaunchAgents" / f"{LABEL}.plist"  # loaded at every login
         self.local_agent = root / "data" / "launchd" / f"{LABEL}.plist"  # loaded only by ./vault start
@@ -152,8 +155,7 @@ class Vault:
         out.append(Check("Answers (Ollama)", ollama, "running" if ollama else
                          "not running: open the Ollama app (search and documents still work without it)"))
 
-        ts = self.run(["tailscale", "ip", "-4"])
-        address = ts.stdout.strip().splitlines()[0] if ts.returncode == 0 and ts.stdout.strip() else ""
+        address = self.tailscale() or ""
         out.append(Check("Private tunnel (Tailscale)", bool(address), f"connected ({address})" if address else
                          "not connected: open Tailscale and log in, or phones only work on home Wi-Fi"))
 
