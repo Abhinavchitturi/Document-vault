@@ -208,3 +208,24 @@ def test_the_admin_can_download_an_encrypted_backup(tmp_path):
     assert r.status_code == 200 and r.content.startswith(BACKUP_MAGIC) and b"TW-778812" not in r.content
     assert ".dvbackup" in r.headers["content-disposition"]
     assert client.get("/api/activity").json()["entries"][0]["action"] == "backup_made"
+
+
+def test_vault_log_says_who_did_what_without_search_text(tmp_path, caplog):
+    import logging
+
+    caplog.set_level(logging.INFO)
+    store = DocumentStore(tmp_path / "index")
+    client = signed_in(create_app(store, FakeEmbedder(), TOK, frontend_dir=None), "abhinav")
+    doc = client.post("/api/documents", files=[("files", ("bike_policy.txt", SECRET.encode()))]).json()[0]["document"]
+    client.get(f"/api/documents/{doc['doc_id']}/file")
+    client.get("/api/search", params={"q": "ABCDE1234F"})
+    activity = [r.getMessage() for r in caplog.records if r.name == "vault.activity"]
+    requests = [r.getMessage() for r in caplog.records if r.name == "vault.requests"]
+    assert any(m.startswith("abhinav (browser) signed in") for m in activity)
+    assert any(m.startswith("abhinav (browser) added a document: bike_policy.txt") for m in activity)
+    assert any(m.startswith("abhinav (browser) opened a document: bike_policy.txt") for m in activity)
+    assert any(m.startswith("abhinav (browser) searched: 1 documents (bike_policy.txt)") for m in activity)
+    assert any(m.startswith("abhinav (browser) POST /api/documents -> 200") for m in requests)
+    leaks = [(r.name, r.getMessage()) for r in caplog.records
+             if "ABCDE1234F" in r.getMessage() and r.name != "httpx"]  # httpx: the test's own client
+    assert not leaks, leaks  # searched text never logged

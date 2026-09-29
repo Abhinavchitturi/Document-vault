@@ -136,9 +136,15 @@ Or double-click **Start Vault.command** / **Stop Vault.command** in Finder.
 | `./vault start` | Start (or restart) the vault in the background |
 | `./vault stop` | Stop it; phones show "can't reach the vault" until the next start |
 | `./vault status` | Running or not, and whether PostgreSQL, Ollama, Tailscale, pages and OCR are ready |
-| `./vault logs` | The end of `data/logs/vault.log` (`./vault logs -f` to follow) |
+| `./vault logs` | The end of `data/logs/vault.log` (`./vault logs -f` to follow): who did what, from which device, and every error |
 | `./vault update` | `git pull`, install new packages / rebuild pages only if they changed, restart; says whether phones need a new app |
 | `./vault autostart on` | Start the vault whenever you log in to the Mac (`off`: only when you start it) |
+
+`data/logs/vault.log` names the person and device on every line, for example
+`vault.activity: sunita (Sunita's Redmi) opened a document: House Insurance.pdf [from 100.87.3.12]` and
+`vault.requests: sunita (Sunita's Redmi) GET /api/documents -> 200 (12 ms)`. Searches and questions are
+logged as "searched" / "asked the assistant" with the documents they led to, never the words typed
+(they can contain Aadhaar or PAN numbers). It's plain text, so it does show file names.
 
 The Mac is kept awake while the vault runs. By hand, in the foreground (for troubleshooting):
 ```bash

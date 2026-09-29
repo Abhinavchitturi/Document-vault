@@ -223,6 +223,10 @@ def admin_user(user: dict = Depends(current_user)) -> dict:
     return user
 
 
+request_logger = logging.getLogger("vault.requests")
+QUIET_PATHS = {"/api/auth/status", "/api/info", "/api/devices", "/api/mobile/hello"}  # polled: not worth a line
+
+
 def _client(request: Request) -> str:
     return request.client.host if request.client else ""
 
@@ -308,6 +312,25 @@ def create_app(
 
     def audit(action: str, request: Request, user: dict | None = None, **details) -> None:
         access_log.record(action, user or getattr(request.state, "user", None), client=_client(request), **details)
+
+    def note(action: str, request: Request, user: dict, detail: str | None = None) -> None:
+        """Only a line in vault.log (searches and questions: too many for the activity list)."""
+        access_log.note(action, user, detail=detail, client=_client(request))
+
+    @app.middleware("http")
+    async def log_requests(request: Request, call_next):
+        """Every API call in vault.log with who made it: 'abhinav (Pixel 7) GET /api/documents -> 200 (14 ms)'.
+        No query strings: they can hold search text."""
+        started = time.perf_counter()
+        response = await call_next(request)
+        path = request.url.path
+        if path.startswith("/api/") and path not in QUIET_PATHS:
+            user = getattr(request.state, "user", None) or {}
+            via = user.get("device_name") or ("phone" if mode == "phone" else "browser")
+            request_logger.info("%s (%s) %s %s -> %d (%d ms) [from %s]", user.get("name", "not signed in"), via,
+                                request.method, path, response.status_code,
+                                (time.perf_counter() - started) * 1000, _client(request))
+        return response
 
     def audit_open(request: Request, user: dict, doc: dict) -> None:
         """Once per person and document every 10 minutes: paging through a scan is one opening."""
@@ -919,6 +942,7 @@ def create_app(
 
     @app.get("/api/search")
     def search(
+        request: Request,
         q: str = Query(..., min_length=1, max_length=500),
         k: int = Query(5, ge=1, le=20),
         category: str | None = None,
@@ -933,6 +957,7 @@ def create_app(
         t0 = time.perf_counter()
         hits = retriever_for(user, method).documents(q, top_k=k, category=category or None)
         took_ms = (time.perf_counter() - t0) * 1000
+        note("searched", request, user, _found(hits))
         return {
             "question": q,
             "category": category,
@@ -940,6 +965,11 @@ def create_app(
             "took_ms": round(took_ms, 1),
             "results": [_passage(chunk, score, i + 1) for i, (chunk, score) in enumerate(hits)],
         }
+
+    def _found(hits) -> str:
+        """For vault.log: which documents a search or question led to (never the question itself)."""
+        names = list(dict.fromkeys(chunk["filename"] for chunk, _ in hits))
+        return f"{len(names)} documents" + (f" ({', '.join(names[:3])}{', …' if len(names) > 3 else ''})" if names else "")
 
     def chat_context(user: dict, question: str, history: list[ChatTurn], k: int, category: str | None):
         """Passages for a chat turn. A follow-up ("and when is it due?") says little on its
@@ -956,12 +986,13 @@ def create_app(
         return hits
 
     @app.post("/api/chat")
-    def chat(req: ChatRequest, user: dict = Depends(current_user)) -> StreamingResponse:
+    def chat(req: ChatRequest, request: Request, user: dict = Depends(current_user)) -> StreamingResponse:
         if req.category and req.category not in CATEGORIES:
             raise HTTPException(400, f"category must be one of {CATEGORIES}")
         if llm is None:
             raise HTTPException(503, "Answers are turned off (the app was started with --no-llm).")
         hits = chat_context(user, req.question, req.history, req.k, req.category or None)
+        note("asked", request, user, _found(hits))
         sources = [_passage(chunk, score, i + 1) for i, (chunk, score) in enumerate(hits)]
         history = [t.model_dump() for t in req.history]
 
@@ -986,7 +1017,7 @@ def create_app(
         return StreamingResponse(events(), media_type="application/x-ndjson")
 
     @app.post("/api/ask")
-    def ask(req: AskRequest, user: dict = Depends(current_user)) -> dict:
+    def ask(req: AskRequest, request: Request, user: dict = Depends(current_user)) -> dict:
         if req.category and req.category not in CATEGORIES:
             raise HTTPException(400, f"category must be one of {CATEGORIES}")
         if llm is None:
@@ -994,6 +1025,7 @@ def create_app(
         t0 = time.perf_counter()
         hits = retriever_for(user).context(req.question, top_k=req.k, category=req.category or None)
         retrieval_ms = (time.perf_counter() - t0) * 1000
+        note("asked", request, user, _found(hits))
         try:
             answer = answer_question(req.question, [chunk for chunk, _ in hits], llm)
         except LLMUnavailableError as e:
@@ -1108,7 +1140,7 @@ def main() -> None:
 
     stop_reminders = desktop.start(store, _Reminders(store.engine))  # Mac notifications while running
     try:
-        uvicorn.run(app, host="127.0.0.1", port=args.port)
+        uvicorn.run(app, host="127.0.0.1", port=args.port, access_log=False)  # vault.requests says who, too
     finally:
         stop_reminders.set()
         if phone_server:
