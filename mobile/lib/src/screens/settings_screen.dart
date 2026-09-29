@@ -38,7 +38,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
       context: context,
       builder: (context) => AlertDialog(
         title: const Text('Unpair this phone?'),
-        content: const Text('The phone forgets the vault. To use it again, scan a new pairing code on the Mac.'),
+        content: const Text('The phone forgets the vault, and scans still waiting to be sent are deleted. '
+            'To use it again, scan a new pairing code on the Mac.'),
         actions: [
           TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Cancel')),
           FilledButton(onPressed: () => Navigator.pop(context, true), child: const Text('Unpair')),

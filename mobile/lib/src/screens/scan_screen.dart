@@ -1,9 +1,13 @@
+import 'dart:async';
+
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 
 import '../app.dart';
 import '../models.dart';
+import '../upload_queue.dart';
+import '../vault_client.dart';
 
 /// Add documents from the phone: photograph a bill or warranty card, or pick a PDF.
 /// Photos are read on the Mac (OCR, Phase 4): straightened, cleaned up, checked for blur.
@@ -17,18 +21,84 @@ class ScanScreen extends StatefulWidget {
   State<ScanScreen> createState() => _ScanScreenState();
 }
 
-class _ScanScreenState extends State<ScanScreen> {
+class _ScanScreenState extends State<ScanScreen> with WidgetsBindingObserver {
   String _category = 'auto';
   bool _busy = false;
   List<UploadResult> _results = [];
+  List<QueuedUpload> _waiting = [];
+  String? _queuedNote;
+  Timer? _retry;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+    // While the app is open, keep trying to send waiting scans (the Mac may have just woken up).
+    _retry = Timer.periodic(const Duration(seconds: 45), (_) => _sendWaiting());
+    WidgetsBinding.instance.addPostFrameCallback((_) => _sendWaiting());
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    _retry?.cancel();
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) _sendWaiting();
+  }
+
+  Future<void> _refreshWaiting() async {
+    final waiting = await VaultScope.of(context).queue.list();
+    if (mounted) setState(() => _waiting = waiting);
+  }
+
+  Future<void> _sendWaiting({bool manual = false}) async {
+    if (!mounted) return;
+    final scope = VaultScope.of(context);
+    await _refreshWaiting();
+    if (_waiting.isEmpty || !mounted) return;
+    final sent = await scope.queue.send(scope.api);
+    await _refreshWaiting();
+    if (!mounted) return;
+    if (sent.isNotEmpty) {
+      setState(() {
+        _results = sent;
+        _queuedNote = null;
+      });
+      if (sent.any((r) => r.status == 'added')) widget.onUploaded?.call();
+    } else if (manual) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('The vault is still not reachable.')));
+    }
+  }
 
   Future<void> _upload(List<({String path, String name})> files) async {
     if (files.isEmpty) return;
-    setState(() => _busy = true);
+    final scope = VaultScope.of(context);
+    setState(() {
+      _busy = true;
+      _queuedNote = null;
+    });
     try {
-      final results = await VaultScope.of(context).api.upload(files, _category);
+      final results = await scope.api.upload(files, _category);
       setState(() => _results = results);
       if (results.any((r) => r.status == 'added')) widget.onUploaded?.call();
+    } on VaultException catch (e) {
+      if (e.offline) {
+        // The Mac is off or unreachable: keep the scan on the phone and send it later.
+        await scope.queue.add(files, _category);
+        await _refreshWaiting();
+        setState(() {
+          _results = [];
+          _queuedNote = files.length == 1
+              ? "Saved on the phone. It'll be sent to the vault when your Mac is on."
+              : "${files.length} files saved on the phone. They'll be sent when your Mac is on.";
+        });
+      } else if (mounted) {
+        VaultScope.handle(context, e);
+      }
     } catch (e) {
       if (mounted) VaultScope.handle(context, e);
     } finally {
@@ -114,10 +184,57 @@ class _ScanScreenState extends State<ScanScreen> {
           const SizedBox(height: 10),
           Text('Sending to the vault and reading it…', textAlign: TextAlign.center, style: TextStyle(color: scheme.onSurfaceVariant)),
         ],
+        if (_queuedNote != null) ...[
+          const SizedBox(height: 12),
+          Card(
+            color: scheme.secondaryContainer,
+            child: ListTile(
+              leading: const Icon(Icons.schedule_send_outlined),
+              title: Text(_queuedNote!),
+            ),
+          ),
+        ],
         for (final r in _results) ...[const SizedBox(height: 12), _ResultCard(r)],
+        if (_waiting.isNotEmpty) ...[
+          const SizedBox(height: 18),
+          Row(children: [
+            Expanded(child: Text('Waiting to send (${_waiting.length})', style: Theme.of(context).textTheme.titleSmall)),
+            TextButton.icon(
+              onPressed: _busy ? null : () => _sendWaiting(manual: true),
+              icon: const Icon(Icons.send_outlined, size: 18),
+              label: const Text('Send now'),
+            ),
+          ]),
+          Card(
+            child: Column(children: [
+              for (final w in _waiting)
+                ListTile(
+                  leading: const Icon(Icons.schedule),
+                  title: Text(w.name, maxLines: 1, overflow: TextOverflow.ellipsis),
+                  subtitle: Text('Taken ${_ago(w.queuedAt)} · sent automatically when the Mac is on'),
+                  trailing: IconButton(
+                    tooltip: 'Delete from phone',
+                    icon: const Icon(Icons.close),
+                    onPressed: () async {
+                      await VaultScope.of(context).queue.remove(w.id);
+                      await _refreshWaiting();
+                    },
+                  ),
+                ),
+            ]),
+          ),
+        ],
       ]),
     );
   }
+}
+
+String _ago(DateTime t) {
+  final d = DateTime.now().difference(t);
+  if (d.inMinutes < 1) return 'just now';
+  if (d.inHours < 1) return '${d.inMinutes} min ago';
+  if (d.inDays < 1) return '${d.inHours} h ago';
+  return '${d.inDays} days ago';
 }
 
 class _ResultCard extends StatelessWidget {
