@@ -20,7 +20,9 @@ from dataclasses import dataclass, field
 from datetime import date
 from typing import Iterable, Iterator, Protocol
 
-NOT_FOUND = "I couldn't find that in your documents."
+NOT_FOUND = "I'm not able to find that in your documents."
+# Replies that mean "not found" (the model sometimes words it its own way).
+NOT_FOUND_PHRASES = ("not able to find", "couldn't find", "could not find", "unable to find")
 MAX_HISTORY_MESSAGES = 6  # last three question/answer pairs
 
 SYSTEM_PROMPT = """You are the family's document assistant. You answer questions about the family's own documents: insurance policies, warranty cards, bills and property papers.
@@ -99,7 +101,7 @@ def strip_thinking(pieces: Iterable[str]) -> Iterator[str]:
 def finalize(text: str, num_passages: int) -> Answer:
     text = re.sub(r"<think>.*?</think>", "", text, flags=re.DOTALL).strip()
     cited = sorted({int(n) for n in re.findall(r"\[(\d+)\]", text) if 1 <= int(n) <= num_passages})
-    return Answer(text, cited, found=NOT_FOUND.rstrip(".").lower() not in text.lower())
+    return Answer(text, cited, found=not any(p in text.lower() for p in NOT_FOUND_PHRASES))
 
 
 def answer_question(

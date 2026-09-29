@@ -24,6 +24,7 @@ def test_answer_facts():
     assert answer_facts("It renews in 2027, 5 days early.") == ["5 days"]  # a bare year alone is too vague
     assert answer_facts("Room 4 on floor 2.") == []  # so are tiny numbers
     assert answer_facts("I couldn't find that in your documents.") == []
+    assert answer_facts("I'm not able to find that in your documents.") == []
 
 
 def test_pdf_highlights_find_passage_and_facts_on_the_page():

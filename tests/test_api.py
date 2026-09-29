@@ -136,6 +136,7 @@ def test_chat_reports_llm_problems_as_an_event(tmp_path):
     client = signed_in(create_app(DocumentStore(tmp_path / "index"), FakeEmbedder(), RegexTokenizer(), down))
     upload(client, "a.txt", b"Water bill due 15 July")
     _, events = _chat(client, question="water bill")
-    assert [e["type"] for e in events] == ["sources", "error"] and "Ollama" in events[1]["message"]
+    assert [e["type"] for e in events] == ["sources", "error"]
+    assert events[1]["message"].startswith("I'm not able to answer") and "Ollama" in events[1]["detail"]
     no_llm = signed_in(create_app(DocumentStore(tmp_path / "b"), FakeEmbedder(), RegexTokenizer()))
     assert no_llm.post("/api/chat", json={"question": "x"}).status_code == 503

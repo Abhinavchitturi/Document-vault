@@ -54,7 +54,10 @@ class VaultScope extends InheritedWidget {
       scope.onUnpaired();
       return;
     }
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(error.toString())));
+    // The vault's own messages are written for people; anything else (a dropped connection,
+    // a library's exception) gets plain words instead of its technical text.
+    final text = error is VaultException ? error.message : "That didn't work. Please try again.";
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(text)));
   }
 
   @override

@@ -32,6 +32,8 @@ def test_answer_parses_citations_and_passes_today():
 
 def test_not_found_is_reported_and_no_passages_skips_the_llm():
     assert not answer_question("Q?", PASSAGES, FakeLLM(NOT_FOUND)).found
+    assert NOT_FOUND == "I'm not able to find that in your documents."
+    assert not answer_question("Q?", PASSAGES, FakeLLM("Sorry, I couldn't find the premium [1].")).found
     llm = FakeLLM("should not be called")
     answer = answer_question("Q?", [], llm)
     assert not answer.found and llm.calls == 0
