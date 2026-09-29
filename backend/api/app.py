@@ -53,6 +53,7 @@ from pydantic import BaseModel, Field
 
 from backend.auth.accounts import SESSION_DAYS, Accounts, AuthError, TooManyAttempts
 from backend.auth.devices import Devices
+from backend.classify.classifier import REVIEW_BELOW, Classifier
 from backend.auth.passkeys import Passkeys
 from backend.llm.answer import LLM, answer_question, finalize, stream_answer
 from backend.llm.ollama import LLMUnavailableError
@@ -85,7 +86,10 @@ logger = logging.getLogger("api")
 
 def _public(doc: dict) -> dict:
     """Document record as sent to the browser (no internal storage details)."""
-    return {k: v for k, v in doc.items() if k not in ("sha256", "stored_as")}
+    shown = {k: v for k, v in doc.items() if k not in ("sha256", "stored_as")}
+    confidence = doc.get("category_confidence")
+    shown["needs_review"] = doc.get("category_source") == "auto" and confidence is not None and confidence < REVIEW_BELOW
+    return shown
 
 
 class ChatTurn(BaseModel):
@@ -234,6 +238,7 @@ def create_app(
     """
     app = FastAPI(title="Secure Digital Document Vault", docs_url=None, redoc_url=None, openapi_url=None)
     accounts = accounts or Accounts(store.engine)
+    classifier = Classifier(embedder, llm)  # Phase 8: sorts uploads marked "auto"
     keys = Passkeys(store.engine, passkey_hosts)
     devices = devices or Devices(store.engine)
 
@@ -540,7 +545,8 @@ def create_app(
                                     "error": f"File is larger than {MAX_UPLOAD_BYTES // (1024 * 1024)} MB"})
                     continue
                 try:
-                    result = ingest_file(tmp_path, mine, embedder, tokenizer, category, filename=name)
+                    result = ingest_file(tmp_path, mine, embedder, tokenizer, category, filename=name,
+                                         classifier=classifier)
                 except (UnsupportedFileError, OcrUnavailableError, EmptyDocumentError, ValueError) as e:
                     results.append({"filename": name, "status": "error", "error": str(e)})
                     continue

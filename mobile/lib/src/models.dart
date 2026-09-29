@@ -35,7 +35,8 @@ class Info {
 
 class VaultDocument {
   VaultDocument({required this.id, required this.filename, required this.category, required this.pages,
-      required this.ocrPages, required this.ocrConfidence, required this.sizeBytes, required this.addedAt});
+      required this.ocrPages, required this.ocrConfidence, required this.sizeBytes, required this.addedAt,
+      this.needsReview = false});
 
   final String id;
   final String filename;
@@ -45,6 +46,9 @@ class VaultDocument {
   final int? ocrConfidence;
   final int sizeBytes;
   final DateTime addedAt;
+
+  /// Sorted automatically, but the vault wasn't sure of the type (Phase 8).
+  final bool needsReview;
 
   bool get hardToRead => ocrConfidence != null && ocrConfidence! < lowConfidence;
 
@@ -57,6 +61,7 @@ class VaultDocument {
         ocrConfidence: j['ocr_confidence'] as int?,
         sizeBytes: j['size_bytes'] as int? ?? 0,
         addedAt: DateTime.tryParse(j['added_at'] as String? ?? '') ?? DateTime.now(),
+        needsReview: j['needs_review'] as bool? ?? false,
       );
 }
 

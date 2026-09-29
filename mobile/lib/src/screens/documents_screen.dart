@@ -107,6 +107,7 @@ class DocumentsScreenState extends State<DocumentsScreen> {
                       categoryLabels[d.category] ?? d.category,
                       '${d.pages} ${d.pages == 1 ? 'page' : 'pages'}',
                       if (d.ocrPages > 0) 'scanned',
+                      if (d.needsReview) '⚠ check type (on the Mac)',
                       if (d.hardToRead) '⚠ hard to read',
                     ].join(' · ')),
                     onTap: () => Navigator.of(context)
