@@ -13,7 +13,7 @@ from backend.chunker.chunker import RegexTokenizer
 from backend.vector_store.store import DocumentStore
 from tests.fakes import FakeEmbedder, signed_in
 
-LINK = {"url": "https://192.168.1.20:8443", "fingerprint": "ab" * 32}
+LINK = {"urls": ["https://192.168.1.20:8443"], "fingerprint": "ab" * 32}
 SUNITA = "sunita's password 1"
 
 
@@ -22,7 +22,7 @@ def apps(tmp_path, link=LINK):
     accounts, devices = Accounts(store.engine), Devices(store.engine)
     common = dict(accounts=accounts, devices=devices, frontend_dir=None)
     web = create_app(store, FakeEmbedder(), RegexTokenizer(), phone_link=link, **common)
-    phone = create_app(store, FakeEmbedder(), RegexTokenizer(), mode="phone", **common)
+    phone = create_app(store, FakeEmbedder(), RegexTokenizer(), mode="phone", phone_link=link, **common)
     return web, phone
 
 
@@ -39,7 +39,7 @@ def test_pairing_qr_holds_address_fingerprint_and_code(tmp_path):
     web, phone_app = apps(tmp_path)
     me = signed_in(web)
     qr = me.post("/api/mobile/pairing").json()
-    assert qr["url"] == LINK["url"] and qr["fingerprint"] == LINK["fingerprint"] and qr["expires_in"] == 600
+    assert qr["url"] == LINK["urls"][0] and qr["fingerprint"] == LINK["fingerprint"] and qr["expires_in"] == 600
     assert qr["qr_svg"].startswith("<?xml") or "<svg" in qr["qr_svg"]
     assert TestClient(web).post("/api/mobile/pairing").status_code == 401  # signed-in people only
     assert me.post("/api/mobile/pair", json={"code": qr["code"]}).status_code == 404  # phones pair on the phone listener
@@ -99,9 +99,34 @@ def test_removing_a_phone_or_resetting_the_password_cuts_it_off(tmp_path):
     assert her_phone.get("/api/info").status_code == 401
 
 
-def test_certificate_is_made_once_and_remade_for_a_new_address(tmp_path):
-    cert, key, fp = ensure_certificate(tmp_path / "tls", "192.168.1.20")
+def test_certificate_is_made_once_and_kept_on_every_network(tmp_path):
+    cert, key, fp = ensure_certificate(tmp_path / "tls")
     assert len(fp) == 64 and stat.S_IMODE(key.stat().st_mode) == 0o600
-    assert ensure_certificate(tmp_path / "tls", "192.168.1.20")[2] == fp  # reused
-    assert ensure_certificate(tmp_path / "tls", "10.0.0.5")[2] != fp  # moved networks: new certificate
+    assert ensure_certificate(tmp_path / "tls")[2] == fp  # same certificate next start, whatever the Wi-Fi
     assert json.dumps(fp)  # plain hex, fits in the QR payload
+
+
+def test_phones_get_every_address_and_refresh_them(tmp_path):
+    urls = ["https://192.168.1.20:8443", "https://100.101.102.103:8443"]
+    link = {"urls": lambda: list(urls), "fingerprint": "ab" * 32}
+    web, phone_app = apps(tmp_path, link=link)
+    me = signed_in(web)
+    qr = me.post("/api/mobile/pairing").json()
+    assert qr["urls"] == urls and qr["url"] == urls[0]  # Wi-Fi first, then the tunnel
+    assert me.get("/api/devices").json()["tunnel"] is True
+    phone, _ = pair(me, phone_app)
+    urls[0] = "https://192.168.1.44:8443"  # the router gave the Mac a new address
+    assert phone.get("/api/mobile/addresses").json()["urls"][0] == "https://192.168.1.44:8443"
+    assert TestClient(phone_app).get("/api/mobile/addresses").status_code == 401  # paired phones only
+
+
+def test_phone_urls_lists_wifi_then_tunnel(monkeypatch):
+    from backend.api import lan
+
+    monkeypatch.setattr(lan, "lan_address", lambda: "192.168.1.20")
+    monkeypatch.setattr(lan, "tailscale_address", lambda: "100.101.102.103")
+    assert lan.phone_urls(8443, ["192.168.1.20", "mac.tail1234.ts.net"]) == [
+        "https://192.168.1.20:8443", "https://100.101.102.103:8443", "https://mac.tail1234.ts.net:8443"]
+    monkeypatch.setattr(lan, "lan_address", lambda: None)
+    monkeypatch.setattr(lan, "tailscale_address", lambda: None)
+    assert lan.phone_urls(8443) == []

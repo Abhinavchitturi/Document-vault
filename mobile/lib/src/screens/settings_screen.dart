@@ -96,8 +96,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
           child: Column(children: [
             ListTile(
               leading: const Icon(Icons.computer_outlined),
-              title: const Text('Vault'),
-              subtitle: Text(scope.pairing.url),
+              title: const Text('Vault addresses'),
+              subtitle: Text([
+                for (final u in scope.pairing.urls)
+                  '${Uri.parse(u).host.startsWith('100.') || u.contains('.ts.net') ? 'Anywhere (Tailscale)' : 'Home Wi-Fi'}: $u',
+              ].join('\n')),
             ),
             ListTile(
               leading: const Icon(Icons.verified_user_outlined),

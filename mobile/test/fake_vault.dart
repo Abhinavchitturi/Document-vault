@@ -102,4 +102,4 @@ class MemoryStorage implements FlutterSecureStorage {
 }
 
 final testPairing = Pairing(
-    url: 'https://192.168.1.20:8443', fingerprint: 'ab' * 32, token: 'secret-token', deviceId: 7, userName: 'abhinav');
+    urls: ['https://192.168.1.20:8443'], fingerprint: 'ab' * 32, token: 'secret-token', deviceId: 7, userName: 'abhinav');

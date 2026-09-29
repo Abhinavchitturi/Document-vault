@@ -82,7 +82,7 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(find.text('Settings'));
     await tester.pumpAndSettle();
-    expect(find.text('https://192.168.1.20:8443'), findsOneWidget);
+    expect(find.textContaining('Home Wi-Fi: https://192.168.1.20:8443'), findsOneWidget);
     await tester.tap(find.text('Unpair this phone'));
     await tester.pumpAndSettle();
     await tester.tap(find.widgetWithText(FilledButton, 'Unpair'));

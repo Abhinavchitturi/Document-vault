@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import AppShell, { useVault } from "@/components/AppShell";
 import Icon from "@/components/Icon";
 import { useTheme, type Theme } from "@/components/ThemeToggle";
-import { api, formatDate, type Device, type Member, type Pairing, type Passkey, type Settings } from "@/lib/api";
+import { api, formatDate, type Device, type Member, type Pairing, type Passkey, type PhoneAccess, type Settings } from "@/lib/api";
 import { cancelled, createPasskey, deviceName, passkeysSupported } from "@/lib/passkey";
 
 const SEARCH_LABEL: Record<string, string> = {
@@ -230,7 +230,7 @@ function Passkeys() {
 }
 
 function Phones() {
-  const [state, setState] = useState<{ enabled: boolean; url: string | null; devices: Device[] } | null>(null);
+  const [state, setState] = useState<PhoneAccess | null>(null);
   const [pairing, setPairing] = useState<Pairing | null>(null);
   const [left, setLeft] = useState(0);
   const [message, setMessage] = useState<{ ok: boolean; text: string } | null>(null);
@@ -282,12 +282,19 @@ function Phones() {
     <section className="card">
       <h2>Phones</h2>
       <p className="muted" style={{ marginTop: 0, fontSize: 14 }}>
-        Use the Document Vault app on your phone at home: chat, browse, and scan bills with the camera. The phone must be on
-        the same Wi-Fi as this Mac.
+        Use the Document Vault app on your phone: chat, browse, and scan bills with the camera. Phones reach this Mac on the
+        same Wi-Fi, or from anywhere through Tailscale, while the vault is running here.
       </p>
       {message && <div className={`notice ${message.ok ? "good" : "bad"}`} role="status" style={{ marginBottom: 12 }}><Icon name={message.ok ? "ok" : "warn"} />{message.text}</div>}
       {state && !state.enabled && (
         <div className="notice"><Icon name="warn" /><span>Phone access is off. Stop the vault and start it with <code>python -m backend.api.app --phones</code>.</span></div>
+      )}
+      {state?.enabled && (
+        <dl className="kv" style={{ marginBottom: 12 }}>
+          <dt>At home</dt><dd>{state.urls.find((u) => !u.startsWith("https://100.")) ? "On this Wi-Fi" : "Not on a Wi-Fi network"}</dd>
+          <dt>Away from home</dt>
+          <dd>{state.tunnel ? "On, through Tailscale" : <>Off: install Tailscale on this Mac and the phones (see README → Phone app)</>}</dd>
+        </dl>
       )}
       {state?.devices.length ? (
         <ul className="passkey-list">
