@@ -52,9 +52,10 @@ class OcrPage:
     rotation: int = 0  # degrees clockwise the original was turned to read it (0, 90, 180, 270)
     confidence: int | None = None  # average word confidence 0-100; None when no words were found
     words: list = field(default_factory=list)  # [x, y, w, h, start, end]: box and span in `text`
+    sure_chars: int = field(default=0, repr=False, compare=False)  # letters/digits read >= 80% sure (not saved)
 
     def to_dict(self) -> dict:
-        return asdict(self)
+        return {k: v for k, v in asdict(self).items() if k != "sure_chars"}
 
     @classmethod
     def from_dict(cls, d: dict) -> "OcrPage":
@@ -143,16 +144,36 @@ def _detect_rotation(image) -> int:
     return int(osd.get("rotate", 0)) % 360
 
 
-def _cleaned(image, width: int = MIN_OCR_WIDTH):
-    """Grayscale, contrast stretched, enlarged if narrower than `width`. Returns (image, scale factor)."""
+def _cleaned(image, width: int = MIN_OCR_WIDTH, flatten: bool = False):
+    """Grayscale, contrast stretched, enlarged if narrower than `width`. Returns (image, scale factor).
+    `flatten` evens out the lighting first (a phone's shadow across the page, glare at one corner)."""
     from PIL import Image, ImageOps
 
-    gray = ImageOps.autocontrast(image.convert("L"), cutoff=1)
+    gray = image.convert("L")
+    if flatten:
+        gray = _flatten_light(gray)
+    gray = ImageOps.autocontrast(gray, cutoff=1)
     scale = 1.0
     if gray.width < width:
         scale = width / gray.width
         gray = gray.resize((width, round(gray.height * scale)), Image.LANCZOS)
     return gray, scale
+
+
+def _flatten_light(gray):
+    """Divide the page by a heavily blurred copy of itself: the blur is the lighting (shadow, glare,
+    a dim corner), so what's left is the ink on an evenly lit, white page."""
+    import numpy as np
+    from PIL import Image, ImageFilter
+
+    # The paper's brightness: at a quarter of the size, a maximum filter wipes out the ink (strokes are
+    # thinner than its window, even big bold numbers), then a blur smooths it into the lighting.
+    small = gray.resize((max(1, gray.width // 4), max(1, gray.height // 4)))
+    paper = small.filter(ImageFilter.MaxFilter(7)).filter(ImageFilter.GaussianBlur(4)).resize(gray.size)
+    background = np.asarray(paper, dtype=np.float32)
+    ink = np.asarray(gray, dtype=np.float32)
+    even = np.clip(ink / np.maximum(background, 1.0) * 255.0, 0, 255).astype(np.uint8)
+    return Image.fromarray(even)
 
 
 def _is_word(token: str) -> bool:
@@ -162,7 +183,6 @@ def _is_word(token: str) -> bool:
 def read_image(image, rotation: int | None = None) -> OcrPage:
     """OCR one page image. `rotation` skips orientation detection when it's already known."""
     require_ocr()
-    import pytesseract
 
     if rotation is None:
         image, rotation = upright(image)
@@ -171,19 +191,44 @@ def read_image(image, rotation: int | None = None) -> OcrPage:
 
         image = ImageOps.exif_transpose(image).convert("RGB")
     image = rotate(image, rotation)
-    page = _read(image, rotation, MIN_OCR_WIDTH)
-    if (page.confidence is None or page.confidence < LOW_CONFIDENCE) and image.width < RETRY_WIDTH:
-        bigger = _read(image, rotation, RETRY_WIDTH)  # small print (ID cards, receipts) reads better larger
-        if (bigger.confidence or 0) > (page.confidence or 0):
-            page = bigger
+    # Read as it is and with the lighting evened out (a phone's shadow or glare can hide most of a
+    # page while the few words left read "confidently"); the fuller, surer reading wins.
+    page = max((_read(image, rotation, MIN_OCR_WIDTH), _read(image, rotation, MIN_OCR_WIDTH, flatten=True)), key=_score)
+    tries = []
+    if image.width < RETRY_WIDTH:
+        tries.append(dict(width=RETRY_WIDTH))  # small print (ID cards, receipts) reads better larger
+    if "+" in ocr_languages() and _devanagari_share(page.text) < 0.05:
+        tries.append(dict(width=MIN_OCR_WIDTH, lang="eng"))  # English-only pages read better as English
+    for options in tries:
+        if (page.confidence or 0) >= GOOD_ENOUGH:
+            break
+        for flatten in (False, True):
+            other = _read(image, rotation, flatten=flatten, **options)
+            if _score(other) > _score(page):
+                page = other
     return page
 
 
-def _read(image, rotation: int, width: int) -> OcrPage:
+GOOD_ENOUGH = 85  # a page read at least this confidently isn't read again
+
+
+def _score(page: OcrPage) -> float:
+    """How much of the page was read surely: letters and digits in words read at least 80% sure.
+    Average confidence alone would prefer a reading that is very sure of three words and missed the
+    rest of the page; a count of all characters would prefer one padded with doubtful garbage."""
+    return page.sure_chars
+
+
+def _devanagari_share(text: str) -> float:
+    letters = [ch for ch in text if ch.isalpha()]
+    return sum("\u0900" <= ch <= "\u097f" for ch in letters) / len(letters) if letters else 0.0
+
+
+def _read(image, rotation: int, width: int, flatten: bool = False, lang: str | None = None) -> OcrPage:
     import pytesseract
 
-    cleaned, scale = _cleaned(image, width)
-    data = pytesseract.image_to_data(cleaned, lang=ocr_languages(), output_type=pytesseract.Output.DICT)
+    cleaned, scale = _cleaned(image, width, flatten)
+    data = pytesseract.image_to_data(cleaned, lang=lang or ocr_languages(), output_type=pytesseract.Output.DICT)
 
     entries = []  # (word, confidence, box in the cleaned image, line key, block key)
     for i, word in enumerate(data["text"]):
@@ -196,7 +241,7 @@ def _read(image, rotation: int, width: int) -> OcrPage:
         entries.append((ftfy.fix_text(word), conf, box, (*block, data["line_num"][i]), block))
     entries = [(*_reread_mixed(cleaned, w, c, box), box, line, block) for w, c, box, line, block in entries]
 
-    text, words, confs = "", [], []
+    text, words, confs, sure = "", [], [], 0
     last_line = last_block = None
     for word, conf, box, line, block in entries:
         if last_line is not None:
@@ -207,9 +252,11 @@ def _read(image, rotation: int, width: int) -> OcrPage:
         words.append([*(round(v / scale) for v in box), start, len(text)])
         if _is_word(word):  # specks from logos and photos don't count against the page
             confs.append((conf, len(word)))
+            if conf >= 80:
+                sure += sum(ch.isalnum() for ch in word)
     total = sum(n for _, n in confs)
     confidence = round(sum(c * n for c, n in confs) / total) if total else None
-    return OcrPage(text, image.width, image.height, rotation, confidence, words)
+    return OcrPage(text, image.width, image.height, rotation, confidence, words, sure)
 
 
 # House / door numbers and similar: "2-11", "2-11/A", "12/B". Mixed Hindi-English reading sometimes
