@@ -23,8 +23,13 @@ Usage:
 Answers come from a local model through Ollama (see backend/llm/ollama.py); if
 Ollama isn't running, search still works and the page says how to start it.
 
-The server listens on 127.0.0.1 only: the library holds personal documents and
-there is no login, so it must not be exposed to a network.
+Sign-in (Phase 6, backend/auth/): every /api call needs a signed-in family member, and
+each person only sees their own documents. The first visit sets up the admin's password.
+
+    GET    /api/auth/status  POST /api/auth/setup | login | logout | password
+    GET    /api/users   POST /api/users   POST /api/users/{id}/password   (admin)
+
+The server listens on 127.0.0.1 only: until Phase 13 adds HTTPS, it must not be exposed to a network.
 """
 
 from __future__ import annotations
@@ -38,12 +43,15 @@ from collections import Counter
 from dataclasses import asdict
 from pathlib import Path
 
-from fastapi import FastAPI, File, Form, HTTPException, Query, UploadFile
 from typing import Literal
+from urllib.parse import urlsplit
 
-from fastapi.responses import FileResponse, Response, StreamingResponse
+from fastapi import Depends, FastAPI, File, Form, HTTPException, Query, Request, UploadFile
+from fastapi.concurrency import run_in_threadpool
+from fastapi.responses import FileResponse, JSONResponse, Response, StreamingResponse
 from pydantic import BaseModel, Field
 
+from backend.auth.accounts import SESSION_DAYS, Accounts, AuthError, TooManyAttempts
 from backend.llm.answer import LLM, answer_question, finalize, stream_answer
 from backend.llm.ollama import LLMUnavailableError
 from backend.retriever.retriever import METHODS, Retriever
@@ -104,6 +112,62 @@ class HighlightRequest(BaseModel):
     answer: str | None = Field(None, max_length=4000)  # the answer text, to find its facts on the page
 
 
+class LoginRequest(BaseModel):
+    name: str = Field(..., max_length=100)
+    password: str = Field(..., max_length=500)
+
+
+class SetupRequest(BaseModel):
+    name: str = Field(..., max_length=100)
+    password: str = Field(..., max_length=500)
+
+
+class PasswordChange(BaseModel):
+    current_password: str = Field(..., max_length=500)
+    new_password: str = Field(..., max_length=500)
+
+
+class PasswordReset(BaseModel):
+    new_password: str = Field(..., max_length=500)
+
+
+class NewMember(BaseModel):
+    name: str = Field(..., max_length=100)
+    password: str = Field(..., max_length=500)
+    is_admin: bool = False
+
+
+SESSION_COOKIE = "vault_session"
+PUBLIC_PATHS = {"/api/auth/status", "/api/auth/login", "/api/auth/setup", "/api/auth/logout"}
+
+
+def current_user(request: Request) -> dict:
+    """The signed-in person (checked by the require_sign_in middleware)."""
+    user = getattr(request.state, "user", None)
+    if user is None:
+        raise HTTPException(401, "Please sign in.")
+    return user
+
+
+def admin_user(user: dict = Depends(current_user)) -> dict:
+    if not user["is_admin"]:
+        raise HTTPException(403, "Only an admin can manage family members.")
+    return user
+
+
+def _client(request: Request) -> str:
+    return request.client.host if request.client else ""
+
+
+def _same_origin(request: Request) -> bool:
+    """Browsers send Origin on cross-site form posts and fetches; refuse those that come from
+    another website (the session cookie is SameSite=Strict too, this is a second lock)."""
+    origin = request.headers.get("origin")
+    if not origin:
+        return True  # not a browser cross-site request (curl, scripts, same-origin GETs)
+    return urlsplit(origin).netloc == request.headers.get("host", "")
+
+
 class AskRequest(BaseModel):
     question: str = Field(..., min_length=1, max_length=500)
     category: str | None = None
@@ -139,10 +203,115 @@ def create_app(
     frontend_dir: Path | None = FRONTEND_DIR,
     database_label: str = "",
     search_method: str = "hybrid",
+    accounts: Accounts | None = None,
 ) -> FastAPI:
+    """`store` is any view of the vault; each request works on the signed-in person's own view."""
     app = FastAPI(title="Secure Digital Document Vault", docs_url=None, redoc_url=None, openapi_url=None)
-    retriever = Retriever(store, embedder, search_method)
-    retrievers = {m: retriever if m == search_method else Retriever(store, embedder, m) for m in METHODS}
+    accounts = accounts or Accounts(store.engine)
+    retrievers: dict[tuple[int, str], Retriever] = {}
+
+    def vault_of(user: dict) -> DocumentStore:
+        return store.for_user(user["id"])
+
+    def retriever_for(user: dict, method: str | None = None) -> Retriever:
+        key = (user["id"], method or search_method)
+        if key not in retrievers:  # one per person and method: each keeps its own keyword index
+            retrievers[key] = Retriever(vault_of(user), embedder, key[1])
+        return retrievers[key]
+
+    @app.middleware("http")
+    async def require_sign_in(request: Request, call_next):
+        """Every /api call needs a signed-in person, except signing in itself. Enforced here, for all
+        routes at once, so a new endpoint can't forget it; endpoints read the person from request.state."""
+        path = request.url.path
+        if request.method not in ("GET", "HEAD", "OPTIONS") and not _same_origin(request):
+            return JSONResponse({"detail": "Request from another website refused."}, status_code=403)
+        if path.startswith("/api/") and path not in PUBLIC_PATHS:
+            user = await run_in_threadpool(accounts.user_for_token, request.cookies.get(SESSION_COOKIE))
+            if user is None:
+                return JSONResponse({"detail": "Please sign in."}, status_code=401)
+            request.state.user = user
+        return await call_next(request)
+
+    # ---------- signing in ----------
+
+    def _set_cookie(request: Request, response: Response, token: str) -> None:
+        response.set_cookie(SESSION_COOKIE, token, max_age=SESSION_DAYS * 86400, httponly=True, samesite="strict",
+                            secure=request.url.scheme == "https", path="/")
+
+    @app.get("/api/auth/status")
+    def auth_status(request: Request) -> dict:
+        user = accounts.user_for_token(request.cookies.get(SESSION_COOKIE))
+        setup = accounts.setup_needed()
+        return {"user": user, "setup_needed": setup, "suggested_name": accounts.suggested_name() if setup else None}
+
+    @app.post("/api/auth/setup")
+    def auth_setup(req: SetupRequest, request: Request, response: Response) -> dict:
+        try:
+            user = accounts.setup(req.name, req.password)
+            user, token = accounts.login(user["name"], req.password, _client(request))
+        except AuthError as e:
+            raise HTTPException(400, str(e)) from e
+        _set_cookie(request, response, token)
+        logger.info("Vault set up: %s is the admin", user["name"])
+        return {"user": user}
+
+    @app.post("/api/auth/login")
+    def auth_login(req: LoginRequest, request: Request, response: Response) -> dict:
+        try:
+            user, token = accounts.login(req.name, req.password, _client(request))
+        except TooManyAttempts as e:
+            raise HTTPException(429, str(e)) from e
+        except AuthError as e:
+            logger.warning("Failed sign-in for %r from %s", req.name[:60], _client(request))
+            raise HTTPException(401, str(e)) from e
+        _set_cookie(request, response, token)
+        return {"user": user}
+
+    @app.post("/api/auth/logout")
+    def auth_logout(request: Request, response: Response) -> dict:
+        accounts.logout(request.cookies.get(SESSION_COOKIE))
+        response.delete_cookie(SESSION_COOKIE, path="/")
+        return {"signed_out": True}
+
+    @app.post("/api/auth/password")
+    def change_password(req: PasswordChange, request: Request, user: dict = Depends(current_user)) -> dict:
+        try:
+            accounts.change_password(user["id"], req.current_password, req.new_password,
+                                     keep_token=request.cookies.get(SESSION_COOKIE))
+        except TooManyAttempts as e:
+            raise HTTPException(429, str(e)) from e
+        except AuthError as e:
+            raise HTTPException(400, str(e)) from e
+        return {"changed": True}
+
+    # ---------- family members (admin) ----------
+
+    @app.get("/api/users")
+    def list_users(user: dict = Depends(admin_user)) -> list[dict]:
+        return accounts.list_users()
+
+    @app.post("/api/users")
+    def add_user(req: NewMember, user: dict = Depends(admin_user)) -> dict:
+        try:
+            member = accounts.add_member(req.name, req.password, is_admin=req.is_admin)
+        except AuthError as e:
+            raise HTTPException(400, str(e)) from e
+        logger.info("%s added family member %s", user["name"], member["name"])
+        return member
+
+    @app.post("/api/users/{user_id}/password")
+    def reset_password(user_id: int, req: PasswordReset, user: dict = Depends(admin_user)) -> dict:
+        if user_id == user["id"]:
+            raise HTTPException(400, "Change your own password under Your account (it needs your current one).")
+        try:
+            accounts.set_password(user_id, req.new_password)
+        except AuthError as e:
+            raise HTTPException(400, str(e)) from e
+        logger.info("%s reset the password of user %d", user["name"], user_id)
+        return {"changed": True}
+
+    # ---------- documents ----------
 
     @app.middleware("http")
     async def security_headers(request, call_next):
@@ -155,15 +324,17 @@ def create_app(
         return response
 
     @app.get("/api/info")
-    def info() -> dict:
-        counts = Counter(d["category"] for d in store.documents.values())
+    def info(user: dict = Depends(current_user)) -> dict:
+        mine = vault_of(user)
+        counts = Counter(d["category"] for d in mine.documents.values())
         return {
             "model": embedder.model_name,
-            "owner": store.owner,
+            "owner": mine.owner,
+            "is_admin": user["is_admin"],
             "llm": llm.name if llm else None,
             "llm_status": _llm_status(llm),
-            "num_documents": len(store.documents),
-            "num_chunks": len(store.chunks),
+            "num_documents": len(mine.documents),
+            "num_chunks": len(mine.chunks),
             "categories": {c: counts.get(c, 0) for c in CATEGORIES},
             "ocr_available": ocr_available(),
             "supported_types": sorted(SUPPORTED_SUFFIXES),
@@ -171,11 +342,13 @@ def create_app(
         }
 
     @app.get("/api/documents")
-    def list_documents() -> list[dict]:
-        return [_public(d) for d in store.list_documents()]
+    def list_documents(user: dict = Depends(current_user)) -> list[dict]:
+        return [_public(d) for d in vault_of(user).list_documents()]
 
     @app.post("/api/documents")
-    def upload(files: list[UploadFile] = File(...), category: str = Form("auto")) -> list[dict]:
+    def upload(files: list[UploadFile] = File(...), category: str = Form("auto"),
+               user: dict = Depends(current_user)) -> list[dict]:
+        mine = vault_of(user)
         if category != "auto" and category not in CATEGORIES:
             raise HTTPException(400, f"category must be 'auto' or one of {CATEGORIES}")
         results = []
@@ -201,7 +374,7 @@ def create_app(
                                     "error": f"File is larger than {MAX_UPLOAD_BYTES // (1024 * 1024)} MB"})
                     continue
                 try:
-                    result = ingest_file(tmp_path, store, embedder, tokenizer, category, filename=name)
+                    result = ingest_file(tmp_path, mine, embedder, tokenizer, category, filename=name)
                 except (UnsupportedFileError, OcrUnavailableError, EmptyDocumentError, ValueError) as e:
                     results.append({"filename": name, "status": "error", "error": str(e)})
                     continue
@@ -214,23 +387,21 @@ def create_app(
         return results
 
     @app.get("/api/documents/{doc_id}/file")
-    def open_file(doc_id: str) -> FileResponse:
-        doc = store.get(doc_id)
-        path = store.file_path(doc_id)
-        if not doc or not path or not path.exists():
-            raise HTTPException(404, "document not found")
+    def open_file(doc_id: str, user: dict = Depends(current_user)) -> FileResponse:
+        doc, path = _owned_file(user, doc_id)
         return FileResponse(path, filename=doc["filename"], content_disposition_type="inline")
 
-    def _owned_file(doc_id: str) -> tuple[dict, Path]:
-        doc = store.get(doc_id)  # only this owner's documents are visible
-        path = store.file_path(doc_id)
+    def _owned_file(user: dict, doc_id: str) -> tuple[dict, Path]:
+        mine = vault_of(user)
+        doc = mine.get(doc_id)  # only this person's documents are visible
+        path = mine.file_path(doc_id)
         if not doc or not path or not path.exists():
             raise HTTPException(404, "document not found")
         return doc, path
 
     @app.get("/api/documents/{doc_id}/pages/{page}/image")
-    def page_image_route(doc_id: str, page: int) -> Response:
-        _, path = _owned_file(doc_id)
+    def page_image_route(doc_id: str, page: int, user: dict = Depends(current_user)) -> Response:
+        _, path = _owned_file(user, doc_id)
         if path.suffix.lower() != ".pdf" and path.suffix.lower() not in IMAGE_SUFFIXES:
             raise HTTPException(400, "page images are only available for PDFs, scans and photos")
         try:
@@ -240,9 +411,9 @@ def create_app(
         return Response(image, media_type=media_type, headers={"Cache-Control": "private, no-store"})
 
     @app.post("/api/documents/{doc_id}/pages/{page}/highlights")
-    def page_highlights(doc_id: str, page: int, req: HighlightRequest) -> dict:
-        _, path = _owned_file(doc_id)
-        chunk = next((c for c in store.chunks if c["chunk_id"] == req.chunk_id and c["doc_id"] == doc_id), None)
+    def page_highlights(doc_id: str, page: int, req: HighlightRequest, user: dict = Depends(current_user)) -> dict:
+        _, path = _owned_file(user, doc_id)
+        chunk = next((c for c in vault_of(user).chunks if c["chunk_id"] == req.chunk_id and c["doc_id"] == doc_id), None)
         try:
             result = highlights_for(path, page, chunk["text"] if chunk else None, req.answer)
         except ValueError as e:
@@ -250,22 +421,24 @@ def create_app(
         return asdict(result)
 
     @app.patch("/api/documents/{doc_id}")
-    def update_document(doc_id: str, req: CategoryUpdate) -> dict:
+    def update_document(doc_id: str, req: CategoryUpdate, user: dict = Depends(current_user)) -> dict:
         if req.category not in CATEGORIES:
             raise HTTPException(400, f"category must be one of {CATEGORIES}")
-        doc = store.get(doc_id)
+        mine = vault_of(user)
+        doc = mine.get(doc_id)
         if doc is None:
             raise HTTPException(404, "document not found")
         from backend.upload.ingest import passage_texts
 
-        chunks = [{**c, "category": req.category} for c in store.chunks_of(doc_id)]
+        chunks = [{**c, "category": req.category} for c in mine.chunks_of(doc_id)]
         vectors = embedder.encode_passages(passage_texts(chunks)) if chunks else None
-        return _public(store.update_category(doc_id, req.category, vectors))
+        return _public(mine.update_category(doc_id, req.category, vectors))
 
-    def settings_view() -> dict:
+    def settings_view(user: dict) -> dict:
         list_models = getattr(llm, "list_models", None)
         return {
-            "owner": store.owner,
+            "owner": vault_of(user).owner,
+            "is_admin": user["is_admin"],
             "llm_model": getattr(llm, "model", None) if llm else None,
             "llm_models": list_models() if list_models else [],
             "llm_status": _llm_status(llm),
@@ -277,31 +450,36 @@ def create_app(
         }
 
     @app.get("/api/settings")
-    def get_settings() -> dict:
-        return settings_view()
+    def get_settings(user: dict = Depends(current_user)) -> dict:
+        return settings_view(user)
 
     @app.post("/api/settings")
-    def save_settings(req: SettingsUpdate) -> dict:
+    def save_settings(req: SettingsUpdate, user: dict = Depends(current_user)) -> dict:
         if req.owner_name is not None:
+            mine = vault_of(user)
+            old = mine.owner
             try:
-                store.rename_owner(req.owner_name)
+                mine.rename_owner(req.owner_name)
             except ValueError as e:
                 raise HTTPException(400, str(e)) from e
-            logger.info("Owner renamed to %s", store.owner)
+            logger.info("%s is now called %s", old, mine.owner)
+            user = {**user, "name": mine.owner}
         if req.llm_model is None:
-            return settings_view()
+            return settings_view(user)
+        if not user["is_admin"]:  # one model serves the whole family
+            raise HTTPException(403, "Only an admin can change the answer model.")
         if llm is None or not hasattr(llm, "model"):
             raise HTTPException(400, "Answers are turned off; start the app without --no-llm to choose a model.")
         installed = llm.list_models() if hasattr(llm, "list_models") else []
         if req.llm_model not in installed:
             raise HTTPException(400, f"{req.llm_model} isn't downloaded. Run: ollama pull {req.llm_model}")
         llm.model = req.llm_model
-        logger.info("Answer model switched to %s", req.llm_model)
-        return settings_view()
+        logger.info("Answer model switched to %s by %s", req.llm_model, user["name"])
+        return settings_view(user)
 
     @app.delete("/api/documents/{doc_id}")
-    def delete(doc_id: str) -> dict:
-        if not store.delete(doc_id):
+    def delete(doc_id: str, user: dict = Depends(current_user)) -> dict:
+        if not vault_of(user).delete(doc_id):
             raise HTTPException(404, "document not found")
         return {"deleted": doc_id}
 
@@ -311,6 +489,7 @@ def create_app(
         k: int = Query(5, ge=1, le=20),
         category: str | None = None,
         method: str | None = None,
+        user: dict = Depends(current_user),
     ) -> dict:
         if category and category not in CATEGORIES:
             raise HTTPException(400, f"category must be one of {CATEGORIES}")
@@ -318,7 +497,7 @@ def create_app(
             raise HTTPException(400, f"method must be one of {METHODS}")
         method = method or search_method
         t0 = time.perf_counter()
-        hits = retrievers[method].documents(q, top_k=k, category=category or None)
+        hits = retriever_for(user, method).documents(q, top_k=k, category=category or None)
         took_ms = (time.perf_counter() - t0) * 1000
         return {
             "question": q,
@@ -328,9 +507,10 @@ def create_app(
             "results": [_passage(chunk, score, i + 1) for i, (chunk, score) in enumerate(hits)],
         }
 
-    def chat_context(question: str, history: list[ChatTurn], k: int, category: str | None):
+    def chat_context(user: dict, question: str, history: list[ChatTurn], k: int, category: str | None):
         """Passages for a chat turn. A follow-up ("and when is it due?") says little on its
         own, so also search with the previous question and add those passages at the end."""
+        retriever = retriever_for(user)
         hits = retriever.context(question, top_k=k, category=category)
         previous = next((t.content for t in reversed(history) if t.role == "user"), None)
         if previous:
@@ -342,12 +522,12 @@ def create_app(
         return hits
 
     @app.post("/api/chat")
-    def chat(req: ChatRequest) -> StreamingResponse:
+    def chat(req: ChatRequest, user: dict = Depends(current_user)) -> StreamingResponse:
         if req.category and req.category not in CATEGORIES:
             raise HTTPException(400, f"category must be one of {CATEGORIES}")
         if llm is None:
             raise HTTPException(503, "Answers are turned off (the app was started with --no-llm).")
-        hits = chat_context(req.question, req.history, req.k, req.category or None)
+        hits = chat_context(user, req.question, req.history, req.k, req.category or None)
         sources = [_passage(chunk, score, i + 1) for i, (chunk, score) in enumerate(hits)]
         history = [t.model_dump() for t in req.history]
 
@@ -372,13 +552,13 @@ def create_app(
         return StreamingResponse(events(), media_type="application/x-ndjson")
 
     @app.post("/api/ask")
-    def ask(req: AskRequest) -> dict:
+    def ask(req: AskRequest, user: dict = Depends(current_user)) -> dict:
         if req.category and req.category not in CATEGORIES:
             raise HTTPException(400, f"category must be one of {CATEGORIES}")
         if llm is None:
             raise HTTPException(503, "No local LLM is configured. Start the app without --no-llm.")
         t0 = time.perf_counter()
-        hits = retriever.context(req.question, top_k=req.k, category=req.category or None)
+        hits = retriever_for(user).context(req.question, top_k=req.k, category=req.category or None)
         retrieval_ms = (time.perf_counter() - t0) * 1000
         try:
             answer = answer_question(req.question, [chunk for chunk, _ in hits], llm)
@@ -412,7 +592,8 @@ def main() -> None:
     parser.add_argument("--index-dir", default="data/index", help="FAISS vectors and original files")
     parser.add_argument("--database-url", default=None,
                         help="metadata database (default: $VAULT_DATABASE_URL or postgresql+psycopg://localhost/vault)")
-    parser.add_argument("--owner", default=None, help="whose documents (default: $VAULT_OWNER or your user name)")
+    parser.add_argument("--owner", default=None,
+                        help="before sign-in is set up: whose documents the setup screen adopts (default: your user name)")
     parser.add_argument("--model", default=None, help="embedding model (default: snowflake-arctic-embed-m-v1.5)")
     parser.add_argument("--device", default=None, help="cuda / mps / cpu; default picks automatically")
     parser.add_argument("--llm-model", default=None, help="local Ollama model (default: llama3.1:8b)")
@@ -451,10 +632,14 @@ def main() -> None:
     from sqlalchemy.engine import make_url
 
     db_label = make_url(database_url(args.database_url)).render_as_string(hide_password=True)
+    accounts = Accounts(store.engine)
     app = create_app(store, embedder, HFTokenizer(embedder.model_name), llm, database_label=db_label,
-                     search_method=args.search)
-    logger.info("Vault for %s: %d documents. Answers: %s. Open http://127.0.0.1:%d",
-                store.owner, len(store.documents), llm.name if llm else "off", args.port)
+                     search_method=args.search, accounts=accounts)
+    if accounts.setup_needed():
+        logger.info("First start with sign-in: open http://127.0.0.1:%d and choose your password.", args.port)
+    else:
+        logger.info("%d family members. Answers: %s. Open http://127.0.0.1:%d",
+                    len(accounts.list_users()), llm.name if llm else "off", args.port)
     uvicorn.run(app, host="127.0.0.1", port=args.port)
 
 

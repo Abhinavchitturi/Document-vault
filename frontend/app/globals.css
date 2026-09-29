@@ -333,3 +333,23 @@ mark { background: var(--mark); color: inherit; border-radius: 3px; padding: 0 1
 @keyframes bounce { 0%, 80%, 100% { transform: translateY(0); opacity: .5; } 40% { transform: translateY(-4px); opacity: 1; } }
 @keyframes pulse { 0%, 100% { box-shadow: 0 0 0 1.5px #f59e0b; } 50% { box-shadow: 0 0 0 5px rgba(245, 158, 11, .35); } }
 @media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation: none !important; transition: none !important; } }
+
+/* Sign-in (Phase 6) */
+.login-form { display: grid; gap: 14px; margin: 24px 0 6px; text-align: left; }
+.login-form label, .stack-form label { display: grid; gap: 6px; font-size: 13px; font-weight: 600; color: var(--muted); }
+.login-form .input, .stack-form .input { width: 100%; font-size: 15px; }
+.login-form .btn { width: 100%; justify-content: center; padding: 11px; margin-top: 4px; }
+.field-note { color: var(--bad); font-weight: 500; }
+.input[aria-invalid="true"] { border-color: var(--bad); }
+.stack-form { display: grid; gap: 12px; max-width: 380px; width: 100%; }
+.stack-form .row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.check { display: flex !important; grid-template-columns: none; align-items: center; gap: 8px !important; font-weight: 500 !important; }
+.members { list-style: none; margin: 0; padding: 0; }
+.members li { display: flex; align-items: center; gap: 12px; padding: 10px 0; border-bottom: 1px solid var(--border); flex-wrap: wrap; }
+.members li:last-child { border-bottom: 0; }
+.members .avatar-initial { width: 32px; height: 32px; font-size: 14px; }
+.members .who { flex: 1; min-width: 140px; }
+.members .who strong { display: block; text-transform: capitalize; }
+.members .who span { font-size: 12.5px; color: var(--muted); }
+.members form { display: flex; gap: 8px; flex-wrap: wrap; }
+.setting-row:has(.stack-form) { align-items: flex-start; }

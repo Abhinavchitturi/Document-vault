@@ -3,8 +3,8 @@
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { createContext, useCallback, useContext, useEffect, useState, type ReactNode } from "react";
-import { api, type Info } from "@/lib/api";
-import { endSession, getSession } from "@/lib/session";
+import { api, type Info, type User } from "@/lib/api";
+import { clearBrowserSession } from "@/lib/session";
 import Icon, { type IconName } from "./Icon";
 import ThemeToggle from "./ThemeToggle";
 
@@ -40,7 +40,7 @@ export default function AppShell({ title, actions, children }: { title: string; 
   const router = useRouter();
   const [info, setInfo] = useState<Info | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [signedIn, setSignedIn] = useState(false);
+  const [user, setUser] = useState<User | null>(null);
 
   const refresh = useCallback(async () => {
     try {
@@ -52,16 +52,27 @@ export default function AppShell({ title, actions, children }: { title: string; 
   }, []);
 
   useEffect(() => {
-    if (!getSession()) {
-      router.replace(`/login/?next=${encodeURIComponent(pathname)}`);
-      return;
-    }
-    setSignedIn(true);
-    refresh();
+    let alive = true;
+    api.authStatus()
+      .then((s) => {
+        if (!alive) return;
+        if (!s.user) router.replace(`/login/?next=${encodeURIComponent(pathname)}`);
+        else { setUser(s.user); refresh(); }
+      })
+      .catch((e) => alive && setError(e instanceof Error ? e.message : String(e)));
+    return () => { alive = false; };
   }, [pathname, refresh, router]);
 
-  if (!signedIn) return null;
-  const owner = info?.owner ?? getSession() ?? "";
+  const signOut = async () => {
+    try { await api.logout(); } catch { /* signed out on this side regardless */ }
+    clearBrowserSession();
+    router.replace("/login/");
+  };
+
+  if (!user) {
+    return error ? <div className="page"><div className="notice bad"><Icon name="warn" />Can&apos;t reach the vault server: {error}</div></div> : null;
+  }
+  const owner = info?.owner ?? user.name;
   const current = (href: string) => (href === "/" ? pathname === "/" : pathname.startsWith(href)) ? "page" : undefined;
 
   return (
@@ -77,9 +88,8 @@ export default function AppShell({ title, actions, children }: { title: string; 
           <div className="spacer" />
           <div className="profile">
             <span className="avatar-initial">{owner.slice(0, 1)}</span>
-            <div className="who"><strong>{owner}</strong><span><Icon name="lock" size={11} /> On this computer</span></div>
-            <button className="icon-btn" type="button" title="Sign out" aria-label="Sign out"
-                    onClick={() => { endSession(); router.replace("/login/"); }}>
+            <div className="who"><strong>{owner}</strong><span><Icon name="lock" size={11} /> {user.is_admin ? "Admin" : "Family member"}</span></div>
+            <button className="icon-btn" type="button" title="Sign out" aria-label="Sign out" onClick={signOut}>
               <Icon name="logout" />
             </button>
           </div>

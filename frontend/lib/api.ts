@@ -16,9 +16,26 @@ export interface LlmStatus {
   message: string;
 }
 
+export interface User {
+  id: number;
+  name: string;
+  is_admin: boolean;
+}
+
+export interface Member extends User {
+  can_sign_in: boolean;
+}
+
+export interface AuthStatus {
+  user: User | null;
+  setup_needed: boolean;
+  suggested_name: string | null;
+}
+
 export interface Info {
   model: string;
   owner: string;
+  is_admin: boolean;
   llm: string | null;
   llm_status: LlmStatus;
   num_documents: number;
@@ -62,6 +79,7 @@ export interface UploadResult {
 
 export interface Settings {
   owner: string;
+  is_admin: boolean;
   llm_model: string | null;
   llm_models: string[];
   llm_status: LlmStatus;
@@ -97,13 +115,34 @@ export interface ChatTurn {
   content: string;
 }
 
+/** Signed out (session expired, password changed elsewhere): go to the sign-in screen, then come back. */
+export function toSignIn() {
+  if (typeof window === "undefined" || window.location.pathname.startsWith("/login")) return;
+  window.location.replace(`/login/?next=${encodeURIComponent(window.location.pathname)}`);
+}
+
 async function json<T>(res: Response): Promise<T> {
   const body = await res.json().catch(() => ({}));
+  if (res.status === 401 && !res.url.includes("/api/auth/")) toSignIn();
   if (!res.ok) throw new Error(typeof body.detail === "string" ? body.detail : `Request failed (${res.status})`);
   return body as T;
 }
 
+const postJson = (url: string, body: unknown) =>
+  fetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+
 export const api = {
+  authStatus: () => fetch("/api/auth/status").then((r) => json<AuthStatus>(r)),
+  setup: (name: string, password: string) => postJson("/api/auth/setup", { name, password }).then((r) => json<{ user: User }>(r)),
+  login: (name: string, password: string) => postJson("/api/auth/login", { name, password }).then((r) => json<{ user: User }>(r)),
+  logout: () => fetch("/api/auth/logout", { method: "POST" }).then((r) => json<{ signed_out: boolean }>(r)),
+  changePassword: (current_password: string, new_password: string) =>
+    postJson("/api/auth/password", { current_password, new_password }).then((r) => json<{ changed: boolean }>(r)),
+  members: () => fetch("/api/users").then((r) => json<Member[]>(r)),
+  addMember: (name: string, password: string, is_admin: boolean) =>
+    postJson("/api/users", { name, password, is_admin }).then((r) => json<User>(r)),
+  resetPassword: (userId: number, new_password: string) =>
+    postJson(`/api/users/${userId}/password`, { new_password }).then((r) => json<{ changed: boolean }>(r)),
   info: () => fetch("/api/info").then((r) => json<Info>(r)),
   documents: () => fetch("/api/documents").then((r) => json<VaultDocument[]>(r)),
   deleteDocument: (id: string) =>
@@ -162,6 +201,7 @@ export async function* streamChat(
     signal,
   });
   if (!res.ok || !res.body) {
+    if (res.status === 401) toSignIn();
     const body = await res.json().catch(() => ({}));
     yield { type: "error", message: typeof body.detail === "string" ? body.detail : `Something went wrong (${res.status})` };
     return;

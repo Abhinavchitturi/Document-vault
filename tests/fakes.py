@@ -50,3 +50,17 @@ class FakeLLM:
         text = self.generate(system, prompt, history)
         for i in range(0, len(text), 7):  # arrive in small pieces, like a real model
             yield text[i : i + 7]
+
+
+PASSWORD = "correct horse battery"
+
+
+def signed_in(app, name=None):
+    """A test client that has set up the vault and is signed in as its first member."""
+    from fastapi.testclient import TestClient
+
+    client = TestClient(app)
+    status = client.get("/api/auth/status").json()
+    r = client.post("/api/auth/setup", json={"name": name or status["suggested_name"] or "tester", "password": PASSWORD})
+    assert r.status_code == 200, r.text
+    return client

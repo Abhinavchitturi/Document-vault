@@ -6,13 +6,13 @@ from fastapi.testclient import TestClient
 from backend.api.app import create_app
 from backend.chunker.chunker import RegexTokenizer
 from backend.vector_store.store import DocumentStore
-from tests.fakes import FakeEmbedder
+from tests.fakes import FakeEmbedder, signed_in
 from tests.pdf_helper import make_pdf
 
 
 @pytest.fixture
 def client(tmp_path):
-    return TestClient(create_app(DocumentStore(tmp_path / "index"), FakeEmbedder(), RegexTokenizer()))
+    return signed_in(create_app(DocumentStore(tmp_path / "index"), FakeEmbedder(), RegexTokenizer()))
 
 
 def upload(client, name, content, category="auto"):
@@ -68,7 +68,7 @@ def test_ask_returns_answer_with_cited_sources(tmp_path):
     from tests.fakes import FakeLLM
 
     llm = FakeLLM("Your bike policy expires on 14 March 2027 [1].")
-    client = TestClient(create_app(DocumentStore(tmp_path / "index"), FakeEmbedder(), RegexTokenizer(), llm))
+    client = signed_in(create_app(DocumentStore(tmp_path / "index"), FakeEmbedder(), RegexTokenizer(), llm))
     upload(client, "bike_policy.pdf", make_pdf(["Two-wheeler policy expires on 14 March 2027"]))
     upload(client, "bill.txt", b"Electricity bill due 18 September")
     data = client.post("/api/ask", json={"question": "when does the policy expire", "k": 2}).json()
@@ -84,11 +84,11 @@ def test_ask_when_llm_is_off_or_down(tmp_path):
     from backend.llm.ollama import LLMUnavailableError
     from tests.fakes import FakeLLM
 
-    no_llm = TestClient(create_app(DocumentStore(tmp_path / "a"), FakeEmbedder(), RegexTokenizer()))
+    no_llm = signed_in(create_app(DocumentStore(tmp_path / "a"), FakeEmbedder(), RegexTokenizer()))
     assert no_llm.post("/api/ask", json={"question": "x"}).status_code == 503
     assert no_llm.get("/api/info").json()["llm_status"]["ready"] is False
     down = FakeLLM(error=LLMUnavailableError("Can't reach Ollama on this computer."))
-    client = TestClient(create_app(DocumentStore(tmp_path / "b"), FakeEmbedder(), RegexTokenizer(), down))
+    client = signed_in(create_app(DocumentStore(tmp_path / "b"), FakeEmbedder(), RegexTokenizer(), down))
     upload(client, "a.txt", b"Water bill due 15 July")
     res = client.post("/api/ask", json={"question": "water bill"})
     assert res.status_code == 503 and "Ollama" in res.json()["detail"]
@@ -103,7 +103,7 @@ def test_chat_streams_sources_then_answer_then_citations(tmp_path):
     from tests.fakes import FakeLLM
 
     llm = FakeLLM("Your August electricity bill is Rs. 2,486 [1].")
-    client = TestClient(create_app(DocumentStore(tmp_path / "index"), FakeEmbedder(), RegexTokenizer(), llm))
+    client = signed_in(create_app(DocumentStore(tmp_path / "index"), FakeEmbedder(), RegexTokenizer(), llm))
     upload(client, "electricity_aug.pdf", make_pdf(["Electricity bill August. Amount payable Rs. 2,486"]))
     upload(client, "fridge.txt", b"Refrigerator warranty, compressor 10 years")
     res, events = _chat(client, question="electricity bill august")
@@ -118,7 +118,7 @@ def test_chat_follow_up_uses_history(tmp_path):
     from tests.fakes import FakeLLM
 
     llm = FakeLLM("It is due on 18 September 2026 [1].")
-    client = TestClient(create_app(DocumentStore(tmp_path / "index"), FakeEmbedder(), RegexTokenizer(), llm))
+    client = signed_in(create_app(DocumentStore(tmp_path / "index"), FakeEmbedder(), RegexTokenizer(), llm))
     upload(client, "electricity_aug.pdf", make_pdf(["Electricity bill August. Due date 18 September 2026"]))
     history = [{"role": "user", "content": "electricity bill august"},
                {"role": "assistant", "content": "It is Rs. 2,486 [1]."}]
@@ -133,9 +133,9 @@ def test_chat_reports_llm_problems_as_an_event(tmp_path):
     from tests.fakes import FakeLLM
 
     down = FakeLLM(error=LLMUnavailableError("Can't reach Ollama on this computer."))
-    client = TestClient(create_app(DocumentStore(tmp_path / "index"), FakeEmbedder(), RegexTokenizer(), down))
+    client = signed_in(create_app(DocumentStore(tmp_path / "index"), FakeEmbedder(), RegexTokenizer(), down))
     upload(client, "a.txt", b"Water bill due 15 July")
     _, events = _chat(client, question="water bill")
     assert [e["type"] for e in events] == ["sources", "error"] and "Ollama" in events[1]["message"]
-    no_llm = TestClient(create_app(DocumentStore(tmp_path / "b"), FakeEmbedder(), RegexTokenizer()))
+    no_llm = signed_in(create_app(DocumentStore(tmp_path / "b"), FakeEmbedder(), RegexTokenizer()))
     assert no_llm.post("/api/chat", json={"question": "x"}).status_code == 503

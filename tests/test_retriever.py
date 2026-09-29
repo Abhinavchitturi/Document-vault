@@ -10,7 +10,7 @@ from backend.retriever.bm25 import BM25Index, identifiers, tokenize
 from backend.retriever.retriever import Retriever, fuse
 from backend.upload.ingest import ingest_file
 from backend.vector_store.store import DocumentStore
-from tests.fakes import FakeEmbedder
+from tests.fakes import FakeEmbedder, signed_in
 
 
 def chunk(cid, text, filename="doc.pdf", category="other"):
@@ -84,7 +84,7 @@ def test_unknown_method_is_rejected(tmp_path):
 
 
 def test_search_endpoint_reports_and_accepts_method(tmp_path):
-    client = TestClient(create_app(DocumentStore(tmp_path / "index"), FakeEmbedder(), RegexTokenizer()))
+    client = signed_in(create_app(DocumentStore(tmp_path / "index"), FakeEmbedder(), RegexTokenizer()))
     client.post("/api/documents", files=[("files", ("water.txt", b"Water bill. Connection ID PMW-B-0448120. Due 15 July."))])
     r = client.get("/api/search", params={"q": "PMW-B-0448120"}).json()
     assert r["method"] == "hybrid" and r["results"][0]["filename"] == "water.txt"

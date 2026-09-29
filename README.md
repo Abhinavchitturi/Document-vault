@@ -21,7 +21,8 @@ and the privacy decisions.
 | 3 | Web application | ✅ React + Next.js: Login, Dashboard, Chat, Documents, Upload, Settings |
 | 4 | OCR | ✅ Photos and scanned PDFs: auto-rotated, cleaned up, answers highlighted on the scan, blurry scans flagged |
 | 5 | Better retrieval (BM25 + vector) | ✅ Hybrid search: meaning (vector) + exact words and numbers (BM25), fused; exact ID matches first |
-| 6–13 | Auth, mobile, classification, expiry, reminders, security, sharing, deployment | ⏳ |
+| 6 | Authentication | ✅ Password sign-in, one account per family member, each sees only their own documents; admin adds members and resets passwords |
+| 7–13 | Mobile, classification, expiry, reminders, security, sharing, deployment | ⏳ |
 
 ## Privacy
 - For our family only. The repository is private and contains **code and fictional samples only**.
@@ -29,7 +30,8 @@ and the privacy decisions.
 - **Local models only**: embeddings (Snowflake Arctic Embed), answers (a local LLM via Ollama)
   and OCR (Tesseract) all run on your machine. No models from Chinese developers are used. The LLM client refuses any non-local address, the
   embedding model runs offline once downloaded, and the web page loads nothing from the internet.
-- The app listens on `127.0.0.1` only and has no login yet (Phase 6), so don't expose it to a network.
+- Every family member signs in with their own password, and the server only ever shows them their own
+  documents. The app still listens on `127.0.0.1` only: until HTTPS arrives (Phase 13), don't expose it to a network.
 
 ## Setup (once)
 Python packages:
@@ -75,7 +77,7 @@ needed to build the pages.
 
 | Page | What it's for |
 |---|---|
-| **Login** | Continue as the vault's owner. Real sign-in (passwords, one account per family member) is Phase 6; until then this screen is a convenience, not security. |
+| **Sign in** | Name and password. The very first visit is **Set up your vault**: the current owner (you) picks a password and becomes the admin, keeping all documents. |
 | **Dashboard** | Document counts by type, recently added, a quick "ask" box, and whether the assistant and OCR are ready. |
 | **Chat** | Ask like a chatbot: answers stream in with numbered sources. Click one to see the page with the passage lightly highlighted and the answer itself (amounts, dates, policy numbers) strongly highlighted; **Open original** opens the untouched file. Follow-ups work; the chat is kept while you switch pages and forgotten when you close the tab. |
 | **Documents** | Every document, filterable by type and searchable by name. Change a document's type if auto-detect got it wrong, view it, open the original, or remove it. |
@@ -102,11 +104,25 @@ Where things live:
   databases on this computer are accepted. `--database-url sqlite:///data/index/vault.db`
   gives a single-file setup with no server.
 - **Search vectors and original files**: `data/index/` (git-ignored).
-- **Owner**: until login arrives (Phase 6), a new vault belongs to your computer's user name.
-  Change it under **Settings → Your name**; the vault remembers it and your documents stay
-  yours. If you never picked a name, the vault follows your computer's user name: rename the
-  Mac user from `ramesh` to `abhinav` and the next start shows Abhinav with the same documents.
-  A name you picked yourself is kept. `--owner` or `VAULT_OWNER` pick an owner explicitly.
+- **Owner**: before sign-in is set up, the vault belongs to your computer's user name (and follows
+  it if you rename your Mac user). The setup screen turns that owner into your account.
+
+## Family accounts (Phase 6)
+- **First visit**: *Set up your vault*. Your name is filled in; choose a password (8+ characters).
+  You become the **admin**, and your existing documents stay yours.
+- **Add family members**: Settings → Family members → *Add a family member*. Tell them the password;
+  they can change it in Settings → You. Each person only sees and searches their own documents.
+- **Forgotten password**: the admin sets a new one (Settings → Family members → *Reset password*).
+  That person is signed out everywhere.
+- **Everyone locked out** (e.g. the admin forgot theirs): from a terminal on this computer
+  ```bash
+  python -m backend.auth.cli list
+  python -m backend.auth.cli reset-password abhinav
+  ```
+- **How it's protected**: passwords are stored only as salted scrypt hashes. Sign-in gives the
+  browser an HttpOnly, SameSite=Strict cookie that lasts 14 days; the database keeps only its hash.
+  Five wrong passwords lock that name for 15 minutes. Requests from other websites are refused.
+  Every `/api` call except signing in requires a signed-in person, checked on the server.
 
 If the app says it can't connect to the database, it prints PostgreSQL's own reason and the
 commands that fix it. The common one after renaming your Mac user is
@@ -201,6 +217,7 @@ Layout:
 | `backend/embeddings/` | Snowflake Arctic Embed M v1.5; offline mode once downloaded |
 | `backend/database/` | PostgreSQL schema (`users`, `documents`, `document_chunks`) and connection |
 | `backend/vector_store/` | The vault: records in the database, vectors in FAISS, original files on disk |
+| `backend/auth/` | Sign-in: password hashing (`passwords.py`), accounts and sessions (`accounts.py`), terminal tool (`cli.py`) |
 | `backend/retriever/` | Question → passages: hybrid fusion (`retriever.py`), keyword search (`bm25.py`) |
 | `backend/llm/` | Local Ollama client and the answer-with-citations prompt |
 | `backend/viewer/` | Finds the passage and the answer's facts on a page (PDF boxes, Word/text spans) |

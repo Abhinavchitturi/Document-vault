@@ -7,9 +7,9 @@
 
 `root` defaults to data/index/ (git-ignored: it holds personal documents).
 
-Each store works for one owner (Phase 2: every document has an owner; Phase 6
-adds login so each family member gets their own). Searches and listings only
-see that owner's documents.
+Each DocumentStore is one family member's view: searches and listings only see that
+owner's documents. Views of the same vault share one database connection, vector index
+and lock (the _Vault below); `store.for_user(user_id)` gives another member's view.
 
 The FAISS index is exact (IndexFlatIP): a family has hundreds of pages, not
 millions. Phase 13 can swap it for Qdrant behind the same methods.
@@ -68,22 +68,69 @@ def _default_url(root: Path) -> str:
     return f"sqlite:///{root / 'vault.db'}"
 
 
-class DocumentStore:
-    def __init__(self, root: str | Path, database_url: str | None = None, owner: str | None = None):
-        self.root = Path(root)
-        self.files_dir = self.root / "files"
+class _Vault:
+    """What every family member's view shares: the database, the vector index (one file,
+    all members' vectors), the files folder, and one lock around writes to them."""
+
+    def __init__(self, root: Path, database_url: str):
+        self.root = root
+        self.files_dir = root / "files"
         self.files_dir.mkdir(parents=True, exist_ok=True)
-        self.engine = connect(database_url or _default_url(self.root))
-        self._lock = threading.RLock()
-        self.owner = owner or self._owner_for_this_computer()
-        self.owner_id = self._ensure_user(self.owner)
+        self.engine = connect(database_url)
+        self.lock = threading.RLock()
+        index_path = root / "vectors.faiss"
+        self.index: faiss.Index | None = faiss.read_index(str(index_path)) if index_path.exists() else None
+        with self.engine.connect() as conn:
+            self.model = conn.execute(select(vault_meta.c.value).where(vault_meta.c.key == "embedding_model")).scalar()
+        self.views: dict[int, "DocumentStore"] = {}  # user id -> that member's view
+
+
+class DocumentStore:
+    def __init__(self, root: str | Path, database_url: str | None = None, owner: str | None = None,
+                 *, _vault: _Vault | None = None, _user_id: int | None = None):
+        if _vault is None:
+            root = Path(root)
+            _vault = _Vault(root, database_url or _default_url(root))
+        self._vault = _vault
+        self.root, self.files_dir, self.engine, self._lock = _vault.root, _vault.files_dir, _vault.engine, _vault.lock
+        if _user_id is None:
+            self.owner = owner or self._owner_for_this_computer()
+            self.owner_id = self._ensure_user(self.owner)
+        else:
+            with self.engine.connect() as conn:
+                self.owner = conn.execute(select(users.c.name).where(users.c.id == _user_id)).scalar_one()
+            self.owner_id = _user_id
         self.documents: dict[str, dict] = {}  # this owner's documents, cached
         self.chunks: list[dict] = []  # this owner's chunks, cached for search
         self.revision = 0  # bumped on every change, so derived indexes (BM25) know to rebuild
-        self.index: faiss.Index | None = None
-        self.model: str | None = None
+        with self._lock:
+            _vault.views.setdefault(self.owner_id, self)
         self._migrate_json_vault()
         self._load()
+
+    def for_user(self, user_id: int) -> "DocumentStore":
+        """Another family member's view of the same vault (created once, then reused)."""
+        with self._lock:
+            view = self._vault.views.get(user_id)
+            if view is None:
+                view = DocumentStore(self.root, _vault=self._vault, _user_id=user_id)
+            return view
+
+    @property
+    def index(self) -> faiss.Index | None:
+        return self._vault.index
+
+    @index.setter
+    def index(self, value: faiss.Index | None) -> None:
+        self._vault.index = value
+
+    @property
+    def model(self) -> str | None:
+        return self._vault.model
+
+    @model.setter
+    def model(self, value: str | None) -> None:
+        self._vault.model = value
 
     # ---------- database ----------
 
@@ -100,6 +147,11 @@ class DocumentStore:
         user name if it changes (Mac user "ramesh" renamed to "abhinav"). A name someone chose
         (Settings or the sign-in screen) is kept as is.
         """
+        with self.engine.connect() as conn:  # after Phase 6 setup: the admin, never a new stranger
+            admin = conn.execute(select(users.c.name).where(users.c.is_admin.is_(True), users.c.password_hash.is_not(None))
+                                 .order_by(users.c.id).limit(1)).scalar()
+        if admin:
+            return admin
         computer = fallback_owner()
         existing = self._existing_owner()
         if existing is None or existing == computer:
@@ -107,6 +159,8 @@ class DocumentStore:
         with self.engine.begin() as conn:
             if self._meta(conn, "owner_named_by") == "person":
                 return existing
+            if conn.execute(select(users.c.password_hash).where(users.c.name == existing)).scalar():
+                return existing  # it's a sign-in name now; never change it behind the person's back
             if conn.execute(select(users.c.id).where(users.c.name == computer)).scalar() is not None:
                 return existing  # the new name is already someone else here; don't merge people
             conn.execute(users.update().where(users.c.name == existing).values(name=computer))
@@ -162,7 +216,6 @@ class DocumentStore:
 
     def _load(self) -> None:
         with self.engine.connect() as conn:
-            self.model = self._meta(conn, "embedding_model")
             rows = conn.execute(select(documents).where(documents.c.owner_id == self.owner_id)).mappings().all()
             self.documents = {
                 r["id"]: {
@@ -189,8 +242,6 @@ class DocumentStore:
             }
             for r in chunk_rows
         ]
-        index_path = self.root / "vectors.faiss"
-        self.index = faiss.read_index(str(index_path)) if index_path.exists() else None
         self.revision += 1
 
     def _save_index(self) -> None:
@@ -219,7 +270,8 @@ class DocumentStore:
                 conn.execute(insert(document_chunks).values(**self._chunk_row(c, i)))
             meta_path = self.root / "meta.json"
             if meta_path.exists() and json.loads(meta_path.read_text()).get("model"):
-                self._set_meta(conn, "embedding_model", json.loads(meta_path.read_text())["model"])
+                self.model = json.loads(meta_path.read_text())["model"]
+                self._set_meta(conn, "embedding_model", self.model)
         for path in (docs_path, chunks_path, self.root / "meta.json"):
             if path.exists():
                 path.rename(path.with_name(path.name + ".migrated"))
@@ -232,12 +284,14 @@ class DocumentStore:
 
     @property
     def missing_vectors(self) -> bool:
-        """True if some stored chunk has no vector (e.g. a crash mid-save); rebuild with reembed()."""
-        if not self.chunks:
+        """True if some stored chunk (anyone's) has no vector (e.g. a crash mid-save); rebuild with reembed()."""
+        with self.engine.connect() as conn:
+            all_vids = conn.execute(select(document_chunks.c.id)).scalars().all()
+        if not all_vids:
             return False
         if self.index is None:
             return True
-        vids = np.array([c["vid"] for c in self.chunks], dtype=np.int64)
+        vids = np.array(all_vids, dtype=np.int64)
         try:
             self.index.reconstruct_batch(vids)
         except RuntimeError:
@@ -375,13 +429,21 @@ class DocumentStore:
             return True
 
     def reembed(self, embed_passages, model: str) -> None:
-        """Rebuild all vectors (new model, or repair) from the stored chunk text; no re-parsing."""
+        """Rebuild every family member's vectors (new model, or repair) from the stored chunk text;
+        no re-parsing. The index is shared, so all members' chunks go back in, not just this view's."""
         with self._lock:
+            with self.engine.connect() as conn:
+                rows = conn.execute(
+                    select(document_chunks.c.id, document_chunks.c.text, documents.c.name, documents.c.doc_type)
+                    .join(documents, documents.c.id == document_chunks.c.document_id)
+                    .order_by(document_chunks.c.id)
+                ).all()
+            everyone = [{"vid": r.id, "text": r.text, "filename": r.name, "category": r.doc_type} for r in rows]
             self.index = None
-            if self.chunks:
-                vectors = np.ascontiguousarray(embed_passages(self.chunks), dtype=np.float32)
+            if everyone:
+                vectors = np.ascontiguousarray(embed_passages(everyone), dtype=np.float32)
                 self.index = _new_index(vectors.shape[1])
-                self.index.add_with_ids(vectors, np.array([c["vid"] for c in self.chunks], dtype=np.int64))
+                self.index.add_with_ids(vectors, np.array([c["vid"] for c in everyone], dtype=np.int64))
             self._save_index()
             with self.engine.begin() as conn:
                 self._set_meta(conn, "embedding_model", model)
