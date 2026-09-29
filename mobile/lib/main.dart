@@ -8,5 +8,6 @@ import 'src/pairing.dart';
 import 'src/vault_client.dart';
 
 void main() {
-  runApp(VaultApp(store: PairingStore(), connect: (p) => VaultClient(p)));
+  final store = PairingStore();
+  runApp(VaultApp(store: store, connect: (p) => VaultClient(p, onAddressesChanged: store.save)));
 }

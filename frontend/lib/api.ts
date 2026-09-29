@@ -48,6 +48,14 @@ export interface Device {
   last_seen_at: string | null;
 }
 
+export interface PhoneAccess {
+  enabled: boolean;
+  url: string | null;
+  urls: string[];
+  tunnel: boolean; // reachable through Tailscale, so phones work away from home
+  devices: Device[];
+}
+
 export interface Pairing {
   code: string;
   expires_in: number;
@@ -176,7 +184,7 @@ export const api = {
     postJson("/api/passkeys", { ceremony, credential, name }).then((r) => json<{ id: string; name: string }>(r)),
   removePasskey: (id: string) =>
     fetch(`/api/passkeys/${encodeURIComponent(id)}`, { method: "DELETE" }).then((r) => json<{ removed: string }>(r)),
-  devices: () => fetch("/api/devices").then((r) => json<{ enabled: boolean; url: string | null; devices: Device[] }>(r)),
+  devices: () => fetch("/api/devices").then((r) => json<PhoneAccess>(r)),
   startPairing: () => fetch("/api/mobile/pairing", { method: "POST" }).then((r) => json<Pairing>(r)),
   removeDevice: (id: number) => fetch(`/api/devices/${id}`, { method: "DELETE" }).then((r) => json<{ removed: number }>(r)),
   members: () => fetch("/api/users").then((r) => json<Member[]>(r)),

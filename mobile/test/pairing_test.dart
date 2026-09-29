@@ -13,9 +13,17 @@ void main() {
   group('PairingCode.parse', () {
     test('reads the QR code from Settings -> Phones', () {
       final code = PairingCode.parse(jsonEncode({'v': 1, 'url': 'https://192.168.1.20:8443', 'fp': fp, 'code': 'abc'}));
-      expect(code.url, 'https://192.168.1.20:8443');
+      expect(code.urls, ['https://192.168.1.20:8443']);
       expect(code.fingerprint, fp);
       expect(code.code, 'abc');
+    });
+
+    test('keeps every address, Wi-Fi first then the tunnel, dropping insecure ones', () {
+      final code = PairingCode.parse(jsonEncode({
+        'v': 1, 'url': 'https://192.168.1.20:8443', 'fp': fp, 'code': 'abc',
+        'urls': ['https://192.168.1.20:8443', 'https://100.101.102.103:8443', 'http://10.0.0.2:8443'],
+      }));
+      expect(code.urls, ['https://192.168.1.20:8443', 'https://100.101.102.103:8443']);
     });
 
     test('refuses anything else', () {

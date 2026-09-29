@@ -5,10 +5,11 @@ import 'dart:convert';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 
 class PairingCode {
-  PairingCode({required this.url, required this.fingerprint, required this.code});
+  PairingCode({required this.urls, required this.fingerprint, required this.code});
 
-  /// `https://<Mac address on the Wi-Fi>:8443`
-  final String url;
+  /// Where the vault can be reached, tried in order: `https://<Mac on the Wi-Fi>:8443`, then its
+  /// private-tunnel (Tailscale) address for when the phone is away from home.
+  final List<String> urls;
 
   /// SHA-256 of the vault's certificate (hex). The app only talks to a server with exactly this certificate.
   final String fingerprint;
@@ -28,32 +29,46 @@ class PairingCode {
     if (j['v'] != 1 || url is! String || fp is! String || code is! String) {
       throw const FormatException("That isn't a Document Vault pairing code.");
     }
-    final uri = Uri.tryParse(url);
-    if (uri == null || uri.scheme != 'https' || uri.host.isEmpty) {
+    final urls = <String>{
+      for (final u in [url, ...((j['urls'] as List?) ?? const [])])
+        if (u is String && _secure(u)) u,
+    }.toList();
+    if (urls.isEmpty) {
       throw const FormatException('The pairing code has no secure (https) address.');
     }
     if (!RegExp(r'^[0-9a-f]{64}$').hasMatch(fp)) {
       throw const FormatException('The pairing code has no valid certificate fingerprint.');
     }
-    return PairingCode(url: url, fingerprint: fp, code: code);
+    return PairingCode(urls: urls, fingerprint: fp, code: code);
+  }
+
+  static bool _secure(String url) {
+    final uri = Uri.tryParse(url);
+    return uri != null && uri.scheme == 'https' && uri.host.isNotEmpty;
   }
 }
 
 class Pairing {
-  Pairing({required this.url, required this.fingerprint, required this.token, required this.deviceId,
+  Pairing({required this.urls, required this.fingerprint, required this.token, required this.deviceId,
       required this.userName});
 
-  final String url;
+  /// Addresses to try, the last one that worked first (Wi-Fi at home, the tunnel when away).
+  final List<String> urls;
+
+  String get url => urls.first;
   final String fingerprint;
   final String token; // this phone's access key: kept in the Keychain / Keystore only
   final int deviceId;
   final String userName;
 
+  Pairing withUrls(List<String> urls) =>
+      Pairing(urls: urls, fingerprint: fingerprint, token: token, deviceId: deviceId, userName: userName);
+
   Map<String, dynamic> toJson() =>
-      {'url': url, 'fp': fingerprint, 'token': token, 'device_id': deviceId, 'user': userName};
+      {'urls': urls, 'fp': fingerprint, 'token': token, 'device_id': deviceId, 'user': userName};
 
   factory Pairing.fromJson(Map<String, dynamic> j) => Pairing(
-      url: j['url'] as String,
+      urls: [...((j['urls'] as List?)?.cast<String>() ?? const []), if (j['url'] is String) j['url'] as String],
       fingerprint: j['fp'] as String,
       token: j['token'] as String,
       deviceId: j['device_id'] as int,

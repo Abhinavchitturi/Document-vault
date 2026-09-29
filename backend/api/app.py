@@ -228,13 +228,20 @@ def create_app(
 
     mode="web"   the Mac's browser: pages + API, cookie sessions (http://localhost:8000)
     mode="phone" the phone app on the home network (backend/api/lan.py): API only, paired phones
-                 only (Bearer device keys); run over HTTPS. `phone_link` = {"url", "fingerprint"}
-                 of that listener, given to the web app so it can show the pairing QR code.
+                 only (Bearer device keys); run over HTTPS. `phone_link` = {"urls", "fingerprint"}
+                 of that listener ("urls": a list, or a function giving the current list), given
+                 to both apps: the web app puts it in the pairing QR code, phones refresh from it.
     """
     app = FastAPI(title="Secure Digital Document Vault", docs_url=None, redoc_url=None, openapi_url=None)
     accounts = accounts or Accounts(store.engine)
     keys = Passkeys(store.engine, passkey_hosts)
     devices = devices or Devices(store.engine)
+
+    def current_urls() -> list[str]:
+        if not phone_link:
+            return []
+        urls = phone_link["urls"]
+        return list(urls() if callable(urls) else urls)
     retrievers: dict[tuple[int, str], Retriever] = {}
 
     def vault_of(user: dict) -> DocumentStore:
@@ -422,8 +429,11 @@ def create_app(
         and a one-time code (10 minutes)."""
         if not phone_link:
             raise HTTPException(409, "Phone access is off. Restart the vault with: python -m backend.api.app --phones")
+        urls = current_urls()
+        if not urls:
+            raise HTTPException(409, "This Mac isn't on a network phones can reach. Connect to Wi-Fi or start Tailscale.")
         code, seconds = devices.start_pairing(user["id"])
-        payload = json.dumps({"v": 1, "url": phone_link["url"], "fp": phone_link["fingerprint"], "code": code},
+        payload = json.dumps({"v": 1, "url": urls[0], "urls": urls, "fp": phone_link["fingerprint"], "code": code},
                              separators=(",", ":"))
         import io
 
@@ -431,8 +441,14 @@ def create_app(
 
         svg = io.BytesIO()
         segno.make(payload, error="m").save(svg, kind="svg", scale=6, border=2, dark="#111", light="#fff")
-        return {"code": code, "expires_in": seconds, "url": phone_link["url"],
+        return {"code": code, "expires_in": seconds, "url": urls[0], "urls": urls,
                 "fingerprint": phone_link["fingerprint"], "qr_svg": svg.getvalue().decode()}
+
+    @app.get("/api/mobile/addresses")
+    def mobile_addresses(user: dict = Depends(current_user)) -> dict:
+        """Where this vault can be reached right now (Wi-Fi, Tailscale): a paired phone refreshes its
+        list whenever it connects, so a changed home address doesn't strand it."""
+        return {"urls": current_urls()}
 
     @app.post("/api/mobile/pair")
     def pair_phone(req: PairRequest, request: Request) -> dict:
@@ -450,8 +466,9 @@ def create_app(
 
     @app.get("/api/devices")
     def list_devices(user: dict = Depends(current_user)) -> dict:
-        return {"enabled": phone_link is not None, "url": phone_link["url"] if phone_link else None,
-                "devices": devices.list_for(user["id"])}
+        urls = current_urls()
+        return {"enabled": phone_link is not None, "url": urls[0] if urls else None, "urls": urls,
+                "tunnel": any(u.startswith("https://100.") for u in urls), "devices": devices.list_for(user["id"])}
 
     @app.delete("/api/devices/{device_id}")
     def remove_device(device_id: int, user: dict = Depends(current_user)) -> dict:
@@ -755,6 +772,8 @@ def main() -> None:
     parser.add_argument("--phones", action="store_true",
                         help="also serve the phone app over HTTPS on the home network (see backend/api/lan.py)")
     parser.add_argument("--phone-port", type=int, default=8443)
+    parser.add_argument("--phone-address", action="append", default=[],
+                        help="extra address phones may use (repeatable), e.g. a Tailscale name")
     args = parser.parse_args()
 
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
@@ -790,20 +809,24 @@ def main() -> None:
     tokenizer = HFTokenizer(embedder.model_name)
     phone_server, phone_link = None, None
     if args.phones:
-        from backend.api.lan import ensure_certificate, lan_address
+        from backend.api.lan import ensure_certificate, keep_awake, phone_urls
 
-        address = lan_address()
-        cert, key, fp = ensure_certificate(Path(args.index_dir).parent / "tls", address)
-        phone_link = {"url": f"https://{address}:{args.phone_port}", "fingerprint": fp}
+        cert, key, fp = ensure_certificate(Path(args.index_dir).parent / "tls")
+        phone_link = {"urls": lambda: phone_urls(args.phone_port, args.phone_address), "fingerprint": fp}
         phone_app = create_app(store, embedder, tokenizer, llm, search_method=args.search, accounts=accounts,
-                               mode="phone", devices=devices)
+                               mode="phone", devices=devices, phone_link=phone_link)
         phone_server = uvicorn.Server(uvicorn.Config(phone_app, host="0.0.0.0", port=args.phone_port,
                                                      ssl_certfile=str(cert), ssl_keyfile=str(key), log_level="warning"))
         import threading
 
         threading.Thread(target=phone_server.run, name="phones", daemon=True).start()
+        keep_awake()
+        urls = phone_link["urls"]()
         logger.info("Phone access on %s (certificate %s…). Pair phones in Settings -> Phones.",
-                    phone_link["url"], fp[:16])
+                    ", ".join(urls) or "no network yet", fp[:16])
+        if not any(u.startswith("https://100.") for u in urls):
+            logger.info("Tailscale isn't running: phones can reach the vault on this Wi-Fi only. "
+                        "For anywhere access see README -> Phone app -> From anywhere.")
     app = create_app(store, embedder, tokenizer, llm, database_label=db_label, search_method=args.search,
                      accounts=accounts, devices=devices, phone_link=phone_link)
     if accounts.setup_needed():

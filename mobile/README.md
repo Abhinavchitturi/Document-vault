@@ -27,7 +27,13 @@ the Mac, in `data/tls/`), and a one-time code. The app then:
 - swaps the code for its own random access key, kept in the iOS Keychain / Android Keystore.
 
 Remove a phone any time in the Mac's **Settings → Phones**; resetting someone's password also
-unpairs their phones. If the Mac's address changes (new router), pair again.
+unpairs their phones.
+
+The QR code lists every address the Mac has: its Wi-Fi address and, if Tailscale is running,
+its Tailscale address (a private tunnel, so the phone works from anywhere while the Mac is on).
+The app tries them in order, keeps the one that answers, and refreshes the list each time it
+connects, so a new Wi-Fi address doesn't strand it. The certificate stays the same on every
+network.
 
 The app locks with Face ID / Touch ID / fingerprint (the phone's own lock, with its passcode as
 fallback) when opened and after 2 minutes in the background.

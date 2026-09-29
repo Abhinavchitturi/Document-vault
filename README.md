@@ -114,10 +114,28 @@ Start the vault with phone access, then pair each phone once:
 python -m backend.api.app --phones
 ```
 Mac: **Settings → Phones → Pair a phone** shows a QR code. Phone: open the Document Vault app →
-**Scan pairing code**. The phone must be on the same Wi-Fi. Phones connect over HTTPS on port
-8443 to a certificate made on this Mac; the app is locked to that exact certificate, and only
-paired phones are served (no web pages or password sign-in on the network). Remove a phone in
-Settings → Phones. How to install the app on an iPhone or Android phone: [mobile/README.md](mobile/README.md).
+**Scan pairing code**. Phones connect over HTTPS on port 8443 to a certificate made on this Mac;
+the app is locked to that exact certificate, and only paired phones are served (no web pages or
+password sign-in on the network). Remove a phone in Settings → Phones. While it serves phones,
+the vault keeps the Mac from going to sleep (it can still sleep when you close a MacBook's lid).
+How to install the app: [mobile/README.md](mobile/README.md).
+
+**Near the Mac, no internet needed**: the phone and Mac on the same Wi-Fi (a router, even with
+the internet down, or the phone's hotspot with mobile data off).
+
+**From anywhere (another city or state)**: a private tunnel, [Tailscale](https://tailscale.com)
+(free personal plan). It links your own devices with WireGuard encryption; nothing is opened to
+the public internet, and Tailscale's servers only introduce the devices, they can't read the traffic.
+1. Mac: install Tailscale (App Store or tailscale.com/download) and sign in.
+2. Each Android phone: install Tailscale from the Play Store and sign in to the **same** Tailscale
+   account (or accept an invite to it), and leave it connected.
+3. Restart the vault with `--phones` and pair (or re-pair) the phones: the QR code now includes
+   the Mac's Tailscale address. The app tries the home Wi-Fi address first, then the tunnel, and
+   remembers whichever answers.
+
+The catch: the Mac at home must be switched on, awake and running the vault at that moment. If it
+isn't, the app says it can't reach the vault. Phone uploads are stored on the Mac, in that
+person's account (the phone keeps no copy).
 
 ## Family accounts (Phase 6)
 - **First visit**: *Set up your vault*. Your name is filled in; choose a password (8+ characters).
