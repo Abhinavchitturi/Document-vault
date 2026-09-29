@@ -117,7 +117,7 @@ class Accounts:
 
     # ---------- signing in and out ----------
 
-    def _throttle(self, keys: list[str]) -> None:
+    def throttle(self, keys: list[str]) -> None:
         cutoff = time.monotonic() - LOCKOUT
         with self._lock:
             for key in keys:
@@ -127,7 +127,7 @@ class Accounts:
                     minutes = max(1, round((recent[0] + LOCKOUT - time.monotonic()) / 60))
                     raise TooManyAttempts(f"Too many wrong passwords. Try again in {minutes} minutes.")
 
-    def _record_failure(self, keys: list[str]) -> None:
+    def record_failure(self, keys: list[str]) -> None:
         with self._lock:
             for key in keys:
                 self._failures.setdefault(key, []).append(time.monotonic())
@@ -144,18 +144,19 @@ class Accounts:
         """(user, session token). Raises AuthError with a message that doesn't reveal which part was wrong."""
         name = " ".join((name or "").split())
         keys = [f"name:{name.lower()}", f"client:{client}"]
-        self._throttle(keys)
+        self.throttle(keys)
         with self.engine.connect() as conn:
             row = self._find(conn, name) if name else None
         if not verify_password(password or "", row.password_hash if row else None):
-            self._record_failure(keys)
+            self.record_failure(keys)
             raise AuthError("Wrong name or password.")
         with self._lock:
             for key in keys:
                 self._failures.pop(key, None)
-        return _public(row), self._new_session(row.id)
+        return _public(row), self.start_session(row.id)
 
-    def _new_session(self, user_id: int) -> str:
+    def start_session(self, user_id: int) -> str:
+        """A new signed-in session (after a password or passkey check); returns the cookie token."""
         token = secrets.token_urlsafe(32)
         now = _now()
         with self.engine.begin() as conn:
@@ -191,11 +192,11 @@ class Accounts:
             raise AuthError(str(e)) from e
 
     def change_password(self, user_id: int, current: str, new: str, keep_token: str | None = None) -> None:
-        self._throttle([f"user:{user_id}"])
+        self.throttle([f"user:{user_id}"])
         with self.engine.connect() as conn:
             stored = conn.execute(select(users.c.password_hash).where(users.c.id == user_id)).scalar()
         if not verify_password(current or "", stored):
-            self._record_failure([f"user:{user_id}"])
+            self.record_failure([f"user:{user_id}"])
             raise AuthError("Your current password is wrong.")
         self.set_password(user_id, new, keep_token=keep_token)
 

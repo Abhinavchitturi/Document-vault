@@ -50,7 +50,7 @@ def test_nothing_is_readable_before_signing_in(tmp_path):
         assert getattr(client, method)(path).status_code == 401, path
     assert client.get("/").status_code == 200  # the page itself holds no data; it shows the sign-in screen
     status = client.get("/api/auth/status").json()
-    assert status == {"user": None, "setup_needed": True, "suggested_name": "abhinav"}
+    assert (status["user"], status["setup_needed"], status["suggested_name"]) == (None, True, "abhinav")
 
 
 def test_setup_adopts_the_existing_owner_and_happens_once(tmp_path):

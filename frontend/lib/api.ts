@@ -30,6 +30,20 @@ export interface AuthStatus {
   user: User | null;
   setup_needed: boolean;
   suggested_name: string | null;
+  passkeys_available: boolean; // false when opened as 127.0.0.1: passkeys need "localhost"
+  passkey_hint: string | null;
+}
+
+export interface Passkey {
+  id: string;
+  name: string;
+  created_at: string;
+  last_used_at: string | null;
+}
+
+interface Ceremony {
+  ceremony: string;
+  options: string; // WebAuthn options as JSON text
 }
 
 export interface Info {
@@ -138,6 +152,15 @@ export const api = {
   logout: () => fetch("/api/auth/logout", { method: "POST" }).then((r) => json<{ signed_out: boolean }>(r)),
   changePassword: (current_password: string, new_password: string) =>
     postJson("/api/auth/password", { current_password, new_password }).then((r) => json<{ changed: boolean }>(r)),
+  passkeyLoginOptions: () => fetch("/api/auth/passkey/options", { method: "POST" }).then((r) => json<Ceremony>(r)),
+  passkeyLogin: (ceremony: string, credential: unknown) =>
+    postJson("/api/auth/passkey", { ceremony, credential }).then((r) => json<{ user: User }>(r)),
+  passkeys: () => fetch("/api/passkeys").then((r) => json<Passkey[]>(r)),
+  passkeyAddOptions: () => fetch("/api/passkeys/options", { method: "POST" }).then((r) => json<Ceremony>(r)),
+  addPasskey: (ceremony: string, credential: unknown, name: string) =>
+    postJson("/api/passkeys", { ceremony, credential, name }).then((r) => json<{ id: string; name: string }>(r)),
+  removePasskey: (id: string) =>
+    fetch(`/api/passkeys/${encodeURIComponent(id)}`, { method: "DELETE" }).then((r) => json<{ removed: string }>(r)),
   members: () => fetch("/api/users").then((r) => json<Member[]>(r)),
   addMember: (name: string, password: string, is_admin: boolean) =>
     postJson("/api/users", { name, password, is_admin }).then((r) => json<User>(r)),

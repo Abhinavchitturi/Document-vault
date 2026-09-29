@@ -21,7 +21,7 @@ and the privacy decisions.
 | 3 | Web application | ✅ React + Next.js: Login, Dashboard, Chat, Documents, Upload, Settings |
 | 4 | OCR | ✅ Photos and scanned PDFs: auto-rotated, cleaned up, answers highlighted on the scan, blurry scans flagged |
 | 5 | Better retrieval (BM25 + vector) | ✅ Hybrid search: meaning (vector) + exact words and numbers (BM25), fused; exact ID matches first |
-| 6 | Authentication | ✅ Password sign-in, one account per family member, each sees only their own documents; admin adds members and resets passwords |
+| 6 | Authentication | ✅ Password and passkey (Touch ID / Face ID / fingerprint) sign-in, one account per family member, each sees only their own documents; admin adds members and resets passwords |
 | 7–13 | Mobile, classification, expiry, reminders, security, sharing, deployment | ⏳ |
 
 ## Privacy
@@ -72,7 +72,7 @@ that everything works offline.
 ```bash
 python -m backend.api.app
 ```
-Then open http://127.0.0.1:8000. One process serves both the pages and the API; Node is only
+Then open http://localhost:8000 (use `localhost`, not `127.0.0.1`: passkeys only work there). One process serves both the pages and the API; Node is only
 needed to build the pages.
 
 | Page | What it's for |
@@ -112,6 +112,13 @@ Where things live:
   You become the **admin**, and your existing documents stay yours.
 - **Add family members**: Settings → Family members → *Add a family member*. Tell them the password;
   they can change it in Settings → You. Each person only sees and searches their own documents.
+- **Passkeys (Touch ID / Face ID / fingerprint)**: Settings → You → *Add a passkey*, then use
+  *Sign in with Touch ID or fingerprint* on the sign-in screen. Open the vault as
+  **http://localhost:8000**: browsers don't allow passkeys on `127.0.0.1` (the sign-in screen links
+  to the right address). Only the device's public key is stored; your fingerprint never leaves it.
+  Mac passkeys sync to your iPhone through iCloud Keychain. On a Mac without Touch ID, Chrome can
+  use your phone: choose *Use a phone or tablet* and scan the QR code. Signing in to the vault
+  *from* a phone's browser needs the HTTPS address that Phase 13 adds.
 - **Forgotten password**: the admin sets a new one (Settings → Family members → *Reset password*).
   That person is signed out everywhere.
 - **Everyone locked out** (e.g. the admin forgot theirs): from a terminal on this computer
@@ -217,7 +224,7 @@ Layout:
 | `backend/embeddings/` | Snowflake Arctic Embed M v1.5; offline mode once downloaded |
 | `backend/database/` | PostgreSQL schema (`users`, `documents`, `document_chunks`) and connection |
 | `backend/vector_store/` | The vault: records in the database, vectors in FAISS, original files on disk |
-| `backend/auth/` | Sign-in: password hashing (`passwords.py`), accounts and sessions (`accounts.py`), terminal tool (`cli.py`) |
+| `backend/auth/` | Sign-in: password hashing (`passwords.py`), accounts and sessions (`accounts.py`), passkeys (`passkeys.py`), terminal tool (`cli.py`) |
 | `backend/retriever/` | Question → passages: hybrid fusion (`retriever.py`), keyword search (`bm25.py`) |
 | `backend/llm/` | Local Ollama client and the answer-with-citations prompt |
 | `backend/viewer/` | Finds the passage and the answer's facts on a page (PDF boxes, Word/text spans) |

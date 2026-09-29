@@ -2,6 +2,7 @@
 fastapi
 uvicorn[standard]
 python-multipart  # file uploads
+webauthn>=2.0     # passkeys: Touch ID / Face ID / fingerprint sign-in (Duo's py_webauthn)
 
 # Embeddings and vector search (all run on this computer)
 sentence-transformers

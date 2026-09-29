@@ -17,7 +17,7 @@ Endpoints:
     POST   /api/ask                       the same answer in one response (scripts, tests)
 
 Usage:
-    python -m backend.api.app                 # then open http://127.0.0.1:8000
+    python -m backend.api.app                 # then open http://localhost:8000 (passkeys need "localhost")
     python -m backend.api.app --llm-model gemma2:9b
 
 Answers come from a local model through Ollama (see backend/llm/ollama.py); if
@@ -52,6 +52,7 @@ from fastapi.responses import FileResponse, JSONResponse, Response, StreamingRes
 from pydantic import BaseModel, Field
 
 from backend.auth.accounts import SESSION_DAYS, Accounts, AuthError, TooManyAttempts
+from backend.auth.passkeys import Passkeys
 from backend.llm.answer import LLM, answer_question, finalize, stream_answer
 from backend.llm.ollama import LLMUnavailableError
 from backend.retriever.retriever import METHODS, Retriever
@@ -131,6 +132,12 @@ class PasswordReset(BaseModel):
     new_password: str = Field(..., max_length=500)
 
 
+class PasskeyResponse(BaseModel):
+    ceremony: str = Field(..., max_length=100)
+    credential: dict  # the browser's PublicKeyCredential, as JSON
+    name: str | None = Field(None, max_length=100)
+
+
 class NewMember(BaseModel):
     name: str = Field(..., max_length=100)
     password: str = Field(..., max_length=500)
@@ -138,7 +145,8 @@ class NewMember(BaseModel):
 
 
 SESSION_COOKIE = "vault_session"
-PUBLIC_PATHS = {"/api/auth/status", "/api/auth/login", "/api/auth/setup", "/api/auth/logout"}
+PUBLIC_PATHS = {"/api/auth/status", "/api/auth/login", "/api/auth/setup", "/api/auth/logout",
+                "/api/auth/passkey/options", "/api/auth/passkey"}
 
 
 def current_user(request: Request) -> dict:
@@ -204,10 +212,12 @@ def create_app(
     database_label: str = "",
     search_method: str = "hybrid",
     accounts: Accounts | None = None,
+    passkey_hosts: tuple[str, ...] = ("localhost",),
 ) -> FastAPI:
     """`store` is any view of the vault; each request works on the signed-in person's own view."""
     app = FastAPI(title="Secure Digital Document Vault", docs_url=None, redoc_url=None, openapi_url=None)
     accounts = accounts or Accounts(store.engine)
+    keys = Passkeys(store.engine, passkey_hosts)
     retrievers: dict[tuple[int, str], Retriever] = {}
 
     def vault_of(user: dict) -> DocumentStore:
@@ -243,7 +253,13 @@ def create_app(
     def auth_status(request: Request) -> dict:
         user = accounts.user_for_token(request.cookies.get(SESSION_COOKIE))
         setup = accounts.setup_needed()
-        return {"user": user, "setup_needed": setup, "suggested_name": accounts.suggested_name() if setup else None}
+        try:
+            keys.site(request.url.scheme, request.headers.get("host", ""))
+            passkey_hint = None
+        except AuthError as e:
+            passkey_hint = str(e)
+        return {"user": user, "setup_needed": setup, "suggested_name": accounts.suggested_name() if setup else None,
+                "passkeys_available": passkey_hint is None, "passkey_hint": passkey_hint}
 
     @app.post("/api/auth/setup")
     def auth_setup(req: SetupRequest, request: Request, response: Response) -> dict:
@@ -267,6 +283,57 @@ def create_app(
             raise HTTPException(401, str(e)) from e
         _set_cookie(request, response, token)
         return {"user": user}
+
+    def _site(request: Request) -> tuple[str, str]:
+        try:
+            return keys.site(request.url.scheme, request.headers.get("host", ""))
+        except AuthError as e:
+            raise HTTPException(400, str(e)) from e
+
+    @app.post("/api/auth/passkey/options")
+    def passkey_login_options(request: Request) -> dict:
+        return keys.login_options(*_site(request))
+
+    @app.post("/api/auth/passkey")
+    def passkey_login(req: PasskeyResponse, request: Request, response: Response) -> dict:
+        throttle = [f"client:{_client(request)}"]
+        try:
+            accounts.throttle(throttle)
+            user = keys.login(req.ceremony, req.credential)
+        except TooManyAttempts as e:
+            raise HTTPException(429, str(e)) from e
+        except AuthError as e:
+            accounts.record_failure(throttle)
+            logger.warning("Failed passkey sign-in from %s: %s", _client(request), e)
+            raise HTTPException(401, str(e)) from e
+        _set_cookie(request, response, accounts.start_session(user["id"]))
+        return {"user": user}
+
+    @app.get("/api/passkeys")
+    def list_passkeys(user: dict = Depends(current_user)) -> list[dict]:
+        return keys.list_for(user["id"])
+
+    @app.post("/api/passkeys/options")
+    def passkey_add_options(request: Request, user: dict = Depends(current_user)) -> dict:
+        try:
+            return keys.registration_options(user, *_site(request))
+        except AuthError as e:
+            raise HTTPException(400, str(e)) from e
+
+    @app.post("/api/passkeys")
+    def passkey_add(req: PasskeyResponse, user: dict = Depends(current_user)) -> dict:
+        try:
+            added = keys.register(user, req.ceremony, req.credential, req.name or "Passkey")
+        except AuthError as e:
+            raise HTTPException(400, str(e)) from e
+        logger.info("%s added a passkey (%s)", user["name"], added["name"])
+        return added
+
+    @app.delete("/api/passkeys/{passkey_id}")
+    def passkey_remove(passkey_id: str, user: dict = Depends(current_user)) -> dict:
+        if not keys.remove(user["id"], passkey_id):
+            raise HTTPException(404, "passkey not found")
+        return {"removed": passkey_id}
 
     @app.post("/api/auth/logout")
     def auth_logout(request: Request, response: Response) -> dict:
@@ -636,9 +703,9 @@ def main() -> None:
     app = create_app(store, embedder, HFTokenizer(embedder.model_name), llm, database_label=db_label,
                      search_method=args.search, accounts=accounts)
     if accounts.setup_needed():
-        logger.info("First start with sign-in: open http://127.0.0.1:%d and choose your password.", args.port)
+        logger.info("First start with sign-in: open http://localhost:%d and choose your password.", args.port)
     else:
-        logger.info("%d family members. Answers: %s. Open http://127.0.0.1:%d",
+        logger.info("%d family members. Answers: %s. Open http://localhost:%d",
                     len(accounts.list_users()), llm.name if llm else "off", args.port)
     uvicorn.run(app, host="127.0.0.1", port=args.port)
 

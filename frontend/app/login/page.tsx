@@ -5,6 +5,7 @@ import { useEffect, useState } from "react";
 import Icon from "@/components/Icon";
 import ThemeToggle from "@/components/ThemeToggle";
 import { api, type AuthStatus } from "@/lib/api";
+import { cancelled, passkeysSupported, signWithPasskey } from "@/lib/passkey";
 
 const MIN_PASSWORD = 8;
 
@@ -33,6 +34,22 @@ export default function LoginPage() {
   }, [router]);
 
   const setup = status?.setup_needed ?? false;
+  const canPasskey = !setup && !!status?.passkeys_available && passkeysSupported();
+
+  const withPasskey = async () => {
+    setBusy(true);
+    setError(null);
+    try {
+      const start = await api.passkeyLoginOptions();
+      const credential = await signWithPasskey(start.options);
+      await api.passkeyLogin(start.ceremony, credential);
+      router.replace(next());
+    } catch (err) {
+      if (!cancelled(err)) setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setBusy(false);
+    }
+  };
   const mismatch = setup && confirm.length > 0 && confirm !== password;
   const tooShort = setup && password.length > 0 && password.length < MIN_PASSWORD;
 
@@ -66,17 +83,30 @@ export default function LoginPage() {
         </p>
         {error && <div className="notice bad" role="alert" style={{ marginTop: 20, textAlign: "left" }}><Icon name="warn" />{error}</div>}
         {!status && !error && <p className="muted" style={{ margin: "28px 0" }}><span className="spinner" /></p>}
+        {canPasskey && (
+          <>
+            <button className="btn primary passkey-btn" type="button" onClick={withPasskey} disabled={busy} autoFocus>
+              <Icon name="fingerprint" size={18} />Sign in with Touch ID or fingerprint
+            </button>
+            <div className="or"><span>or use your password</span></div>
+          </>
+        )}
+        {status && !setup && !status.passkeys_available && status.passkey_hint && (
+          <p className="fine" style={{ marginTop: 16 }}>
+            <Icon name="fingerprint" size={11} /> Want Touch ID? <a href={`http://localhost:${window.location.port || "80"}/login/`}>Open the vault as localhost</a>.
+          </p>
+        )}
         {status && (
-          <form className="login-form" onSubmit={submit}>
+          <form className={`login-form${canPasskey ? " after-passkey" : ""}`} onSubmit={submit}>
             <label>
               <span>Your name</span>
               <input className="input" value={name} onChange={(e) => setName(e.target.value)} maxLength={60}
-                     autoComplete="username" autoCapitalize="none" required autoFocus={!name} />
+                     autoComplete="username" autoCapitalize="none" required autoFocus={!name && !canPasskey} />
             </label>
             <label>
               <span>{setup ? "New password" : "Password"}</span>
               <input className="input" type="password" value={password} onChange={(e) => setPassword(e.target.value)}
-                     autoComplete={setup ? "new-password" : "current-password"} required autoFocus={!!name}
+                     autoComplete={setup ? "new-password" : "current-password"} required autoFocus={!!name && !canPasskey}
                      aria-invalid={tooShort || undefined} />
               {tooShort && <small className="field-note">At least {MIN_PASSWORD} characters.</small>}
             </label>
@@ -96,7 +126,7 @@ export default function LoginPage() {
         )}
         <p className="fine">
           <Icon name="lock" size={11} /> Documents never leave this computer. Each family member signs in with their own
-          password and sees only their own documents.{!setup && status && " Forgot yours? Ask the admin to reset it in Settings."}
+          password or passkey and sees only their own documents.{!setup && status && " Forgot yours? Ask the admin to reset it in Settings."}
         </p>
       </div>
     </main>

@@ -353,3 +353,14 @@ mark { background: var(--mark); color: inherit; border-radius: 3px; padding: 0 1
 .members .who span { font-size: 12.5px; color: var(--muted); }
 .members form { display: flex; gap: 8px; flex-wrap: wrap; }
 .setting-row:has(.stack-form) { align-items: flex-start; }
+
+/* Passkeys */
+.passkey-btn { width: 100%; justify-content: center; padding: 12px; margin-top: 24px; font-size: 15px; }
+.or { display: flex; align-items: center; gap: 10px; color: var(--faint); font-size: 12.5px; margin: 18px 0 0; }
+.or::before, .or::after { content: ""; flex: 1; border-top: 1px solid var(--border); }
+.login-form.after-passkey { margin-top: 14px; }
+.passkey-list { list-style: none; margin: 0 0 10px; padding: 0; display: grid; gap: 8px; }
+.passkey-list li { display: flex; align-items: center; gap: 10px; padding: 10px 12px; border: 1px solid var(--border); border-radius: 12px; }
+.passkey-list .meta { flex: 1; min-width: 0; }
+.passkey-list .meta strong { display: block; font-size: 14px; }
+.passkey-list .meta span { font-size: 12.5px; color: var(--muted); }

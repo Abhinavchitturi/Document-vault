@@ -4,7 +4,8 @@ import { useEffect, useState } from "react";
 import AppShell, { useVault } from "@/components/AppShell";
 import Icon from "@/components/Icon";
 import { useTheme, type Theme } from "@/components/ThemeToggle";
-import { api, type Member, type Settings } from "@/lib/api";
+import { api, formatDate, type Member, type Passkey, type Settings } from "@/lib/api";
+import { cancelled, createPasskey, deviceName, passkeysSupported } from "@/lib/passkey";
 
 const SEARCH_LABEL: Record<string, string> = {
   hybrid: "Hybrid: meaning + exact words and numbers",
@@ -75,6 +76,7 @@ function SettingsView() {
               <button className="btn primary" type="submit" disabled={saving || !name.trim() || name.trim() === s?.owner}>Save</button>
             </form>
           </div>
+          <Passkeys />
           <PasswordChange onDone={(text) => setMessage({ ok: true, text })} />
         </section>
 
@@ -137,6 +139,89 @@ function SettingsView() {
             <Icon name="lock" size={11} /> Everything stays on this computer: no document text is sent anywhere.
           </p>
         </section>
+      </div>
+    </div>
+  );
+}
+
+function Passkeys() {
+  const [keys, setKeys] = useState<Passkey[] | null>(null);
+  const [available, setAvailable] = useState<{ ok: boolean; hint: string | null }>({ ok: true, hint: null });
+  const [busy, setBusy] = useState(false);
+  const [message, setMessage] = useState<{ ok: boolean; text: string } | null>(null);
+
+  const load = () => api.passkeys().then(setKeys).catch((e) => setMessage({ ok: false, text: e.message }));
+  useEffect(() => {
+    load();
+    api.authStatus().then((s) => setAvailable({ ok: s.passkeys_available && passkeysSupported(), hint: s.passkey_hint }));
+  }, []);
+
+  const add = async () => {
+    setBusy(true);
+    setMessage(null);
+    try {
+      const start = await api.passkeyAddOptions();
+      const credential = await createPasskey(start.options);
+      const added = await api.addPasskey(start.ceremony, credential, deviceName());
+      setMessage({ ok: true, text: `Passkey added for ${added.name}. Next time, sign in with Touch ID or your fingerprint.` });
+      load();
+    } catch (e) {
+      if (cancelled(e)) setMessage(null);
+      else setMessage({ ok: false, text: e instanceof DOMException && e.name === "InvalidStateError"
+        ? "This device already has a passkey for your account." : (e as Error).message });
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const remove = async (k: Passkey) => {
+    if (!window.confirm(`Remove the passkey "${k.name}"? You can still sign in with your password.`)) return;
+    try {
+      await api.removePasskey(k.id);
+      setMessage({ ok: true, text: `Removed "${k.name}". Also delete it from the device's saved passwords if you like.` });
+      load();
+    } catch (e) {
+      setMessage({ ok: false, text: (e as Error).message });
+    }
+  };
+
+  return (
+    <div className="setting-row">
+      <div className="label">
+        <strong>Passkeys</strong>
+        <span>Sign in with Touch ID, Face ID or your phone&apos;s fingerprint instead of typing your password.
+          Your fingerprint never leaves the device.</span>
+      </div>
+      <div className="stack-form">
+        {message && <div className={`notice ${message.ok ? "good" : "bad"}`} role="status"><Icon name={message.ok ? "ok" : "warn"} />{message.text}</div>}
+        {keys && keys.length > 0 && (
+          <ul className="passkey-list">
+            {keys.map((k) => (
+              <li key={k.id}>
+                <Icon name="fingerprint" size={18} />
+                <div className="meta">
+                  <strong>{k.name}</strong>
+                  <span>Added {formatDate(k.created_at)}{k.last_used_at ? ` · last used ${formatDate(k.last_used_at)}` : " · not used yet"}</span>
+                </div>
+                <button className="icon-btn danger" type="button" aria-label={`Remove passkey ${k.name}`} title="Remove" onClick={() => remove(k)}>
+                  <Icon name="trash" />
+                </button>
+              </li>
+            ))}
+          </ul>
+        )}
+        {available.ok ? (
+          <div className="row">
+            <button className="btn primary" type="button" onClick={add} disabled={busy}>
+              <Icon name="fingerprint" size={15} />{busy ? "Waiting for Touch ID…" : "Add a passkey"}
+            </button>
+          </div>
+        ) : (
+          <p className="muted" style={{ margin: 0, fontSize: 13 }}>
+            {available.hint ?? "This browser doesn't support passkeys."}{" "}
+            {available.hint && <a href={`http://localhost:${window.location.port || "80"}/settings/`}>Switch to localhost</a>}
+          </p>
+        )}
       </div>
     </div>
   );
