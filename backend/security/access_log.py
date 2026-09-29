@@ -36,6 +36,9 @@ ACTIONS = {
     "document_opened": "Opened a document",
     "document_changed": "Changed a document's details",
     "document_deleted": "Removed a document",
+    "document_shared": "Shared a document",
+    "document_unshared": "Stopped sharing a document",
+    "share_left": "Removed a shared document from their list",
     "backup_made": "Made an encrypted backup",
 }
 

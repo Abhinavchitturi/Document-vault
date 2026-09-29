@@ -49,6 +49,11 @@ export interface Device {
   last_seen_at: string | null;
 }
 
+export interface Person {
+  id: number;
+  name: string;
+}
+
 export interface Upcoming {
   doc_id: string;
   filename: string;
@@ -58,6 +63,8 @@ export interface Upcoming {
   days_left: number;
   amount: string | null;
   issuer: string | null;
+  owner: string;
+  mine: boolean;
 }
 
 export interface Reminder {
@@ -125,6 +132,8 @@ export interface VaultDocument {
   filename: string;
   category: Category;
   owner: string;
+  mine: boolean; // false: someone shared it with you (Phase 12): you can look, not change
+  shared_with: Person[]; // your documents: who else can see them
   pages: number;
   ocr_pages: number;
   ocr_confidence: number | null; // worst OCR page, 0-100; null when nothing was OCR'd
@@ -292,6 +301,15 @@ export const api = {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(changes),
     }).then((r) => json<Settings>(r)),
+  family: () => fetch("/api/family").then((r) => json<Person[]>(r)),
+  share: (docId: string, user_ids: number[]) =>
+    fetch(`/api/documents/${encodeURIComponent(docId)}/shares`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ user_ids }),
+    }).then((r) => json<VaultDocument>(r)),
+  leaveShare: (docId: string) =>
+    fetch(`/api/documents/${encodeURIComponent(docId)}/shares/me`, { method: "DELETE" }).then((r) => json<{ removed: string }>(r)),
   activity: (everyone = false) =>
     fetch(`/api/activity?everyone=${everyone}`).then((r) => json<{ entries: ActivityEntry[] }>(r)),
   /** The whole vault as one encrypted file, saved by the browser (admin only). */

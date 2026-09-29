@@ -13,7 +13,8 @@ before Phase 11 is encrypted in place the first time it is opened.
 `root` defaults to data/index/ (git-ignored: it holds personal documents).
 
 Each DocumentStore is one family member's view: searches and listings only see that
-owner's documents. Views of the same vault share one database connection, vector index
+person's own documents and those shared with them (Phase 12; only the owner can change,
+re-share or delete a document). Views of the same vault share one database connection, vector index
 and lock (the _Vault below); `store.for_user(user_id)` gives another member's view.
 
 The FAISS index is exact (IndexFlatIP): a family has hundreds of pages, not
@@ -43,7 +44,7 @@ import numpy as np
 from sqlalchemy import delete, func, insert, select
 
 from backend.database.db import connect, fallback_owner
-from backend.database.schema import document_chunks, documents, users, vault_meta
+from backend.database.schema import document_chunks, document_shares, documents, users, vault_meta
 from backend.parser.ocr import OcrPage, ocr_sidecar
 from backend.security import keys
 from backend.security.crypto import Cipher, DecryptError, is_sealed, new_key
@@ -254,7 +255,11 @@ class DocumentStore:
             self._set_meta(conn, "owner_named_by", "person")  # from now on, keep this name
         self.owner = new_name
         for doc in self.documents.values():
-            doc["owner"] = new_name
+            if doc["mine"]:
+                doc["owner"] = new_name
+        for uid, view in list(self._vault.views.items()):  # "shared by <name>" elsewhere
+            if view is not self:
+                view._load()
         return new_name
 
     def _ensure_user(self, name: str) -> int:
@@ -292,10 +297,21 @@ class DocumentStore:
     def _load(self) -> None:
         open_text = self.cipher.open_text
         with self.engine.connect() as conn:
-            rows = conn.execute(select(documents).where(documents.c.owner_id == self.owner_id)).mappings().all()
+            shared_with_me = select(document_shares.c.document_id).where(document_shares.c.user_id == self.owner_id)
+            visible = (documents.c.owner_id == self.owner_id) | documents.c.id.in_(shared_with_me)
+            rows = conn.execute(select(documents, users.c.name.label("owner_name"))
+                                .join(users, users.c.id == documents.c.owner_id).where(visible)).mappings().all()
+            recipients: dict[str, list[dict]] = {}
+            for r in conn.execute(select(document_shares.c.document_id, users.c.id, users.c.name)
+                                  .join(users, users.c.id == document_shares.c.user_id)
+                                  .join(documents, documents.c.id == document_shares.c.document_id)
+                                  .where(documents.c.owner_id == self.owner_id).order_by(users.c.name)).all():
+                recipients.setdefault(r.document_id, []).append({"id": r.id, "name": r.name})
             self.documents = {
                 r["id"]: {
-                    "doc_id": r["id"], "filename": open_text(r["name"]), "category": r["doc_type"], "owner": self.owner,
+                    "doc_id": r["id"], "filename": open_text(r["name"]), "category": r["doc_type"],
+                    "owner": r["owner_name"], "owner_id": r["owner_id"], "mine": r["owner_id"] == self.owner_id,
+                    "shared_with": recipients.get(r["id"], []),
                     "pages": r["pages"], "ocr_pages": r["ocr_pages"], "ocr_confidence": r["ocr_confidence"],
                     "category_source": r["category_source"], "category_confidence": r["category_confidence"],
                     **{f: (r[f].isoformat() if f in DATE_FACTS and r[f] else open_text(r[f]) if f in SEALED_FACTS else r[f])
@@ -309,7 +325,7 @@ class DocumentStore:
             chunk_rows = conn.execute(
                 select(document_chunks)
                 .join(documents, documents.c.id == document_chunks.c.document_id)
-                .where(documents.c.owner_id == self.owner_id)
+                .where(visible)
                 .order_by(document_chunks.c.id)
             ).mappings().all()
         self.chunks = [
@@ -322,6 +338,64 @@ class DocumentStore:
             for r in chunk_rows
         ]
         self.revision += 1
+
+    def _refresh_others(self, user_ids=None, doc_id: str | None = None) -> None:
+        """Other members' open views that show a changed document (or the given people) reload it."""
+        for uid, view in list(self._vault.views.items()):
+            if view is not self and ((user_ids and uid in user_ids) or (doc_id and doc_id in view.documents)):
+                view._load()
+
+    def _own(self, doc_id: str) -> dict:
+        """A document this person may change: their own. Shared ones can only be looked at."""
+        doc = self.documents.get(doc_id)
+        if doc is None:
+            raise KeyError(doc_id)
+        if not doc["mine"]:
+            raise PermissionError(f"Only {doc['owner']} can change this document.")
+        return doc
+
+    def own_documents(self) -> list[dict]:
+        return [d for d in self.documents.values() if d["mine"]]
+
+    # ---------- sharing (Phase 12) ----------
+
+    def share(self, doc_id: str, user_ids: list[int]) -> dict:
+        """Share one of your documents with exactly these family members (an empty list: nobody)."""
+        with self._lock:
+            doc = self._own(doc_id)
+            wanted = {int(u) for u in user_ids} - {self.owner_id}
+            with self.engine.begin() as conn:
+                known = set(conn.execute(select(users.c.id).where(users.c.id.in_(wanted))).scalars()) if wanted else set()
+                if wanted - known:
+                    raise ValueError("No such family member.")
+                before = set(conn.execute(select(document_shares.c.user_id)
+                                          .where(document_shares.c.document_id == doc_id)).scalars())
+                conn.execute(delete(document_shares).where(document_shares.c.document_id == doc_id,
+                                                           document_shares.c.user_id.not_in(wanted)))
+                now = datetime.now(timezone.utc)
+                for uid in wanted - before:
+                    conn.execute(insert(document_shares).values(document_id=doc_id, user_id=uid, shared_at=now))
+                names = conn.execute(select(users.c.id, users.c.name).where(users.c.id.in_(wanted))
+                                     .order_by(users.c.name)).all() if wanted else []
+            doc["shared_with"] = [{"id": r.id, "name": r.name} for r in names]
+            self._refresh_others(user_ids=before ^ wanted)
+            self.revision += 1
+            return doc
+
+    def leave(self, doc_id: str) -> bool:
+        """Take a document someone shared with you off your list (theirs is untouched)."""
+        with self._lock:
+            doc = self.documents.get(doc_id)
+            if doc is None or doc["mine"]:
+                return False
+            with self.engine.begin() as conn:
+                conn.execute(delete(document_shares).where(document_shares.c.document_id == doc_id,
+                                                           document_shares.c.user_id == self.owner_id))
+            self._load()
+            owner_view = self._vault.views.get(doc["owner_id"])
+            if owner_view is not None:
+                owner_view._load()
+            return True
 
     def _save_index(self) -> None:
         index_path = self.root / "vectors.faiss"
@@ -503,7 +577,8 @@ class DocumentStore:
                 self.index.add_with_ids(vectors, np.array([c["vid"] for c in chunks], dtype=np.int64))
                 self._save_index()  # before commit: if this fails, the rows roll back
             self.model = model
-            self.documents[document["doc_id"]] = {**document, "owner": self.owner}
+            self.documents[document["doc_id"]] = {**document, "owner": self.owner, "owner_id": self.owner_id,
+                                                  "mine": True, "shared_with": []}
             self.chunks.extend(chunks)
             self.revision += 1
 
@@ -513,9 +588,7 @@ class DocumentStore:
         (the category is part of the embedded text), in the order of `chunks_of(doc_id)`.
         source="person": someone chose it, so automatic re-sorting leaves it alone from now on."""
         with self._lock:
-            doc = self.documents.get(doc_id)
-            if doc is None:
-                raise KeyError(doc_id)
+            doc = self._own(doc_id)
             with self.engine.begin() as conn:
                 conn.execute(documents.update().where(documents.c.id == doc_id).values(
                     doc_type=category, category_source=source, category_confidence=confidence))
@@ -530,20 +603,20 @@ class DocumentStore:
                 if c["doc_id"] == doc_id:
                     c["category"] = category
             self.revision += 1
+            self._refresh_others(doc_id=doc_id)
             return doc
 
     def update_facts(self, doc_id: str, facts: dict, method: str) -> dict:
         """Set a document's key facts (Phase 9). method="person" when someone corrected them."""
         with self._lock:
-            doc = self.documents.get(doc_id)
-            if doc is None:
-                raise KeyError(doc_id)
+            doc = self._own(doc_id)
             values = {f: facts.get(f) for f in FACT_FIELDS if f != "facts_method" and f in facts}
             values["facts_method"] = method
             with self.engine.begin() as conn:
                 conn.execute(documents.update().where(documents.c.id == doc_id)
                              .values(**_fact_columns(values, self.cipher, fields=values.keys())))
             doc.update(values)
+            self._refresh_others(doc_id=doc_id)
             return doc
 
     def chunks_of(self, doc_id: str) -> list[dict]:
@@ -554,8 +627,11 @@ class DocumentStore:
             doc = self.documents.get(doc_id)
             if doc is None:
                 return False
+            if not doc["mine"]:
+                raise PermissionError(f"Only {doc['owner']} can delete this document.")
             removed = [c["vid"] for c in self.chunks if c["doc_id"] == doc_id]
             with self.engine.begin() as conn:
+                conn.execute(delete(document_shares).where(document_shares.c.document_id == doc_id))
                 conn.execute(delete(document_chunks).where(document_chunks.c.document_id == doc_id))
                 conn.execute(delete(documents).where(documents.c.id == doc_id))
             # Vectors go after the rows: a leftover vector with no row is ignored by search.
@@ -565,6 +641,7 @@ class DocumentStore:
             del self.documents[doc_id]
             self.chunks = [c for c in self.chunks if c["doc_id"] != doc_id]
             self.revision += 1
+            self._refresh_others(doc_id=doc_id)
             (self.files_dir / doc["stored_as"]).unlink(missing_ok=True)
             ocr_sidecar(self.files_dir / doc["stored_as"]).unlink(missing_ok=True)
             return True

@@ -37,7 +37,7 @@ class Info {
 class VaultDocument {
   VaultDocument({required this.id, required this.filename, required this.category, required this.pages,
       required this.ocrPages, required this.ocrConfidence, required this.sizeBytes, required this.addedAt,
-      this.needsReview = false, this.expiresOn, this.dueOn, this.amount, this.reference});
+      this.needsReview = false, this.expiresOn, this.dueOn, this.amount, this.reference, this.owner = '', this.mine = true});
 
   final String id;
   final String filename;
@@ -57,6 +57,10 @@ class VaultDocument {
   final String? amount;
   final String? reference;
 
+  /// Who it belongs to; mine == false: shared with this person (Phase 12), so they can look but not change it.
+  final String owner;
+  final bool mine;
+
   bool get hardToRead => ocrConfidence != null && ocrConfidence! < lowConfidence;
 
   factory VaultDocument.fromJson(Map<String, dynamic> j) => VaultDocument(
@@ -73,6 +77,8 @@ class VaultDocument {
         dueOn: DateTime.tryParse(j['due_on'] as String? ?? ''),
         amount: j['amount'] as String?,
         reference: j['reference'] as String?,
+        owner: j['owner'] as String? ?? '',
+        mine: j['mine'] as bool? ?? true,
       );
 }
 

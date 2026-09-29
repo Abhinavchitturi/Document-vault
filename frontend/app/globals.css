@@ -407,3 +407,8 @@ mark { background: var(--mark); color: inherit; border-radius: 3px; padding: 0 1
 @media (max-width: 560px) {
   .activity li { grid-template-columns: 1fr; gap: 2px; }
 }
+
+/* Documents → sharing (Phase 12) */
+.shared-line { display: flex; align-items: center; gap: 5px; margin-top: 4px; font-size: 12px; color: var(--muted); }
+.share-form { display: flex; flex-direction: column; gap: 10px; padding: 4px 0; }
+.share-people { display: flex; flex-wrap: wrap; gap: 8px 18px; }

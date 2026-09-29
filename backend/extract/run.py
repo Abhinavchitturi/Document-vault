@@ -23,7 +23,7 @@ def refresh(store, reader: FactsReader, apply: bool) -> list[dict]:
     report = []
     for user_id in user_ids:
         view = store.for_user(user_id)
-        for doc in list(view.documents.values()):
+        for doc in view.own_documents():  # shared ones are handled in their owner's turn
             if doc.get("facts_method") == "person":
                 continue
             chunks = sorted(view.chunks_of(doc["doc_id"]), key=lambda c: (c["page"], c["vid"]))

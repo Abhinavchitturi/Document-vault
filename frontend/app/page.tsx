@@ -110,7 +110,7 @@ function Dashboard() {
                   <FileIcon category={d.category} size={32} />
                   <div className="info">
                     <div className="name">{displayName(d.filename)}</div>
-                    <div className="meta">{CATEGORY_LABEL[d.category]} · added {formatDate(d.added_at)}</div>
+                    <div className="meta">{CATEGORY_LABEL[d.category]} · {d.mine ? "added" : `shared by ${d.owner}`} {formatDate(d.added_at)}</div>
                   </div>
                 </div>
               ))}

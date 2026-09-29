@@ -68,6 +68,24 @@ void main() {
     expect(find.text('Blurry Receipt.jpg'), findsNothing);
   });
 
+  testWidgets('a shared document says whose it is and is only taken off this list', (tester) async {
+    final vault = FakeVault();
+    await tester.pumpWidget(VaultApp(reminders: FakeScheduler(), storageDir: Directory.systemTemp.createTempSync('vault'), store: await pairedStore(), connect: (_) => vault));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Documents'));
+    await tester.pumpAndSettle();
+    expect(find.textContaining('shared by dad'), findsOneWidget);
+
+    await tester.tap(find.byTooltip('Remove from my list'));
+    await tester.pumpAndSettle();
+    expect(find.text('Remove from your list?'), findsOneWidget);
+    await tester.tap(find.text('Remove'));
+    await tester.pumpAndSettle();
+    expect(vault.left, ['d3']);
+    expect(find.text('House Insurance.pdf'), findsNothing);
+    expect(find.text('Electricity Bill 2026 08.pdf'), findsOneWidget); // own documents untouched
+  });
+
   testWidgets('a phone removed on the Mac goes back to pairing', (tester) async {
     final vault = FakeVault()..failWith = VaultException('This phone isn\'t paired', unpaired: true);
     final store = await pairedStore();

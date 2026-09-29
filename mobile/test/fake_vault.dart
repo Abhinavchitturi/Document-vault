@@ -22,6 +22,8 @@ class FakeVault implements VaultApi {
         ocrConfidence: null, sizeBytes: 20000, addedAt: DateTime(2026, 9, 1)),
     VaultDocument(id: 'd2', filename: 'Blurry Receipt.jpg', category: 'warranty', pages: 1, ocrPages: 1,
         ocrConfidence: 31, sizeBytes: 7000, addedAt: DateTime(2026, 9, 2)),
+    VaultDocument(id: 'd3', filename: 'House Insurance.pdf', category: 'insurance', pages: 2, ocrPages: 0,
+        ocrConfidence: null, sizeBytes: 50000, addedAt: DateTime(2026, 9, 3), owner: 'dad', mine: false),
   ];
 
   @override
@@ -39,6 +41,14 @@ class FakeVault implements VaultApi {
 
   @override
   Future<void> deleteDocument(String id) async => docs.removeWhere((d) => d.id == id);
+
+  final left = <String>[];
+
+  @override
+  Future<void> leaveShare(String id) async {
+    left.add(id);
+    docs.removeWhere((d) => d.id == id);
+  }
 
   @override
   Stream<ChatEvent> chat(String question, List<Map<String, String>> history) async* {

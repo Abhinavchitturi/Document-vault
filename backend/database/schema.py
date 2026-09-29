@@ -152,6 +152,15 @@ Index("ix_document_chunks_document_id", document_chunks.c.document_id)
 
 # Columns added after a table first shipped. create_all() never alters existing tables, so
 # connect() adds these to older vaults: (table, column, SQL type).
+document_shares = Table(  # Phase 12: a document its owner shared with another family member
+    "document_shares",
+    metadata,
+    Column("document_id", String(32), ForeignKey("documents.id", ondelete="CASCADE"), primary_key=True),
+    Column("user_id", Integer, ForeignKey("users.id", ondelete="CASCADE"), primary_key=True),
+    Column("shared_at", DateTime(timezone=True), nullable=False),
+)
+Index("ix_document_shares_user_id", document_shares.c.user_id)
+
 access_log = Table(
     "access_log",  # Phase 11: who signed in, opened, added or removed what, and when
     metadata,

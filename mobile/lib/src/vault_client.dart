@@ -48,6 +48,9 @@ abstract class VaultApi {
   Future<Info> info();
   Future<List<VaultDocument>> documents();
   Future<void> deleteDocument(String id);
+
+  /// Take a document someone shared with you off your list; the owner keeps it (Phase 12).
+  Future<void> leaveShare(String id);
   Stream<ChatEvent> chat(String question, List<Map<String, String>> history);
   Future<Highlights> highlights(String docId, int page, {String? chunkId, String? answer});
   Future<Uint8List> pageImage(String docId, int page);
@@ -202,6 +205,9 @@ class VaultClient implements VaultApi {
 
   @override
   Future<void> deleteDocument(String id) => _call('DELETE', '/api/documents/${Uri.encodeComponent(id)}');
+
+  @override
+  Future<void> leaveShare(String id) => _call('DELETE', '/api/documents/${Uri.encodeComponent(id)}/shares/me');
 
   @override
   Stream<ChatEvent> chat(String question, List<Map<String, String>> history) async* {
