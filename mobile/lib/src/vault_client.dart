@@ -99,6 +99,8 @@ class VaultClient implements VaultApi {
       throw VaultException("The Mac's certificate doesn't match the pairing code. Show a new QR code and try again.");
     } on _Unreachable {
       throw VaultException(_offline);
+    } on _Slow {
+      throw VaultException('The Mac is taking too long to answer. Try again in a moment.');
     } finally {
       if (client == null) http_.close();
     }
@@ -116,6 +118,10 @@ class VaultClient implements VaultApi {
       try {
         final res = await client.send(build(Uri.parse(url))).timeout(timeout);
         return (res, url);
+      } on TimeoutException {
+        // Connected (unreachable addresses fail within the 4 s connection timeout) but slow:
+        // the vault is busy, not missing; sending it again to the next address would only repeat it.
+        throw _Slow();
       } on HandshakeException {
         wrongCertificate = true; // some other device answered at this address: not our vault
       } on TlsException {
@@ -144,6 +150,8 @@ class VaultClient implements VaultApi {
           'If you replaced the Mac\'s certificate, pair this phone again.');
     } on _Unreachable {
       throw VaultException(_offline, offline: true);
+    } on _Slow {
+      throw VaultException("I'm not able to answer right now: the Mac is taking too long. Please try again in a moment.");
     }
   }
 
@@ -214,9 +222,12 @@ class VaultClient implements VaultApi {
     final body = {'question': question, 'history': history.length > 6 ? history.sublist(history.length - 6) : history};
     http.StreamedResponse res;
     try {
-      res = await _request(_simple('POST', '/api/chat', json: body), const Duration(seconds: 30));
+      // Generous: the first question after the Mac starts waits for the model to load.
+      res = await _request(_simple('POST', '/api/chat', json: body), const Duration(seconds: 90));
     } on VaultException catch (e) {
-      yield ErrorEvent(e.message);
+      yield ErrorEvent(e.offline
+          ? "I'm not able to answer right now: your Mac isn't reachable. Check that it's on and the vault is running."
+          : e.message);
       return;
     }
     if (res.statusCode != 200) {
@@ -276,6 +287,8 @@ class VaultClient implements VaultApi {
 class _WrongCertificate implements Exception {}
 
 class _Unreachable implements Exception {}
+
+class _Slow implements Exception {}
 
 /// Split the chat stream into events: one JSON object per line (NDJSON), arriving in pieces.
 Stream<ChatEvent> parseNdjson(Stream<List<int>> bytes) =>

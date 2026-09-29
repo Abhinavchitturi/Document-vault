@@ -14,6 +14,7 @@ interface Message {
   sources?: Source[];
   done?: boolean;
   error?: string;
+  errorDetail?: string; // the technical reason, shown small under the message
 }
 
 const SUGGESTIONS: [Category, string][] = [
@@ -114,12 +115,12 @@ function ChatView() {
           if (ev.type === "sources") update({ sources: ev.sources });
           else if (ev.type === "token") { text += ev.text; update({ text }); scrollDown(); }
           else if (ev.type === "done") update({ done: true });
-          else if (ev.type === "error") { update({ error: ev.message }); refresh(); }
+          else if (ev.type === "error") { update({ error: ev.message, errorDetail: ev.detail }); refresh(); }
         }
       }
     } catch (e) {
       if ((e as Error).name === "AbortError") update({ text: text || "Stopped.", done: true });
-      else update({ error: `Couldn't reach the vault: ${(e as Error).message}` });
+      else update({ error: "I'm not able to answer right now. Please try again in a moment.", errorDetail: (e as Error).message });
     } finally {
       controller.current = null;
       setBusy(false);
@@ -229,6 +230,7 @@ function BotMessage({ m, question, streaming, onOpen }: { m: Message; question: 
         {m.text && <Answer text={m.text} numSources={sources.length} streaming={streaming}
                            onCite={(n) => sources[n - 1] && onOpen(sources[n - 1])} />}
         {m.error && <div className="notice">{sentence(m.error)}</div>}
+        {m.error && m.errorDetail && <div className="faint" style={{ fontSize: 12.5, marginTop: 4 }}>{m.errorDetail}</div>}
         {hit && (
           <div className="closest">
             <span className="label">Closest line in {hit.source.filename}, page {hit.source.page} (not an AI answer):</span>

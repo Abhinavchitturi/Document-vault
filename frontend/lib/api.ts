@@ -351,7 +351,7 @@ export type ChatEvent =
   | { type: "sources"; sources: Source[] }
   | { type: "token"; text: string }
   | { type: "done"; citations: number[]; found: boolean; llm: string }
-  | { type: "error"; message: string };
+  | { type: "error"; message: string; detail?: string };
 
 /** POST /api/chat and yield its NDJSON events as they arrive (answer text streams word by word). */
 export async function* streamChat(

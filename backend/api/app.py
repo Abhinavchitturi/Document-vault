@@ -223,6 +223,10 @@ def admin_user(user: dict = Depends(current_user)) -> dict:
     return user
 
 
+ASSISTANT_OFF = ("I'm not able to answer right now: the assistant on the Mac isn't running. "
+                 "The closest passages from your documents are below.")
+ANSWER_FAILED = "I'm not able to answer that right now. Please try again."
+
 request_logger = logging.getLogger("vault.requests")
 QUIET_PATHS = {"/api/auth/status", "/api/info", "/api/devices", "/api/mobile/hello"}  # polled: not worth a line
 
@@ -1004,11 +1008,13 @@ def create_app(
                     text += piece
                     yield json.dumps({"type": "token", "text": piece}) + "\n"
             except LLMUnavailableError as e:
-                yield json.dumps({"type": "error", "message": str(e)}) + "\n"
+                # Plain words for the family; the technical reason ("open the Ollama app") as detail.
+                logger.warning("No answer for %s: %s", user["name"], e)
+                yield json.dumps({"type": "error", "message": ASSISTANT_OFF, "detail": str(e)}) + "\n"
                 return
             except Exception:  # never leave the chat bubble hanging
                 logger.exception("Answer failed")
-                yield json.dumps({"type": "error", "message": "Something went wrong while writing the answer."}) + "\n"
+                yield json.dumps({"type": "error", "message": ANSWER_FAILED}) + "\n"
                 return
             answer = finalize(text, len(hits))
             yield json.dumps({"type": "done", "citations": answer.citations, "found": answer.found,

@@ -37,6 +37,18 @@ void main() {
     expect(find.text('Ask about your documents'), findsOneWidget);
   });
 
+  testWidgets('a broken answer says "not able" in plain words, never the technical error', (tester) async {
+    final vault = FakeVault()..chatBreaks = true;
+    await tester.pumpWidget(VaultApp(reminders: FakeScheduler(), storageDir: Directory.systemTemp.createTempSync('vault'), store: await pairedStore(), connect: (_) => vault));
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byType(TextField), 'When does the bike insurance expire?');
+    await tester.testTextInput.receiveAction(TextInputAction.send);
+    await tester.pumpAndSettle();
+    expect(find.text("I'm not able to answer right now. Please try again."), findsOneWidget);
+    expect(find.textContaining('ClientException'), findsNothing);
+    expect(find.textContaining('Connection'), findsNothing);
+  });
+
   testWidgets('chat streams an answer with its sources, and a citation opens the page', (tester) async {
     final vault = FakeVault();
     await tester.pumpWidget(VaultApp(reminders: FakeScheduler(), storageDir: Directory.systemTemp.createTempSync('vault'), store: await pairedStore(), connect: (_) => vault));

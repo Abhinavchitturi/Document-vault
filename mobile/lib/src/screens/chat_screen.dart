@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 
 import '../app.dart';
 import '../models.dart';
+import '../vault_client.dart';
 import '../widgets/answer_text.dart';
 import 'source_screen.dart';
 
@@ -82,8 +83,9 @@ class _ChatScreenState extends State<ChatScreen> {
         _toBottom();
       },
       onError: (Object e) {
-        setState(() => answer.error = e.toString());
-        if (mounted) VaultScope.handle(context, e);
+        // Plain words, never an exception's text ("ClientException: Connection closed…").
+        setState(() => answer.error = e is VaultException && !e.offline ? e.message : "I'm not able to answer right now. Please try again.");
+        if (mounted && e is VaultException && e.unpaired) VaultScope.handle(context, e); // the bubble says the rest
       },
       onDone: () => setState(() {
         answer.done = true;

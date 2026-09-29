@@ -52,9 +52,12 @@ class FakeVault implements VaultApi {
     docs.removeWhere((d) => d.id == id);
   }
 
+  bool chatBreaks = false; // the connection drops in the middle of an answer
+
   @override
   Stream<ChatEvent> chat(String question, List<Map<String, String>> history) async* {
     asked.add(question);
+    if (chatBreaks) throw Exception('ClientException: Connection closed while receiving data');
     yield SourcesEvent([
       Source(rank: 1, chunkId: 'd1-p1-0', docId: 'd1', filename: 'Electricity Bill 2026 08.pdf', category: 'bill',
           page: 1, text: 'Total amount due Rs. 2,486'),
