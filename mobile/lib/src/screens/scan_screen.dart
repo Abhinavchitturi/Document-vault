@@ -253,6 +253,11 @@ class _ResultCard extends StatelessWidget {
           'Added as ${categoryLabels[d.category]}, but it was hard to read (${d.ocrConfidence}% OCR confidence). '
               'Answers from it may be wrong: a sharper, well-lit photo will help.'
         ),
+      'added' when d != null && d.needsReview => (
+          Icons.help_outline,
+          scheme.tertiary,
+          'Added as ${categoryLabels[d.category]}, but we weren\'t sure about the type. Check it in Documents on the Mac.'
+        ),
       'added' when d != null => (
           Icons.check_circle_outline,
           Colors.green.shade700,

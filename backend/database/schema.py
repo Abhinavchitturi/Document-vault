@@ -92,6 +92,8 @@ documents = Table(
     Column("pages", Integer, nullable=False),
     Column("ocr_pages", Integer, nullable=False, default=0),
     Column("ocr_confidence", Integer),  # Phase 4: worst OCR page's confidence 0-100; NULL if no OCR
+    Column("category_source", String(16)),  # Phase 8: "auto" (sorted by the vault) or "person" (chosen by someone)
+    Column("category_confidence", Integer),  # Phase 8: how sure the automatic sorting was, 0-100
     Column("num_chunks", Integer, nullable=False),
     Column("size_bytes", BigInteger, nullable=False),
     Column("sha256", String(64), nullable=False),
@@ -114,6 +116,8 @@ Index("ix_document_chunks_document_id", document_chunks.c.document_id)
 # connect() adds these to older vaults: (table, column, SQL type).
 ADDED_COLUMNS = [
     ("documents", "ocr_confidence", "INTEGER"),
+    ("documents", "category_source", "VARCHAR(16)"),
+    ("documents", "category_confidence", "INTEGER"),
     ("users", "password_hash", "TEXT"),
     ("users", "is_admin", "BOOLEAN NOT NULL DEFAULT FALSE"),
 ]

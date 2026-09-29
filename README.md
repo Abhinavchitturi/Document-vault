@@ -23,7 +23,8 @@ and the privacy decisions.
 | 5 | Better retrieval (BM25 + vector) | ✅ Hybrid search: meaning (vector) + exact words and numbers (BM25), fused; exact ID matches first |
 | 6 | Authentication | ✅ Password and passkey (Touch ID / Face ID / fingerprint) sign-in, one account per family member, each sees only their own documents; admin adds members and resets passwords |
 | 7 | Mobile app | ✅ Flutter app (`mobile/`): chat, documents, scan with the camera; paired by QR code over the home Wi-Fi, HTTPS pinned to the vault's own certificate, Face ID / fingerprint lock |
-| 8–13 | Classification, expiry, reminders, security, sharing, deployment | ⏳ |
+| 8 | Classification | ✅ Uploads sorted into insurance / warranty / bill / property / other by keywords + meaning, asking the local answer model only when unsure; unsure ones flagged "check type" |
+| 9–13 | Expiry, reminders, security, sharing, deployment | ⏳ |
 
 ## Privacy
 - For our family only. The repository is private and contains **code and fictional samples only**.
@@ -107,6 +108,29 @@ Where things live:
 - **Search vectors and original files**: `data/index/` (git-ignored).
 - **Owner**: before sign-in is set up, the vault belongs to your computer's user name (and follows
   it if you rename your Mac user). The setup screen turns that owner into your account.
+
+## Sorting documents (Phase 8)
+Uploads left on **Detect automatically** are sorted by the vault, with the models already on
+this computer (no extra download):
+1. **Keywords**: "premium", "sum insured", "due date", "serial number"… and the file name.
+2. **Meaning**: the search model compares the document's opening with a description of each type.
+3. **The answer model** (Ollama) is asked only when 1 and 2 disagree or aren't sure.
+
+Each document remembers whether a person or the vault chose its type, and how sure the vault
+was. Under 60% sure, Documents shows **check type** (also on the phone); picking a type in
+the menu settles it for good. Documents uploaded before Phase 8 can be sorted with:
+```bash
+python -m backend.classify.run
+python -m backend.classify.run --apply
+```
+The first only shows the changes; `--apply` makes them. Types a person chose are never
+changed. Measure the sorter on the samples, with file names hidden so only the content
+counts: `python -m backend.eval.classify_eval --with-llm`.
+
+Why no new model: sorting into five types is easy work for the two models already installed.
+Granite or NuExtract would each be another 2–3 GB download for little gain, and Needle 3 is
+new and needs its own runtime. They're worth a look for reading dates and amounts (Phase 9)
+only if the answer model proves too slow or inaccurate there.
 
 ## Phone app (Phase 7)
 Start the vault with phone access, then pair each phone once:
@@ -257,6 +281,7 @@ Layout:
 | `backend/auth/` | Sign-in: password hashing (`passwords.py`), accounts and sessions (`accounts.py`), passkeys (`passkeys.py`), paired phones (`devices.py`), terminal tool (`cli.py`) |
 | `backend/api/lan.py` | The phone listener's certificate and the Mac's Wi-Fi address |
 | `mobile/` | The Flutter phone app (see `mobile/README.md`) |
+| `backend/classify/` | Sorting documents into types (`classifier.py`), re-sorting older ones (`run.py`) |
 | `backend/retriever/` | Question → passages: hybrid fusion (`retriever.py`), keyword search (`bm25.py`) |
 | `backend/llm/` | Local Ollama client and the answer-with-citations prompt |
 | `backend/viewer/` | Finds the passage and the answer's facts on a page (PDF boxes, Word/text spans) |

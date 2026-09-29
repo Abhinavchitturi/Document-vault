@@ -61,13 +61,15 @@ class OllamaLLM:
     def _messages(self, system: str, prompt: str, history: list[dict] | None) -> list[dict]:
         return [{"role": "system", "content": system}, *(history or []), {"role": "user", "content": prompt}]
 
-    def _open(self, messages: list[dict], stream: bool):
+    def _open(self, messages: list[dict], stream: bool, schema: dict | None = None):
         body = {
             "model": self.model,
             "messages": messages,
             "stream": stream,
             "options": {"temperature": 0},  # the same question should get the same answer
         }
+        if schema is not None:
+            body["format"] = schema  # Ollama constrains the output to this JSON schema
         request = urllib.request.Request(
             f"{self.host}/api/chat", data=json.dumps(body).encode(), headers={"Content-Type": "application/json"}
         )
@@ -88,6 +90,15 @@ class OllamaLLM:
     def generate(self, system: str, prompt: str, history: list[dict] | None = None) -> str:
         with self._open(self._messages(system, prompt, history), stream=False) as response:
             return json.loads(response.read())["message"]["content"].strip()
+
+    def generate_json(self, system: str, prompt: str, schema: dict) -> dict:
+        """An answer shaped by a JSON schema (sorting documents, reading fields out of them)."""
+        with self._open(self._messages(system, prompt, None), stream=False, schema=schema) as response:
+            content = json.loads(response.read())["message"]["content"]
+        try:
+            return json.loads(content)
+        except json.JSONDecodeError as e:
+            raise LLMUnavailableError(f"The model's answer wasn't valid JSON: {content[:120]}") from e
 
     def stream(self, system: str, prompt: str, history: list[dict] | None = None):
         """Yield the answer piece by piece as the model writes it (like a chatbot)."""

@@ -89,6 +89,11 @@ function Documents() {
                         <div className="name">{displayName(d.filename)}</div>
                         <div className="faint" style={{ fontSize: 12 }}>
                           {d.pages} {d.pages === 1 ? "page" : "pages"}{d.ocr_pages ? " · scanned" : ""}
+                          {d.needs_review && (
+                            <span className="hard-to-read" title={`Sorted automatically (${d.category_confidence}% sure). Pick the right type in the menu.`}>
+                              {" · "}<Icon name="warn" size={11} /> check type
+                            </span>
+                          )}
                           {hardToRead(d.ocr_confidence) && (
                             <span className="hard-to-read" title={`OCR confidence ${d.ocr_confidence}%: answers from this document may be wrong. Upload a clearer photo.`}>
                               {" · "}<Icon name="warn" size={11} /> hard to read

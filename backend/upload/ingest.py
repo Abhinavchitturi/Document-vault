@@ -25,7 +25,8 @@ from typing import Protocol
 
 import numpy as np
 
-from backend.parser.categories import CATEGORIES, guess_category
+from backend.classify.classifier import Classifier
+from backend.parser.categories import CATEGORIES
 from backend.chunker.chunker import SpanTokenizer, chunk_text
 from backend.parser.extract import SUPPORTED_SUFFIXES, extract_pages
 from backend.parser.ocr import save_ocr
@@ -77,6 +78,7 @@ def ingest_file(
     filename: str | None = None,
     chunk_size: int = 300,
     overlap: int = 60,
+    classifier=None,
 ) -> IngestResult:
     """Add one file. `filename` is the name to show (uploads arrive as temp files,
     saved with the upload's extension so the right parser is picked)."""
@@ -99,8 +101,11 @@ def ingest_file(
                 f"No readable text found in {filename}. If it's a photo, retake it flat, in good light and in focus."
             )
         raise EmptyDocumentError(f"No text found in {filename}")
-    if category == "auto":
-        category = guess_category(filename, full_text)
+    if category == "auto":  # Phase 8: sorted by the vault (backend/classify/)
+        decision = (classifier or Classifier()).classify(filename, full_text)
+        category, category_source, category_confidence = decision.category, "auto", decision.confidence
+    else:
+        category_source, category_confidence = "person", 100
 
     doc_id = uuid.uuid4().hex[:16]  # not derived from the file: two family members may upload the same one
     chunks = []
@@ -131,6 +136,8 @@ def ingest_file(
         "pages": len(pages),
         "ocr_pages": sum(p.ocr for p in pages),
         "ocr_confidence": min(confidences) if confidences else None,  # the hardest page to read
+        "category_source": category_source,
+        "category_confidence": category_confidence,
         "num_chunks": len(chunks),
         "size_bytes": path.stat().st_size,
         "sha256": sha256,
@@ -175,6 +182,10 @@ def main() -> None:
         raise SystemExit(str(e)) from e
     embedder = Embedder(args.model or DEFAULT_MODEL)
     tokenizer = HFTokenizer(embedder.model_name)
+    from backend.llm.ollama import DEFAULT_MODEL as DEFAULT_LLM
+    from backend.llm.ollama import OllamaLLM
+
+    classifier = Classifier(embedder, OllamaLLM(DEFAULT_LLM))  # asks Ollama only when unsure; fine if it's off
 
     added = skipped = failed = 0
     for path in iter_files(args.paths):
@@ -182,7 +193,7 @@ def main() -> None:
         if category == "auto" and path.parent.name.lower() in CATEGORIES:
             category = path.parent.name.lower()
         try:
-            result = ingest_file(path, store, embedder, tokenizer, category)
+            result = ingest_file(path, store, embedder, tokenizer, category, classifier=classifier)
         except Exception as e:  # keep importing the rest of the folder
             failed += 1
             logger.error("%s: %s", path, e)

@@ -91,6 +91,9 @@ export interface VaultDocument {
   pages: number;
   ocr_pages: number;
   ocr_confidence: number | null; // worst OCR page, 0-100; null when nothing was OCR'd
+  category_source: "auto" | "person" | null; // who chose the type (null: added before Phase 8)
+  category_confidence: number | null;
+  needs_review: boolean; // sorted automatically, but not sure: ask the person to check the type
   num_chunks: number;
   size_bytes: number;
   added_at: string;

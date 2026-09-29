@@ -206,6 +206,8 @@ class DocumentStore:
             "doc_type": document["category"], "uploaded_at": datetime.fromisoformat(document["added_at"]),
             "file_path": document["stored_as"], "pages": document["pages"], "ocr_pages": document.get("ocr_pages", 0),
             "ocr_confidence": document.get("ocr_confidence"),
+            "category_source": document.get("category_source"),
+            "category_confidence": document.get("category_confidence"),
             "num_chunks": document["num_chunks"], "size_bytes": document["size_bytes"], "sha256": document["sha256"],
         }
 
@@ -221,6 +223,7 @@ class DocumentStore:
                 r["id"]: {
                     "doc_id": r["id"], "filename": r["name"], "category": r["doc_type"], "owner": self.owner,
                     "pages": r["pages"], "ocr_pages": r["ocr_pages"], "ocr_confidence": r["ocr_confidence"],
+                    "category_source": r["category_source"], "category_confidence": r["category_confidence"],
                     "num_chunks": r["num_chunks"],
                     "size_bytes": r["size_bytes"], "sha256": r["sha256"], "stored_as": r["file_path"],
                     "added_at": _as_utc(r["uploaded_at"]).isoformat(timespec="seconds"),
@@ -383,22 +386,25 @@ class DocumentStore:
             self.chunks.extend(chunks)
             self.revision += 1
 
-    def update_category(self, doc_id: str, category: str, vectors: np.ndarray | None = None) -> dict:
+    def update_category(self, doc_id: str, category: str, vectors: np.ndarray | None = None,
+                        source: str = "person", confidence: int | None = 100) -> dict:
         """Re-file a document under another type. `vectors` are its chunks' new embeddings
-        (the category is part of the embedded text), in the order of `chunks_of(doc_id)`."""
+        (the category is part of the embedded text), in the order of `chunks_of(doc_id)`.
+        source="person": someone chose it, so automatic re-sorting leaves it alone from now on."""
         with self._lock:
             doc = self.documents.get(doc_id)
             if doc is None:
                 raise KeyError(doc_id)
             with self.engine.begin() as conn:
-                conn.execute(documents.update().where(documents.c.id == doc_id).values(doc_type=category))
+                conn.execute(documents.update().where(documents.c.id == doc_id).values(
+                    doc_type=category, category_source=source, category_confidence=confidence))
                 chunks = self.chunks_of(doc_id)
                 if vectors is not None and chunks and self.index is not None:
                     vids = np.array([c["vid"] for c in chunks], dtype=np.int64)
                     self.index.remove_ids(vids)
                     self.index.add_with_ids(np.ascontiguousarray(vectors, dtype=np.float32), vids)
                     self._save_index()
-            doc["category"] = category
+            doc.update(category=category, category_source=source, category_confidence=confidence)
             for c in self.chunks:
                 if c["doc_id"] == doc_id:
                     c["category"] = category
