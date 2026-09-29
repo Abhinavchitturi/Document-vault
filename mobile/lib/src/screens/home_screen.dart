@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../app.dart';
 import '../phone_reminders.dart';
+import '../share_inbox.dart';
 
 import 'chat_screen.dart';
 import 'documents_screen.dart';
@@ -18,19 +19,38 @@ class HomeScreen extends StatefulWidget {
 class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   int _tab = 0;
   final _documentsKey = GlobalKey<DocumentsScreenState>();
+  final _scanKey = GlobalKey<ScanScreenState>();
   DateTime? _lastRefresh;
+  ShareInbox? _shares;
 
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
-    WidgetsBinding.instance.addPostFrameCallback((_) => _refreshReminders());
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _refreshReminders();
+      _shares = VaultScope.of(context).shares..addListener(_takeShared);
+      _takeShared(); // shared before the app was unlocked
+    });
   }
 
   @override
   void dispose() {
+    _shares?.removeListener(_takeShared);
     WidgetsBinding.instance.removeObserver(this);
     super.dispose();
+  }
+
+  /// "Send to → Document Vault": show the Scan tab and upload what was shared.
+  void _takeShared() {
+    final shares = _shares;
+    if (!mounted || shares == null || !shares.hasFiles) return;
+    final files = shares.take();
+    setState(() => _tab = 2);
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      await _scanKey.currentState?.uploadShared(files);
+      await ShareInbox.discard(files);
+    });
   }
 
   @override
@@ -53,7 +73,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     final pages = [
       const ChatScreen(),
       DocumentsScreen(key: _documentsKey),
-      ScanScreen(onUploaded: () => _documentsKey.currentState?.reload()),
+      ScanScreen(key: _scanKey, onUploaded: () => _documentsKey.currentState?.reload()),
       const SettingsScreen(),
     ];
     return Scaffold(

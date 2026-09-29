@@ -98,7 +98,21 @@ AADHAAR = [
     ("पुरुष / MALE", 26, False),
     ("",  20, False),
     ("2345 6789 0124", 44, True),
+    ("VID : 9134 5678 2345 6781", 20, False),  # the Virtual ID: 16 digits, not the Aadhaar number
     ("मेरा आधार, मेरी पहचान", 24, False),
+]
+
+AADHAAR_BACK = [  # the address side (page 2 of an e-Aadhaar)
+    ("भारतीय विशिष्ट पहचान प्राधिकरण", 26, True),
+    ("Unique Identification Authority of India", 26, True),
+    ("", 20, False),
+    ("पता:", 22, False),
+    ("Address:", 24, True),
+    ("S/O Rajesh Mehra, H.No 2-11/A,", 26, False),
+    ("Gandhi Nagar, Hyderabad,", 26, False),
+    ("Telangana - 500080", 26, False),
+    ("", 20, False),
+    ("2345 6789 0124", 36, True),
 ]
 
 
@@ -120,7 +134,8 @@ def locked_pdf(image: Image.Image) -> None:
     import pikepdf
 
     plain = OUT / "_plain.pdf"
-    image.save(plain, "PDF", resolution=200)
+    back = card(AADHAAR_BACK, paper=(250, 250, 246))
+    image.save(plain, "PDF", resolution=200, save_all=True, append_images=[back])
     with pikepdf.open(plain) as pdf:
         pdf.save(OUT / "e-Aadhaar (locked).pdf", encryption=pikepdf.Encryption(user="ARJU1988", owner="ARJU1988-owner", R=6))
     plain.unlink()

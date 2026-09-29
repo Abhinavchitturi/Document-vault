@@ -18,10 +18,10 @@ class ScanScreen extends StatefulWidget {
   final ImagePicker? picker;
 
   @override
-  State<ScanScreen> createState() => _ScanScreenState();
+  State<ScanScreen> createState() => ScanScreenState();
 }
 
-class _ScanScreenState extends State<ScanScreen> with WidgetsBindingObserver {
+class ScanScreenState extends State<ScanScreen> with WidgetsBindingObserver {
   String _category = 'auto';
   bool _busy = false;
   List<UploadResult> _results = [];
@@ -72,6 +72,14 @@ class _ScanScreenState extends State<ScanScreen> with WidgetsBindingObserver {
     } else if (manual) {
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('The vault is still not reachable.')));
     }
+  }
+
+  /// Files shared from another app ("Send to → Document Vault"): uploaded like a picked file,
+  /// with the type detected automatically.
+  Future<void> uploadShared(List<({String path, String name})> files) async {
+    if (_busy) return;
+    setState(() => _category = 'auto');
+    await _upload(files);
   }
 
   Future<void> _upload(List<({String path, String name})> files) async {
@@ -170,7 +178,7 @@ class _ScanScreenState extends State<ScanScreen> with WidgetsBindingObserver {
               Text('Photograph a bill, policy or warranty card', textAlign: TextAlign.center,
                   style: Theme.of(context).textTheme.titleMedium),
               const SizedBox(height: 4),
-              Text('Lay it flat, in good light, and fill the frame.',
+              Text('Lay it flat, in good light, and fill the frame. From WhatsApp or Files: Share → Document Vault.',
                   textAlign: TextAlign.center, style: TextStyle(color: scheme.onSurfaceVariant)),
               const SizedBox(height: 16),
               FilledButton.icon(

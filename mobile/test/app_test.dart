@@ -1,6 +1,7 @@
 import 'dart:io';
 
 import 'package:document_vault/src/app.dart';
+import 'package:document_vault/src/share_inbox.dart';
 import 'package:document_vault/src/pairing.dart';
 import 'package:document_vault/src/vault_client.dart';
 import 'package:flutter/material.dart';
@@ -35,6 +36,40 @@ void main() {
     await tester.tap(find.text('Unlock'));
     await tester.pumpAndSettle();
     expect(find.text('Ask about your documents'), findsOneWidget);
+  });
+
+  testWidgets('"Send to → Document Vault" uploads the shared file from the Scan tab', (tester) async {
+    final vault = FakeVault();
+    final inbox = ShareInbox();
+    final dir = Directory.systemTemp.createTempSync('shared');
+    final early = File('${dir.path}/1-Aadhaar.pdf')..writeAsBytesSync([37, 80, 68, 70]);
+    inbox.add([(path: early.path, name: 'Aadhaar.pdf')]); // shared before the app was open and unlocked
+    await tester.pumpWidget(VaultApp(reminders: FakeScheduler(), storageDir: Directory.systemTemp.createTempSync('vault'),
+        store: await pairedStore(), connect: (_) => vault, shares: inbox));
+    await tester.runAsync(() async {
+      for (var i = 0; i < 20 && vault.uploads.isEmpty; i++) {
+        await tester.pump();
+        await Future<void>.delayed(const Duration(milliseconds: 20));
+      }
+    });
+    await tester.pumpAndSettle();
+    expect(vault.uploads.single.single.name, 'Aadhaar.pdf');
+    expect(find.text('Add documents'), findsOneWidget); // the Scan tab is showing
+    expect(find.text('Aadhaar.pdf'), findsOneWidget); // its result card
+
+    final later = File('${dir.path}/2-Bill.jpg')..writeAsBytesSync([1, 2, 3]);
+    inbox.add([(path: later.path, name: 'Bill.jpg')]); // shared while the app is open
+    await tester.runAsync(() async {
+      for (var i = 0; i < 20 && vault.uploads.length < 2; i++) {
+        await tester.pump();
+        await Future<void>.delayed(const Duration(milliseconds: 20));
+      }
+      for (var i = 0; i < 20 && later.existsSync(); i++) {
+        await Future<void>.delayed(const Duration(milliseconds: 20));
+      }
+    });
+    expect(vault.uploads.last.single.name, 'Bill.jpg');
+    expect(early.existsSync() || later.existsSync(), isFalse); // the cache copies are cleaned up
   });
 
   testWidgets('a broken answer says "not able" in plain words, never the technical error', (tester) async {
