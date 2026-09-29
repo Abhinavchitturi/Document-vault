@@ -16,6 +16,7 @@ from backend.database.schema import access_log
 from backend.security.crypto import Cipher, DecryptError
 
 logger = logging.getLogger(__name__)
+activity_logger = logging.getLogger("vault.activity")  # the same events as lines in data/logs/vault.log
 
 KEEP_DAYS = 365
 
@@ -44,6 +45,8 @@ ACTIONS = {
     "family_mode_on": "Let everyone see all documents",
     "family_mode_off": "Made documents private to their owners",
     "backup_made": "Made an encrypted backup",
+    "searched": "Searched",  # these two only go to vault.log (no text: questions can hold ID numbers)
+    "asked": "Asked the assistant",
 }
 
 
@@ -57,9 +60,20 @@ class AccessLog:
         self.cipher = cipher
         self._last_prune: datetime | None = None
 
+    @staticmethod
+    def note(action: str, user: dict | None = None, *, user_name: str | None = None, detail: str | None = None,
+             client: str = "", ok: bool = True) -> None:
+        """One line in vault.log: who, on which device, did what, from where."""
+        who = user_name or (user or {}).get("name") or "someone"
+        via = (user or {}).get("device_name") or ("phone" if (user or {}).get("device_id") else "browser")
+        what = ACTIONS.get(action, action).lower()
+        activity_logger.info("%s (%s) %s%s%s%s", who, via, what, f": {detail}" if detail else "",
+                             "" if ok else " [FAILED]", f" [from {client}]" if client else "")
+
     def record(self, action: str, user: dict | None = None, *, user_name: str | None = None,
                document_id: str | None = None, detail: str | None = None, client: str = "", ok: bool = True) -> None:
-        """Never lets logging break the request it describes."""
+        """Keep an entry (Settings → Activity) and write it to vault.log. Never breaks the request it describes."""
+        self.note(action, user, user_name=user_name, detail=detail, client=client, ok=ok)
         try:
             via = (user or {}).get("device_name") or ("phone" if (user or {}).get("device_id") else "web")
             with self.engine.begin() as conn:
