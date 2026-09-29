@@ -56,7 +56,10 @@ ollama pull llama3.1:8b
 For photos and scanned PDFs (includes English and page-orientation detection):
 ```bash
 brew install tesseract
+brew install tesseract-lang
 ```
+The second line adds Hindi (and other Indian languages). PAN and Aadhaar cards are half Hindi:
+without it those lines turn into gibberish and the card is wrongly marked "hard to read".
 Scans and phone photos are turned upright (phone rotation and sideways or upside-down scans),
 contrast-cleaned and read. Answers are highlighted on the scan itself. A page read with under 70%
 confidence is marked **hard to read** in Documents, at upload and in the viewer. Retake those
@@ -110,6 +113,24 @@ Where things live:
 - **Search vectors and original files**: `data/index/` (git-ignored).
 - **Owner**: before sign-in is set up, the vault belongs to your computer's user name (and follows
   it if you rename your Mac user). The setup screen turns that owner into your account.
+
+## ID cards and locked PDFs
+- **Identity** is a document type of its own: PAN, Aadhaar, passport, driving licence, voter ID.
+  Their number (PAN, Aadhaar, passport or licence number) is read as the document's reference, and
+  a passport's or licence's expiry goes into reminders.
+- **Aadhaar numbers are shown masked** on screen (XXXX XXXX 1234), on the web and the phone; the
+  full number is only in a document's details (the pencil) and still finds the document in search.
+- **Photos and scans** are read in English and Hindi (after `brew install tesseract-lang`). The
+  "hard to read" score only counts real words, so a card's logo, emblem, photo and signature no
+  longer drag it down; a small, unclear photo is read once more at a larger size.
+- **PDFs that are pictures** (a card pasted into a PDF, a scanned page with a little typed text) are
+  read with OCR too.
+- **Locked PDFs** (e-Aadhaar, e-PAN, bank statements): the upload asks for the password (e-Aadhaar:
+  first 4 letters of the name in capitals + year of birth; e-PAN: date of birth as DDMMYYYY). The
+  vault keeps an unlocked copy, so it can show and search the document later without asking again.
+  The password itself isn't stored.
+- Try it with the fictional cards in `samples/scans/identity/` (the locked one's password is
+  `ARJU1988`); regenerate them with `python samples/make_id_cards.py`.
 
 ## Sorting documents (Phase 8)
 Uploads left on **Detect automatically** are sorted by the vault, with the models already on
