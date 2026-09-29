@@ -1,0 +1,9 @@
+{
+  "rules": {
+    "accuracy": 1.0,
+    "right": 42,
+    "total": 42,
+    "misses": [],
+    "ms_per_document": 0.4
+  }
+}

@@ -26,7 +26,7 @@ import json
 import logging
 import os
 import threading
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from pathlib import Path
 
 import faiss
@@ -39,6 +39,19 @@ from backend.parser.ocr import ocr_sidecar
 
 
 logger = logging.getLogger(__name__)
+
+
+FACT_FIELDS = ("expires_on", "due_on", "amount", "reference", "issuer", "facts_method")
+DATE_FACTS = ("expires_on", "due_on")
+
+
+def _fact_columns(document: dict) -> dict:
+    """Phase 9 facts as database values (dates as date objects)."""
+    out = {}
+    for f in FACT_FIELDS:
+        value = document.get(f)
+        out[f] = date.fromisoformat(value) if f in DATE_FACTS and isinstance(value, str) else value
+    return out
 
 
 def top_results(ranked: list[tuple[dict, float]], top_k: int, per_document: bool) -> list[tuple[dict, float]]:
@@ -208,6 +221,7 @@ class DocumentStore:
             "ocr_confidence": document.get("ocr_confidence"),
             "category_source": document.get("category_source"),
             "category_confidence": document.get("category_confidence"),
+            **_fact_columns(document),
             "num_chunks": document["num_chunks"], "size_bytes": document["size_bytes"], "sha256": document["sha256"],
         }
 
@@ -224,6 +238,7 @@ class DocumentStore:
                     "doc_id": r["id"], "filename": r["name"], "category": r["doc_type"], "owner": self.owner,
                     "pages": r["pages"], "ocr_pages": r["ocr_pages"], "ocr_confidence": r["ocr_confidence"],
                     "category_source": r["category_source"], "category_confidence": r["category_confidence"],
+                    **{f: (r[f].isoformat() if f in DATE_FACTS and r[f] else r[f]) for f in FACT_FIELDS},
                     "num_chunks": r["num_chunks"],
                     "size_bytes": r["size_bytes"], "sha256": r["sha256"], "stored_as": r["file_path"],
                     "added_at": _as_utc(r["uploaded_at"]).isoformat(timespec="seconds"),
@@ -409,6 +424,19 @@ class DocumentStore:
                 if c["doc_id"] == doc_id:
                     c["category"] = category
             self.revision += 1
+            return doc
+
+    def update_facts(self, doc_id: str, facts: dict, method: str) -> dict:
+        """Set a document's key facts (Phase 9). method="person" when someone corrected them."""
+        with self._lock:
+            doc = self.documents.get(doc_id)
+            if doc is None:
+                raise KeyError(doc_id)
+            values = {f: facts.get(f) for f in FACT_FIELDS if f != "facts_method" and f in facts}
+            values["facts_method"] = method
+            with self.engine.begin() as conn:
+                conn.execute(documents.update().where(documents.c.id == doc_id).values(**_fact_columns(values)))
+            doc.update(values)
             return doc
 
     def chunks_of(self, doc_id: str) -> list[dict]:

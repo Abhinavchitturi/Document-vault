@@ -132,6 +132,10 @@ function SettingsView() {
               <dt>Owner</dt><dd style={{ textTransform: "capitalize" }}>{s.owner}</dd>
               <dt>Search</dt><dd>{SEARCH_LABEL[s.search_method] ?? s.search_method}</dd>
               <dt>Search model</dt><dd>{s.embedding_model}</dd>
+              <dt>Reading dates and amounts</dt>
+              <dd>{s.facts_reader === "needle" ? "Needle 3 (on this computer)" : s.facts_reader === "ollama"
+                ? <>The answer model. For Needle 3: <code>pip install cactus-needle</code>, then <code>python -m backend.extract.needle_setup</code></>
+                : <>Text patterns. For Needle 3: <code>pip install cactus-needle</code>, then <code>python -m backend.extract.needle_setup</code></>}</dd>
               <dt>Document records</dt><dd><code>{s.database}</code></dd>
               <dt>Files and vectors</dt><dd><code>{s.index_dir}</code></dd>
               <dt>Photos and scans</dt><dd>{s.ocr_available ? "Supported (Tesseract)" : <>Not yet: <code>brew install tesseract</code></>}</dd>

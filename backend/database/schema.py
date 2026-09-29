@@ -20,6 +20,7 @@ from sqlalchemy import (
     BigInteger,
     Boolean,
     Column,
+    Date,
     DateTime,
     ForeignKey,
     Index,
@@ -94,6 +95,13 @@ documents = Table(
     Column("ocr_confidence", Integer),  # Phase 4: worst OCR page's confidence 0-100; NULL if no OCR
     Column("category_source", String(16)),  # Phase 8: "auto" (sorted by the vault) or "person" (chosen by someone)
     Column("category_confidence", Integer),  # Phase 8: how sure the automatic sorting was, 0-100
+    # Phase 9: key facts read from the document (backend/extract/facts.py), or corrected by a person
+    Column("expires_on", Date),  # a policy, cover or warranty ends
+    Column("due_on", Date),  # a bill must be paid
+    Column("amount", String(32)),  # the main amount, digits only
+    Column("reference", String(120)),  # policy / account / serial / receipt number
+    Column("issuer", String(200)),
+    Column("facts_method", String(16)),  # needle / ollama / rules / person
     Column("num_chunks", Integer, nullable=False),
     Column("size_bytes", BigInteger, nullable=False),
     Column("sha256", String(64), nullable=False),
@@ -118,6 +126,12 @@ ADDED_COLUMNS = [
     ("documents", "ocr_confidence", "INTEGER"),
     ("documents", "category_source", "VARCHAR(16)"),
     ("documents", "category_confidence", "INTEGER"),
+    ("documents", "expires_on", "DATE"),
+    ("documents", "due_on", "DATE"),
+    ("documents", "amount", "VARCHAR(32)"),
+    ("documents", "reference", "VARCHAR(120)"),
+    ("documents", "issuer", "VARCHAR(200)"),
+    ("documents", "facts_method", "VARCHAR(16)"),
     ("users", "password_hash", "TEXT"),
     ("users", "is_admin", "BOOLEAN NOT NULL DEFAULT FALSE"),
 ]

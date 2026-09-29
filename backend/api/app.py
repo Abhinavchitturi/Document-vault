@@ -4,7 +4,8 @@ Endpoints:
     GET    /                              the web app (frontend/out, built with `npm run build`)
     GET    /api/info                      library size, categories, whether OCR is available
     GET    /api/documents                 all documents in the library
-    PATCH  /api/documents/{id}            change a document's type
+    PATCH  /api/documents/{id}            change a document's type, or correct its key facts
+    GET    /api/upcoming?days=90          expiries and due dates coming up (and missed in the last 30 days)
     GET    /api/settings                  owner, models, where data lives
     POST   /api/settings                  switch the answer model (one already downloaded in Ollama)
     POST   /api/documents                 upload one or more files (form fields: files, category)
@@ -37,10 +38,12 @@ from __future__ import annotations
 import argparse
 import json
 import logging
+import re
 import tempfile
 import time
 from collections import Counter
 from dataclasses import asdict
+from datetime import date
 from pathlib import Path
 
 from typing import Literal
@@ -54,6 +57,7 @@ from pydantic import BaseModel, Field
 from backend.auth.accounts import SESSION_DAYS, Accounts, AuthError, TooManyAttempts
 from backend.auth.devices import Devices
 from backend.classify.classifier import REVIEW_BELOW, Classifier
+from backend.extract.facts import FactsReader
 from backend.auth.passkeys import Passkeys
 from backend.llm.answer import LLM, answer_question, finalize, stream_answer
 from backend.llm.ollama import LLMUnavailableError
@@ -104,8 +108,15 @@ class ChatRequest(BaseModel):
     k: int = Field(5, ge=1, le=10)
 
 
-class CategoryUpdate(BaseModel):
-    category: str
+class DocumentUpdate(BaseModel):
+    """A person re-filing a document or correcting its key facts (only the fields sent change)."""
+
+    category: str | None = None
+    expires_on: date | None = None
+    due_on: date | None = None
+    amount: str | None = Field(None, max_length=32)
+    reference: str | None = Field(None, max_length=120)
+    issuer: str | None = Field(None, max_length=200)
 
 
 class SettingsUpdate(BaseModel):
@@ -239,6 +250,7 @@ def create_app(
     app = FastAPI(title="Secure Digital Document Vault", docs_url=None, redoc_url=None, openapi_url=None)
     accounts = accounts or Accounts(store.engine)
     classifier = Classifier(embedder, llm)  # Phase 8: sorts uploads marked "auto"
+    facts_reader = FactsReader(llm)  # Phase 9: expiry, due date, amount, reference, issuer (Needle 3 if installed)
     keys = Passkeys(store.engine, passkey_hosts)
     devices = devices or Devices(store.engine)
 
@@ -546,7 +558,7 @@ def create_app(
                     continue
                 try:
                     result = ingest_file(tmp_path, mine, embedder, tokenizer, category, filename=name,
-                                         classifier=classifier)
+                                         classifier=classifier, facts_reader=facts_reader)
                 except (UnsupportedFileError, OcrUnavailableError, EmptyDocumentError, ValueError) as e:
                     results.append({"filename": name, "status": "error", "error": str(e)})
                     continue
@@ -593,18 +605,45 @@ def create_app(
         return asdict(result)
 
     @app.patch("/api/documents/{doc_id}")
-    def update_document(doc_id: str, req: CategoryUpdate, user: dict = Depends(current_user)) -> dict:
-        if req.category not in CATEGORIES:
+    def update_document(doc_id: str, req: DocumentUpdate, user: dict = Depends(current_user)) -> dict:
+        if req.category is not None and req.category not in CATEGORIES:
             raise HTTPException(400, f"category must be one of {CATEGORIES}")
         mine = vault_of(user)
         doc = mine.get(doc_id)
         if doc is None:
             raise HTTPException(404, "document not found")
-        from backend.upload.ingest import passage_texts
+        sent = req.model_dump(exclude_unset=True)
+        facts = {k: v for k, v in sent.items() if k != "category"}
+        if facts:
+            if "amount" in facts and facts["amount"] is not None:  # "Rs. 1,000.50" -> "1000.50"
+                number = re.search(r"\d[\d,]*(?:\.\d+)?", facts["amount"])
+                facts["amount"] = number.group().replace(",", "") if number else None
+            facts = {k: (v.isoformat() if isinstance(v, date) else (v or None)) for k, v in facts.items()}
+            doc = mine.update_facts(doc_id, facts, "person")  # corrected by a person: never overwritten
+        if req.category is not None:
+            from backend.upload.ingest import passage_texts
 
-        chunks = [{**c, "category": req.category} for c in mine.chunks_of(doc_id)]
-        vectors = embedder.encode_passages(passage_texts(chunks)) if chunks else None
-        return _public(mine.update_category(doc_id, req.category, vectors))
+            chunks = [{**c, "category": req.category} for c in mine.chunks_of(doc_id)]
+            vectors = embedder.encode_passages(passage_texts(chunks)) if chunks else None
+            doc = mine.update_category(doc_id, req.category, vectors)
+        return _public(doc)
+
+    @app.get("/api/upcoming")
+    def upcoming(days: int = Query(90, ge=1, le=730), user: dict = Depends(current_user)) -> list[dict]:
+        """Expiries and due dates from 30 days ago (recently missed) to `days` ahead, soonest first.
+        The base for reminders (Phase 10)."""
+        today = date.today()
+        items = []
+        for doc in vault_of(user).documents.values():
+            for field, kind in (("expires_on", "expires"), ("due_on", "due")):
+                if doc.get(field):
+                    when = date.fromisoformat(doc[field])
+                    left = (when - today).days
+                    if -30 <= left <= days:
+                        items.append({"doc_id": doc["doc_id"], "filename": doc["filename"], "category": doc["category"],
+                                      "kind": kind, "date": doc[field], "days_left": left,
+                                      "amount": doc.get("amount"), "issuer": doc.get("issuer")})
+        return sorted(items, key=lambda i: i["date"])
 
     def settings_view(user: dict) -> dict:
         list_models = getattr(llm, "list_models", None)
@@ -619,6 +658,7 @@ def create_app(
             "index_dir": str(store.root),
             "ocr_available": ocr_available(),
             "search_method": search_method,
+            "facts_reader": facts_reader.name,
         }
 
     @app.get("/api/settings")

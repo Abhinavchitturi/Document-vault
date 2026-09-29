@@ -106,6 +106,9 @@ class DocumentsScreenState extends State<DocumentsScreen> {
                     subtitle: Text([
                       categoryLabels[d.category] ?? d.category,
                       '${d.pages} ${d.pages == 1 ? 'page' : 'pages'}',
+                      if (d.expiresOn != null) '${d.category == 'warranty' ? 'warranty until' : 'expires'} ${_day(d.expiresOn!)}',
+                      if (d.dueOn != null) 'due ${_day(d.dueOn!)}',
+                      if (d.amount != null) 'Rs. ${d.amount}',
                       if (d.ocrPages > 0) 'scanned',
                       if (d.needsReview) '⚠ check type (on the Mac)',
                       if (d.hardToRead) '⚠ hard to read',
@@ -124,6 +127,10 @@ class DocumentsScreenState extends State<DocumentsScreen> {
       ),
     );
   }
+
+  static const _months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+
+  String _day(DateTime d) => '${d.day} ${_months[d.month - 1]} ${d.year}';
 
   IconData _icon(String category) => switch (category) {
         'insurance' => Icons.shield_outlined,
