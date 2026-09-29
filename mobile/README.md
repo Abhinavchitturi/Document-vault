@@ -8,7 +8,11 @@ home Wi-Fi. Documents, search and answers all stay on the Mac.
 | **Chat** | Ask about your documents. Answers stream in with numbered sources; tap one to see the page with the answer highlighted |
 | **Documents** | Browse and search by name or type; open a document's page or the original file; remove one |
 | **Scan** | Photograph a bill, policy or warranty card (or pick a photo, PDF or Word file). The Mac reads photos with OCR and says if one was hard to read. If the Mac is off, the scan waits on the phone and is sent automatically once the Mac is reachable (checked when the app opens and every 45 seconds while it's open) |
-| **Settings** | Face ID / fingerprint lock, which vault it's paired with, unpair |
+| **Settings** | Face ID / fingerprint lock, reminders scheduled on this phone, which vault it's paired with, unpair |
+
+**Reminders (Phase 10)**: each time the app reaches the vault it schedules the upcoming
+reminders as phone notifications (`lib/src/phone_reminders.dart`), so they appear on the day
+even with the app closed and the Mac off. Android asks once for permission to show notifications.
 
 ## How it connects (and why it's safe on the Wi-Fi)
 1. Start the vault on the Mac with phone access:

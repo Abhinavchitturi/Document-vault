@@ -25,7 +25,8 @@ and the privacy decisions.
 | 7 | Mobile app | ✅ Flutter app (`mobile/`): chat, documents, scan with the camera; paired by QR code over the home Wi-Fi, HTTPS pinned to the vault's own certificate, Face ID / fingerprint lock |
 | 8 | Classification | ✅ Uploads sorted into insurance / warranty / bill / property / other by keywords + meaning, asking the local answer model only when unsure; unsure ones flagged "check type" |
 | 9 | Expiry and key facts | ✅ Expiry, due date, amount, reference number and issuer read from each document (Needle 3 when installed, else the answer model, else text patterns), checked against the text; "Coming up" on the dashboard |
-| 10–13 | Reminders, security, sharing, deployment | ⏳ |
+| 10 | Reminders | ✅ Before expiries and due dates: phone notifications (even with the Mac off), Mac notifications, a calendar file, and the Dashboard; days, time and "Paid / Done" per person |
+| 11–13 | Security, sharing, deployment | ⏳ |
 
 ## Privacy
 - For our family only. The repository is private and contains **code and fictional samples only**.
@@ -157,6 +158,21 @@ dropped, and bills never get an "expiry" (a billing period isn't one). Fill in f
 documents uploaded earlier with `python -m backend.extract.run` (preview), then `--apply`.
 Compare the readers on the samples: `python -m backend.eval.facts_eval` (or `--pdfs`).
 Settings → About shows which reader is in use.
+
+## Reminders (Phase 10)
+Built on the dates from Phase 9. By default: 30, 7 and 1 day before a policy or warranty
+expires and on the day; 7 and 1 day before a bill is due and on the day. Each person picks
+their own days and time in **Settings → Reminders**.
+
+| Where | How |
+|---|---|
+| **Phone** | Each time the app reaches the vault it schedules the upcoming reminders as ordinary phone notifications, so they appear on the day **even when the app is closed and the Mac is off**. Open the app now and then (at least after adding documents) to refresh them. |
+| **This Mac** | Desktop notifications while the vault is running, including ones missed in the last 3 days while it was off. On for the admin, off for others (Settings → Reminders → Show on this Mac). |
+| **Calendar** | Settings → Reminders → *Download calendar file* adds every expiry and due date, with alarms, to Apple / Google / Outlook calendar. Download it again after adding documents. |
+| **Dashboard** | The Reminders card, with **Paid** / **Done** to stop an item (and Undo). |
+
+Nothing is sent by email or through any online service: phone reminders are scheduled on the
+phone itself.
 
 ## Phone app (Phase 7)
 Start the vault with phone access, then pair each phone once:
@@ -307,6 +323,7 @@ Layout:
 | `backend/auth/` | Sign-in: password hashing (`passwords.py`), accounts and sessions (`accounts.py`), passkeys (`passkeys.py`), paired phones (`devices.py`), terminal tool (`cli.py`) |
 | `backend/api/lan.py` | The phone listener's certificate and the Mac's Wi-Fi address |
 | `mobile/` | The Flutter phone app (see `mobile/README.md`) |
+| `backend/reminders/` | Reminder rules, phone schedule, calendar file (`reminders.py`); Mac notifications (`desktop.py`) |
 | `backend/extract/` | Key facts: readers and checks (`facts.py`), filling in older documents (`run.py`), Needle setup (`needle_setup.py`) |
 | `backend/classify/` | Sorting documents into types (`classifier.py`), re-sorting older ones (`run.py`) |
 | `backend/retriever/` | Question → passages: hybrid fusion (`retriever.py`), keyword search (`bm25.py`) |

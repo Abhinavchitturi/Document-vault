@@ -6,7 +6,7 @@ import { useEffect, useState } from "react";
 import AppShell, { useVault } from "@/components/AppShell";
 import { displayName, FileIcon } from "@/components/DocBits";
 import Icon from "@/components/Icon";
-import { api, CATEGORIES, CATEGORY_LABEL, formatAmount, formatBytes, formatDate, relativeDays, type Upcoming, type VaultDocument } from "@/lib/api";
+import { api, CATEGORIES, CATEGORY_LABEL, formatBytes, formatDate, type Reminder, type VaultDocument } from "@/lib/api";
 
 const QUICK = ["When does my bike insurance expire?", "Find the washing machine warranty", "When is the electricity bill due?"];
 
@@ -15,12 +15,16 @@ function Dashboard() {
   const router = useRouter();
   const [docs, setDocs] = useState<VaultDocument[] | null>(null);
   const [question, setQuestion] = useState("");
-  const [upcoming, setUpcoming] = useState<Upcoming[] | null>(null);
+  const [reminders, setReminders] = useState<Reminder[] | null>(null);
 
   useEffect(() => {
     api.documents().then(setDocs).catch(() => setDocs([]));
-    api.upcoming(90).then(setUpcoming).catch(() => setUpcoming([]));
+    api.reminders().then((r) => setReminders(r.items)).catch(() => setReminders([]));
   }, []);
+
+  const mark = async (r: Reminder, done: boolean) => {
+    try { setReminders((await api.markReminder(r.doc_id, r.kind, done)).items); } catch { /* keep the list as it was */ }
+  };
 
   const ask = (q: string) => { if (q.trim()) router.push(`/chat/?q=${encodeURIComponent(q.trim())}`); };
   const total = info?.num_documents ?? 0;
@@ -56,23 +60,33 @@ function Dashboard() {
           </section>
 
           <section className="card">
-            <h2 style={{ marginTop: 0 }}>Coming up</h2>
-            {upcoming === null && <p className="muted">Loading…</p>}
-            {upcoming?.length === 0 && (
-              <p className="muted" style={{ margin: 0 }}>Nothing expires or falls due in the next 90 days.</p>
+            <div style={{ display: "flex", alignItems: "center", marginBottom: 8 }}>
+              <h2 style={{ margin: 0, flex: 1 }}>Reminders</h2>
+              <Link href="/settings/#reminders" className="btn small">Reminder settings</Link>
+            </div>
+            {reminders === null && <p className="muted">Loading…</p>}
+            {reminders?.length === 0 && (
+              <p className="muted" style={{ margin: 0 }}>Nothing expires or falls due soon.</p>
             )}
             <div className="rows">
-              {upcoming?.map((u) => (
-                <div key={`${u.doc_id}-${u.kind}`} className={`row upcoming${u.days_left < 0 ? " overdue" : u.days_left <= 14 ? " soon" : ""}`}>
-                  <FileIcon category={u.category} size={32} />
+              {reminders?.map((r) => (
+                <div key={`${r.doc_id}-${r.kind}`} className={`row upcoming ${r.status}`}>
+                  <FileIcon category={r.category} size={32} />
                   <div className="info">
-                    <div className="name">{displayName(u.filename)}</div>
+                    <div className="name">{r.title}</div>
                     <div className="meta">
-                      {u.kind === "expires" ? "Expires" : "Due"} {formatDate(u.date)}
-                      {u.amount && ` · ${formatAmount(u.amount)}`}
+                      {r.body}
+                      {r.next_notice && r.next_notice !== r.date && ` · next reminder ${formatDate(r.next_notice)}`}
                     </div>
                   </div>
-                  <span className="when">{u.days_left < 0 && u.kind === "due" ? `overdue, ${relativeDays(u.days_left)}` : relativeDays(u.days_left)}</span>
+                  {r.done ? (
+                    <button className="btn small" type="button" onClick={() => mark(r, false)} title="Bring the reminder back">Undo</button>
+                  ) : (
+                    <button className="btn small" type="button" onClick={() => mark(r, true)}
+                            title={r.kind === "due" ? "Paid: stop reminding me" : "Renewed or dealt with: stop reminding me"}>
+                      <Icon name="ok" size={14} />{r.kind === "due" ? "Paid" : "Done"}
+                    </button>
+                  )}
                 </div>
               ))}
             </div>

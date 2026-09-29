@@ -2,6 +2,7 @@ import 'dart:typed_data';
 
 import 'package:document_vault/src/models.dart';
 import 'package:document_vault/src/pairing.dart';
+import 'package:document_vault/src/phone_reminders.dart';
 import 'package:document_vault/src/vault_client.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 
@@ -73,6 +74,16 @@ class FakeVault implements VaultApi {
 
   @override
   Future<void> unpair(int deviceId) async => unpairedCalled = true;
+
+  List<ScheduledReminder> schedule = [
+    ScheduledReminder(id: 1, at: DateTime(2030, 3, 7, 9), title: 'Bike Insurance 2026 expires in 7 days', body: '14 Mar 2030'),
+  ];
+
+  @override
+  Future<List<ScheduledReminder>> reminderSchedule() async {
+    if (failWith != null) throw failWith!;
+    return schedule;
+  }
 }
 
 /// Keychain stand-in.
@@ -105,3 +116,21 @@ class MemoryStorage implements FlutterSecureStorage {
 
 final testPairing = Pairing(
     urls: ['https://192.168.1.20:8443'], fingerprint: 'ab' * 32, token: 'secret-token', deviceId: 7, userName: 'abhinav');
+
+/// Records what would be scheduled on the phone.
+class FakeScheduler implements ReminderScheduler {
+  List<ScheduledReminder> scheduled = [];
+  bool cleared = false;
+
+  @override
+  Future<int> replaceAll(List<ScheduledReminder> reminders) async {
+    scheduled = reminders;
+    return reminders.length;
+  }
+
+  @override
+  Future<void> clear() async {
+    cleared = true;
+    scheduled = [];
+  }
+}

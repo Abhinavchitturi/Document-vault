@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import AppShell, { useVault } from "@/components/AppShell";
 import Icon from "@/components/Icon";
 import { useTheme, type Theme } from "@/components/ThemeToggle";
-import { api, formatDate, type Device, type Member, type Pairing, type Passkey, type PhoneAccess, type Settings } from "@/lib/api";
+import { api, formatDate, type Device, type Member, type Pairing, type Passkey, type PhoneAccess, type ReminderSettings, type Settings } from "@/lib/api";
 import { cancelled, createPasskey, deviceName, passkeysSupported } from "@/lib/passkey";
 
 const SEARCH_LABEL: Record<string, string> = {
@@ -79,6 +79,8 @@ function SettingsView() {
           <Passkeys />
           <PasswordChange onDone={(text) => setMessage({ ok: true, text })} />
         </section>
+
+        <Reminders />
 
         <Phones />
 
@@ -230,6 +232,73 @@ function Passkeys() {
         )}
       </div>
     </div>
+  );
+}
+
+const EXPIRY_CHOICES = [60, 30, 14, 7, 3, 1, 0];
+const DUE_CHOICES = [14, 7, 3, 1, 0];
+const dayLabel = (d: number) => (d === 0 ? "On the day" : d === 1 ? "1 day before" : `${d} days before`);
+
+function Reminders() {
+  const [s, setS] = useState<ReminderSettings | null>(null);
+  const [message, setMessage] = useState<{ ok: boolean; text: string } | null>(null);
+
+  useEffect(() => { api.reminders().then((r) => setS(r.settings)).catch((e) => setMessage({ ok: false, text: e.message })); }, []);
+
+  const save = async (changes: Partial<ReminderSettings>) => {
+    try {
+      setS(await api.saveReminderSettings(changes));
+      setMessage({ ok: true, text: "Saved. Phones pick up the change the next time the app connects." });
+    } catch (e) {
+      setMessage({ ok: false, text: (e as Error).message });
+    }
+  };
+  const toggle = (list: number[], d: number) => (list.includes(d) ? list.filter((x) => x !== d) : [...list, d]);
+
+  return (
+    <section className="card" id="reminders">
+      <h2>Reminders</h2>
+      <p className="muted" style={{ marginTop: 0, fontSize: 14 }}>
+        Before a policy or warranty expires and before a bill is due. They appear on your phone (even when this Mac is off),
+        on this Mac while the vault runs, and on the Dashboard. Mark one <strong>Paid</strong> or <strong>Done</strong> to stop it.
+      </p>
+      {message && <div className={`notice ${message.ok ? "good" : "bad"}`} role="status" style={{ marginBottom: 12 }}><Icon name={message.ok ? "ok" : "warn"} />{message.text}</div>}
+      {s && (
+        <>
+          <div className="setting-row">
+            <div className="label"><strong>Policies and warranties</strong><span>When to remind you before they expire.</span></div>
+            <div className="day-chips" role="group" aria-label="Expiry reminders">
+              {EXPIRY_CHOICES.map((d) => (
+                <button key={d} type="button" className="chip" aria-pressed={s.expiry_days.includes(d)}
+                        onClick={() => save({ expiry_days: toggle(s.expiry_days, d) })}>{dayLabel(d)}</button>
+              ))}
+            </div>
+          </div>
+          <div className="setting-row">
+            <div className="label"><strong>Bills</strong><span>When to remind you before a payment is due.</span></div>
+            <div className="day-chips" role="group" aria-label="Bill reminders">
+              {DUE_CHOICES.map((d) => (
+                <button key={d} type="button" className="chip" aria-pressed={s.due_days.includes(d)}
+                        onClick={() => save({ due_days: toggle(s.due_days, d) })}>{dayLabel(d)}</button>
+              ))}
+            </div>
+          </div>
+          <div className="setting-row">
+            <div className="label"><strong>Time of day</strong><span>When phone reminders appear.</span></div>
+            <input className="input" type="time" value={s.time_of_day} aria-label="Reminder time"
+                   onChange={(e) => e.target.value && save({ time_of_day: e.target.value })} />
+          </div>
+          <div className="setting-row">
+            <div className="label"><strong>Show on this Mac</strong><span>Desktop notifications while the vault is running, including ones missed while it was off.</span></div>
+            <label className="check"><input type="checkbox" checked={s.desktop} onChange={(e) => save({ desktop: e.target.checked })} /> On</label>
+          </div>
+          <div className="setting-row">
+            <div className="label"><strong>Calendar</strong><span>Add every expiry and due date to Apple, Google or Outlook calendar, with these reminders. Download again after adding documents.</span></div>
+            <a className="btn" href="/api/reminders/calendar.ics" download><Icon name="open" size={14} />Download calendar file</a>
+          </div>
+        </>
+      )}
+    </section>
   );
 }
 

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../app.dart';
 import '../models.dart';
+import '../phone_reminders.dart';
 
 class SettingsScreen extends StatefulWidget {
   const SettingsScreen({super.key});
@@ -76,6 +77,25 @@ class _SettingsScreenState extends State<SettingsScreen> {
               subtitle: info == null || info.assistantMessage.isEmpty ? null : Text(info.assistantMessage),
             ),
           ]),
+        ),
+        const SizedBox(height: 14),
+        Card(
+          child: ValueListenableBuilder(
+            valueListenable: reminderStatus,
+            builder: (context, status, _) => ListTile(
+              leading: const Icon(Icons.notifications_active_outlined),
+              title: const Text('Reminders on this phone'),
+              subtitle: Text(status == null
+                  ? 'Updated each time the app reaches the vault.'
+                  : '${status.count} scheduled · updated ${TimeOfDay.fromDateTime(status.at).format(context)}. '
+                      'They appear even when the Mac is off. Change the days in Settings on the Mac.'),
+              trailing: IconButton(
+                tooltip: 'Update now',
+                icon: const Icon(Icons.refresh),
+                onPressed: () => refreshReminders(scope.api.reminderSchedule, scope.reminders),
+              ),
+            ),
+          ),
         ),
         const SizedBox(height: 14),
         Card(

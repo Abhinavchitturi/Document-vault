@@ -382,3 +382,9 @@ mark { background: var(--mark); color: inherit; border-radius: 3px; padding: 0 1
 .details-form .wide { grid-column: 1 / -1; }
 @media (max-width: 560px) { .details-form { grid-template-columns: 1fr; } }
 .details-row td { background: var(--surface-2); padding: 14px 16px; }
+.row.upcoming.soon .name, .row.upcoming.today .name { color: var(--warn); }
+.row.upcoming.overdue .name { color: var(--bad); }
+.row.upcoming.done { opacity: .55; }
+.row.upcoming.done .name { text-decoration: line-through; }
+.day-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.day-chips button[aria-pressed="true"] { background: var(--accent); color: #fff; border-color: var(--accent); }
