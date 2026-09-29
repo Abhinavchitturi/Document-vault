@@ -12,7 +12,7 @@ from backend.chunker.chunker import RegexTokenizer
 from backend.parser.extract import extract_pages
 from backend.parser.ocr import LOW_CONFIDENCE, ocr_available, ocr_sidecar, read_image
 from backend.vector_store.store import DocumentStore
-from tests.fakes import FakeEmbedder
+from tests.fakes import FakeEmbedder, signed_in
 
 pytestmark = pytest.mark.skipif(not ocr_available(), reason="Tesseract isn't installed")
 
@@ -48,7 +48,7 @@ def test_blurry_photo_gets_a_low_confidence():
 
 def test_answers_are_highlighted_on_scans(tmp_path):
     store = DocumentStore(tmp_path / "index")
-    client = TestClient(create_app(store, FakeEmbedder(), RegexTokenizer()))
+    client = signed_in(create_app(store, FakeEmbedder(), RegexTokenizer()))
     [bill, photo] = client.post("/api/documents", files=[
         ("files", (GAS_BILL.name, GAS_BILL.read_bytes())), ("files", (PHOTO.name, PHOTO.read_bytes())),
     ]).json()

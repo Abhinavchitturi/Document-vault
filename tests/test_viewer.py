@@ -9,7 +9,7 @@ from backend.api.app import create_app
 from backend.chunker.chunker import RegexTokenizer
 from backend.viewer.highlight import answer_facts, highlights_for
 from backend.vector_store.store import DocumentStore
-from tests.fakes import FakeEmbedder
+from tests.fakes import FakeEmbedder, signed_in
 from tests.pdf_helper import make_pdf
 
 SAMPLES = Path(__file__).resolve().parent.parent / "samples" / "pdfs"
@@ -65,7 +65,7 @@ def test_word_files_get_character_spans(tmp_path):
 
 
 def test_page_image_and_highlight_endpoints(tmp_path):
-    client = TestClient(create_app(DocumentStore(tmp_path / "index"), FakeEmbedder(), RegexTokenizer()))
+    client = signed_in(create_app(DocumentStore(tmp_path / "index"), FakeEmbedder(), RegexTokenizer()))
     doc = client.post("/api/documents", files=[("files", (BILL.name, BILL.read_bytes()))]).json()[0]["document"]
     chunk_id = client.get("/api/search", params={"q": "electricity bill"}).json()["results"][0]["chunk_id"]
 

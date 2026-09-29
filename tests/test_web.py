@@ -6,7 +6,7 @@ from fastapi.testclient import TestClient
 from backend.api.app import create_app
 from backend.chunker.chunker import RegexTokenizer
 from backend.vector_store.store import DocumentStore
-from tests.fakes import FakeEmbedder, FakeLLM
+from tests.fakes import FakeEmbedder, FakeLLM, signed_in
 from tests.pdf_helper import make_pdf
 
 
@@ -31,7 +31,7 @@ def web(tmp_path):
     llm = ModelLLM()
     app = create_app(DocumentStore(tmp_path / "index", owner="family"), FakeEmbedder(), RegexTokenizer(), llm,
                      frontend_dir=site, database_label="postgresql+psycopg://localhost/vault")
-    return TestClient(app), llm
+    return signed_in(app), llm
 
 
 def upload(client, name, content, category="auto"):
@@ -50,7 +50,7 @@ def test_built_pages_are_served_next_to_the_api(web):
 
 
 def test_unbuilt_frontend_explains_how_to_build(tmp_path):
-    client = TestClient(create_app(DocumentStore(tmp_path / "index"), FakeEmbedder(), RegexTokenizer(), frontend_dir=None))
+    client = signed_in(create_app(DocumentStore(tmp_path / "index"), FakeEmbedder(), RegexTokenizer(), frontend_dir=None))
     page = client.get("/")
     assert "npm run build" in page.text and "content-security-policy" in page.headers
 
@@ -93,7 +93,7 @@ def test_owner_can_be_renamed_and_is_remembered(tmp_path):
     store = DocumentStore(root)  # no owner given: falls back to the computer's user name
     (tmp_path / "bill.txt").write_text("Water bill due 15 July")
     ingest_file(tmp_path / "bill.txt", store, FakeEmbedder(), RegexTokenizer())
-    client = TestClient(create_app(store, FakeEmbedder(), RegexTokenizer(), frontend_dir=None))
+    client = signed_in(create_app(store, FakeEmbedder(), RegexTokenizer(), frontend_dir=None))
 
     res = client.post("/api/settings", json={"owner_name": "  Abhinav  "})
     assert res.status_code == 200 and res.json()["owner"] == "Abhinav"

@@ -1,29 +1,11 @@
-// Phase 3 "sign in": remembers, for this browser tab, that you chose to continue as the vault's
-// owner. It is a convenience screen, not security: the server does not check it. Real sign-in
-// (passwords, one account per family member, enforced by the server) arrives in Phase 6.
+// Phase 6: signing in is checked by the server (an HttpOnly session cookie this code can't read).
+// What's left here is tidying the browser when someone signs out, so the next family member
+// using this browser doesn't see the previous person's chat.
 
-const KEY = "vault-session";
-
-export function getSession(): string | null {
+export function clearBrowserSession(): void {
   try {
-    return sessionStorage.getItem(KEY);
+    sessionStorage.clear();
   } catch {
-    return null;
-  }
-}
-
-export function startSession(owner: string): void {
-  try {
-    sessionStorage.setItem(KEY, owner);
-  } catch {
-    /* private mode: the session simply isn't remembered */
-  }
-}
-
-export function endSession(): void {
-  try {
-    sessionStorage.removeItem(KEY);
-  } catch {
-    /* ignore */
+    /* private mode */
   }
 }

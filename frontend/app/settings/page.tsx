@@ -4,8 +4,7 @@ import { useEffect, useState } from "react";
 import AppShell, { useVault } from "@/components/AppShell";
 import Icon from "@/components/Icon";
 import { useTheme, type Theme } from "@/components/ThemeToggle";
-import { api, type Settings } from "@/lib/api";
-import { startSession } from "@/lib/session";
+import { api, type Member, type Settings } from "@/lib/api";
 
 const SEARCH_LABEL: Record<string, string> = {
   hybrid: "Hybrid: meaning + exact words and numbers",
@@ -48,8 +47,7 @@ function SettingsView() {
       const r = await api.saveSettings({ owner_name: name });
       setS(r);
       setName(r.owner);
-      startSession(r.owner);
-      setMessage({ ok: true, text: `The vault now belongs to ${r.owner}. All your documents came along.` });
+      setMessage({ ok: true, text: `You're now ${r.owner}: sign in with this name from now on. All your documents came along.` });
       refresh();
     } catch (e) {
       setMessage({ ok: false, text: (e as Error).message });
@@ -70,14 +68,17 @@ function SettingsView() {
           <div className="setting-row">
             <div className="label">
               <strong>Your name</strong>
-              <span>Shown on the sign-in screen and as the owner of your documents.</span>
+              <span>The name you sign in with, and the owner of your documents.</span>
             </div>
             <form style={{ display: "flex", gap: 8 }} onSubmit={(e) => { e.preventDefault(); saveName(); }}>
               <input className="input" value={name} maxLength={60} onChange={(e) => setName(e.target.value)} aria-label="Your name" />
               <button className="btn primary" type="submit" disabled={saving || !name.trim() || name.trim() === s?.owner}>Save</button>
             </form>
           </div>
+          <PasswordChange onDone={(text) => setMessage({ ok: true, text })} />
         </section>
+
+        {s?.is_admin && <FamilyMembers />}
 
         <section className="card">
           <h2>Assistant</h2>
@@ -86,7 +87,7 @@ function SettingsView() {
               <strong>Answer model</strong>
               <span>Runs on this computer with Ollama. Download more with <code>ollama pull &lt;name&gt;</code>.</span>
             </div>
-            {s && s.llm_models.length > 0 ? (
+            {s && s.is_admin && s.llm_models.length > 0 ? (
               <div style={{ display: "flex", gap: 8 }}>
                 <select className="input" value={model} onChange={(e) => setModel(e.target.value)} aria-label="Answer model">
                   {!s.llm_models.includes(model) && model && <option value={model}>{model} (not downloaded)</option>}
@@ -138,6 +139,143 @@ function SettingsView() {
         </section>
       </div>
     </div>
+  );
+}
+
+function PasswordChange({ onDone }: { onDone: (message: string) => void }) {
+  const [current, setCurrent] = useState("");
+  const [next, setNext] = useState("");
+  const [again, setAgain] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const mismatch = again.length > 0 && again !== next;
+
+  const submit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setBusy(true);
+    setError(null);
+    try {
+      await api.changePassword(current, next);
+      setCurrent(""); setNext(""); setAgain("");
+      onDone("Password changed. You've been signed out on your other devices.");
+    } catch (err) {
+      setError((err as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="setting-row">
+      <div className="label">
+        <strong>Password</strong>
+        <span>Changing it signs you out everywhere else.</span>
+      </div>
+      <form className="stack-form" onSubmit={submit}>
+        {error && <div className="notice bad" role="alert"><Icon name="warn" />{error}</div>}
+        <label><span>Current password</span>
+          <input className="input" type="password" autoComplete="current-password" value={current} onChange={(e) => setCurrent(e.target.value)} required /></label>
+        <label><span>New password (8 or more characters)</span>
+          <input className="input" type="password" autoComplete="new-password" value={next} onChange={(e) => setNext(e.target.value)} required minLength={8} /></label>
+        <label><span>Type it again</span>
+          <input className="input" type="password" autoComplete="new-password" value={again} onChange={(e) => setAgain(e.target.value)} required aria-invalid={mismatch || undefined} />
+          {mismatch && <small className="field-note">The two passwords don&apos;t match.</small>}</label>
+        <div className="row">
+          <button className="btn primary" type="submit" disabled={busy || !current || next.length < 8 || next !== again}>
+            {busy ? "Saving…" : "Change password"}
+          </button>
+        </div>
+      </form>
+    </div>
+  );
+}
+
+function FamilyMembers() {
+  const [members, setMembers] = useState<Member[] | null>(null);
+  const [name, setName] = useState("");
+  const [password, setPassword] = useState("");
+  const [admin, setAdmin] = useState(false);
+  const [resetting, setResetting] = useState<number | null>(null);
+  const [resetTo, setResetTo] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [message, setMessage] = useState<{ ok: boolean; text: string } | null>(null);
+
+  const load = () => api.members().then(setMembers).catch((e) => setMessage({ ok: false, text: e.message }));
+  useEffect(() => { load(); }, []);
+
+  const run = async (action: () => Promise<string>) => {
+    setBusy(true);
+    setMessage(null);
+    try {
+      setMessage({ ok: true, text: await action() });
+      load();
+    } catch (err) {
+      setMessage({ ok: false, text: (err as Error).message });
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const add = (e: React.FormEvent) => {
+    e.preventDefault();
+    run(async () => {
+      const m = await api.addMember(name, password, admin);
+      setName(""); setPassword(""); setAdmin(false);
+      return `Added ${m.name}. Tell them their password; they can change it in Settings.`;
+    });
+  };
+
+  const reset = (e: React.FormEvent, m: Member) => {
+    e.preventDefault();
+    run(async () => {
+      await api.resetPassword(m.id, resetTo);
+      setResetting(null); setResetTo("");
+      return `New password set for ${m.name}. They've been signed out everywhere.`;
+    });
+  };
+
+  return (
+    <section className="card">
+      <h2>Family members</h2>
+      <p className="muted" style={{ marginTop: 0, fontSize: 14 }}>
+        Each person signs in with their own password and sees only their own documents.
+      </p>
+      {message && <div className={`notice ${message.ok ? "good" : "bad"}`} role="status" style={{ marginBottom: 12 }}><Icon name={message.ok ? "ok" : "warn"} />{message.text}</div>}
+      <ul className="members">
+        {members?.map((m) => (
+          <li key={m.id}>
+            <span className="avatar-initial">{m.name.slice(0, 1)}</span>
+            <div className="who">
+              <strong>{m.name}</strong>
+              <span>{m.is_admin ? "Admin" : "Family member"}{m.can_sign_in ? "" : " · no password yet"}</span>
+            </div>
+            {resetting === m.id ? (
+              <form onSubmit={(e) => reset(e, m)}>
+                <input className="input" type="password" autoComplete="new-password" placeholder="New password" aria-label={`New password for ${m.name}`}
+                       value={resetTo} onChange={(e) => setResetTo(e.target.value)} minLength={8} required autoFocus />
+                <button className="btn primary small" type="submit" disabled={busy || resetTo.length < 8}>Set</button>
+                <button className="btn small" type="button" onClick={() => { setResetting(null); setResetTo(""); }}>Cancel</button>
+              </form>
+            ) : (
+              <button className="btn small" type="button" onClick={() => { setResetting(m.id); setResetTo(""); }}>
+                {m.can_sign_in ? "Reset password" : "Set password"}
+              </button>
+            )}
+          </li>
+        ))}
+      </ul>
+      <form className="stack-form" onSubmit={add} style={{ marginTop: 16 }}>
+        <strong style={{ fontSize: 14 }}>Add a family member</strong>
+        <label><span>Name</span>
+          <input className="input" value={name} onChange={(e) => setName(e.target.value)} maxLength={60} autoComplete="off" required /></label>
+        <label><span>Password (8 or more characters)</span>
+          <input className="input" type="password" autoComplete="new-password" value={password} onChange={(e) => setPassword(e.target.value)} minLength={8} required /></label>
+        <label className="check"><input type="checkbox" checked={admin} onChange={(e) => setAdmin(e.target.checked)} />
+          Admin (can add members and reset passwords)</label>
+        <div className="row"><button className="btn primary" type="submit" disabled={busy || !name.trim() || password.length < 8}>
+          <Icon name="plus" size={14} />Add member</button></div>
+      </form>
+    </section>
   );
 }
 

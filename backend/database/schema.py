@@ -1,6 +1,8 @@
 """Phase 2 metadata schema (PostgreSQL).
 
-    users            who owns documents (login comes in Phase 6)
+    users            family members: who owns documents, and their sign-in (Phase 6)
+    sessions         who is signed in, on which browser (the cookie holds a random token;
+                     only its SHA-256 is stored, so a copied database can't sign anyone in)
     documents        one row per uploaded file: name, type, upload date, owner, file path
     document_chunks  the searchable pieces of each document; `id` is also the
                      chunk's id in the FAISS vector index
@@ -14,6 +16,7 @@ from __future__ import annotations
 
 from sqlalchemy import (
     BigInteger,
+    Boolean,
     Column,
     DateTime,
     ForeignKey,
@@ -33,9 +36,21 @@ users = Table(
     metadata,
     Column("id", Integer, primary_key=True, autoincrement=True),
     Column("name", String(100), nullable=False, unique=True),
-    Column("email", String(320), unique=True),  # used from Phase 6 (login)
+    Column("email", String(320), unique=True),  # reminders (Phase 10)
     Column("created_at", DateTime(timezone=True), nullable=False),
+    Column("password_hash", Text),  # scrypt, see backend/auth/passwords.py; NULL = can't sign in yet
+    Column("is_admin", Boolean, nullable=False, default=False),  # can add family members, reset passwords
 )
+
+sessions = Table(
+    "sessions",
+    metadata,
+    Column("token_hash", String(64), primary_key=True),
+    Column("user_id", Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False),
+    Column("created_at", DateTime(timezone=True), nullable=False),
+    Column("expires_at", DateTime(timezone=True), nullable=False),
+)
+Index("ix_sessions_user_id", sessions.c.user_id)
 
 documents = Table(
     "documents",
@@ -69,7 +84,11 @@ Index("ix_document_chunks_document_id", document_chunks.c.document_id)
 
 # Columns added after a table first shipped. create_all() never alters existing tables, so
 # connect() adds these to older vaults: (table, column, SQL type).
-ADDED_COLUMNS = [("documents", "ocr_confidence", "INTEGER")]
+ADDED_COLUMNS = [
+    ("documents", "ocr_confidence", "INTEGER"),
+    ("users", "password_hash", "TEXT"),
+    ("users", "is_admin", "BOOLEAN NOT NULL DEFAULT FALSE"),
+]
 
 vault_meta = Table(
     "vault_meta",
