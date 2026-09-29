@@ -70,9 +70,7 @@ void main() {
     final vault = FakeVault()..failWith = VaultException('This phone isn\'t paired', unpaired: true);
     final store = await pairedStore();
     await tester.pumpWidget(VaultApp(store: store, connect: (_) => vault));
-    await tester.pumpAndSettle();
-    await tester.tap(find.text('Documents'));
-    await tester.pumpAndSettle();
+    await tester.pumpAndSettle(); // the first call to the vault is refused: this phone was removed on the Mac
     expect(find.text('Scan pairing code'), findsOneWidget);
     expect(await store.load(), isNull);
   });

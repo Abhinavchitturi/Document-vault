@@ -7,7 +7,7 @@ import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 class PairingCode {
   PairingCode({required this.url, required this.fingerprint, required this.code});
 
-  /// https://<Mac's address on the Wi-Fi>:8443
+  /// `https://<Mac address on the Wi-Fi>:8443`
   final String url;
 
   /// SHA-256 of the vault's certificate (hex). The app only talks to a server with exactly this certificate.

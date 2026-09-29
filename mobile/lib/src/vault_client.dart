@@ -171,7 +171,7 @@ class VaultClient implements VaultApi {
       try {
         _decode(await http.Response.fromStream(res));
       } on VaultException catch (e) {
-        if (e.unpaired) throw e;
+        if (e.unpaired) rethrow;
         yield ErrorEvent(e.message);
       }
       return;

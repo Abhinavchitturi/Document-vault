@@ -50,10 +50,12 @@ class _SourceScreenState extends State<SourceScreen> {
       Uint8List? image;
       if (h.kind == 'pdf' || h.kind == 'scan') image = await api.pageImage(widget.source.docId, _page);
       if (h.kind == 'image') image = await api.file(widget.source.docId);
-      if (mounted) setState(() {
-        _h = h;
-        _image = image;
-      });
+      if (mounted) {
+        setState(() {
+          _h = h;
+          _image = image;
+        });
+      }
     } catch (e) {
       if (!mounted) return;
       setState(() => _error = e.toString());
