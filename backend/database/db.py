@@ -19,7 +19,7 @@ from sqlalchemy import create_engine, event, inspect, text
 from sqlalchemy.engine import Engine, make_url
 from sqlalchemy.exc import OperationalError
 
-from backend.database.schema import ADDED_COLUMNS, metadata
+from backend.database.schema import ADDED_COLUMNS, WIDENED_COLUMNS, metadata
 
 DEFAULT_URL = "postgresql+psycopg://localhost/vault"
 LOCAL_HOSTS = {None, "", "localhost", "127.0.0.1", "::1"}
@@ -75,6 +75,12 @@ def _add_new_columns(engine: Engine) -> None:
             with engine.begin() as conn:
                 conn.execute(text(f"ALTER TABLE {table} ADD COLUMN {column} {sql_type}"))
             existing[table].add(column)
+    if engine.dialect.name == "postgresql":  # SQLite does not enforce lengths
+        for table, column, sql_type in WIDENED_COLUMNS:
+            current = next(c["type"] for c in inspect(engine).get_columns(table) if c["name"] == column)
+            if getattr(current, "length", None):
+                with engine.begin() as conn:
+                    conn.execute(text(f"ALTER TABLE {table} ALTER COLUMN {column} TYPE {sql_type}"))
 
 
 def _reason(error: OperationalError) -> str:

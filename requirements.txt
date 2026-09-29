@@ -5,6 +5,7 @@ python-multipart  # file uploads
 webauthn>=2.0     # passkeys: Touch ID / Face ID / fingerprint sign-in (Duo's py_webauthn)
 segno             # QR codes for pairing phones (Phase 7)
 cryptography      # the phone listener's HTTPS certificate (also used by webauthn)
+keyring           # Phase 11: the vault key lives in the macOS Keychain
 
 # Embeddings and vector search (all run on this computer)
 sentence-transformers

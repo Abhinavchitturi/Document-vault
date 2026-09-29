@@ -42,27 +42,34 @@ from __future__ import annotations
 import argparse
 import json
 import logging
+import mimetypes
 import re
+import shutil
 import tempfile
 import time
 from collections import Counter
+from contextlib import contextmanager
 from dataclasses import asdict
 from datetime import date
 from pathlib import Path
 
 from typing import Literal
-from urllib.parse import urlsplit
+from urllib.parse import quote, urlsplit
 
 from fastapi import Depends, FastAPI, File, Form, HTTPException, Query, Request, UploadFile
 from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import FileResponse, JSONResponse, Response, StreamingResponse
 from pydantic import BaseModel, Field
+from starlette.background import BackgroundTask
 
 from backend.auth.accounts import SESSION_DAYS, Accounts, AuthError, TooManyAttempts
 from backend.auth.devices import Devices
 from backend.classify.classifier import REVIEW_BELOW, Classifier
 from backend.extract.facts import FactsReader
 from backend.reminders.reminders import Reminders
+from backend.security import keys as vault_keys
+from backend.security.access_log import AccessLog
+from backend.security.backup import BackupError, make_backup
 from backend.auth.passkeys import Passkeys
 from backend.llm.answer import LLM, answer_question, finalize, stream_answer
 from backend.llm.ollama import LLMUnavailableError
@@ -164,6 +171,10 @@ class PasswordChange(BaseModel):
 
 class PasswordReset(BaseModel):
     new_password: str = Field(..., max_length=500)
+
+
+class BackupRequest(BaseModel):
+    password: str = Field(..., max_length=500)
 
 
 class PasskeyResponse(BaseModel):
@@ -283,6 +294,19 @@ def create_app(
     def vault_of(user: dict) -> DocumentStore:
         return store.for_user(user["id"])
 
+    access_log = AccessLog(store.engine, store.cipher)
+    recently_opened: dict[tuple[int, str], float] = {}
+
+    def audit(action: str, request: Request, user: dict | None = None, **details) -> None:
+        access_log.record(action, user or getattr(request.state, "user", None), client=_client(request), **details)
+
+    def audit_open(request: Request, user: dict, doc: dict) -> None:
+        """Once per person and document every 10 minutes: paging through a scan is one opening."""
+        key, now = (user["id"], doc["doc_id"]), time.monotonic()
+        if now - recently_opened.get(key, -1e9) > 600:
+            recently_opened[key] = now
+            audit("document_opened", request, user, document_id=doc["doc_id"], detail=doc["filename"])
+
     def retriever_for(user: dict, method: str | None = None) -> Retriever:
         key = (user["id"], method or search_method)
         if key not in retrievers:  # one per person and method: each keeps its own keyword index
@@ -340,6 +364,7 @@ def create_app(
         try:
             user = accounts.setup(req.name, req.password)
             user, token = accounts.login(user["name"], req.password, _client(request))
+            audit("sign_in", request, user)
         except AuthError as e:
             raise HTTPException(400, str(e)) from e
         _set_cookie(request, response, token)
@@ -351,10 +376,13 @@ def create_app(
         try:
             user, token = accounts.login(req.name, req.password, _client(request))
         except TooManyAttempts as e:
+            audit("sign_in_failed", request, user_name=req.name, detail="locked out after too many attempts", ok=False)
             raise HTTPException(429, str(e)) from e
         except AuthError as e:
             logger.warning("Failed sign-in for %r from %s", req.name[:60], _client(request))
+            audit("sign_in_failed", request, user_name=req.name, detail="wrong name or password", ok=False)
             raise HTTPException(401, str(e)) from e
+        audit("sign_in", request, user)
         _set_cookie(request, response, token)
         return {"user": user}
 
@@ -379,7 +407,9 @@ def create_app(
         except AuthError as e:
             accounts.record_failure(throttle)
             logger.warning("Failed passkey sign-in from %s: %s", _client(request), e)
+            audit("sign_in_failed", request, detail=f"passkey: {e}", ok=False)
             raise HTTPException(401, str(e)) from e
+        audit("sign_in_passkey", request, user)
         _set_cookie(request, response, accounts.start_session(user["id"]))
         return {"user": user}
 
@@ -395,22 +425,27 @@ def create_app(
             raise HTTPException(400, str(e)) from e
 
     @app.post("/api/passkeys")
-    def passkey_add(req: PasskeyResponse, user: dict = Depends(current_user)) -> dict:
+    def passkey_add(req: PasskeyResponse, request: Request, user: dict = Depends(current_user)) -> dict:
         try:
             added = keys.register(user, req.ceremony, req.credential, req.name or "Passkey")
         except AuthError as e:
             raise HTTPException(400, str(e)) from e
         logger.info("%s added a passkey (%s)", user["name"], added["name"])
+        audit("passkey_added", request, user, detail=added["name"])
         return added
 
     @app.delete("/api/passkeys/{passkey_id}")
-    def passkey_remove(passkey_id: str, user: dict = Depends(current_user)) -> dict:
+    def passkey_remove(passkey_id: str, request: Request, user: dict = Depends(current_user)) -> dict:
         if not keys.remove(user["id"], passkey_id):
             raise HTTPException(404, "passkey not found")
+        audit("passkey_removed", request, user)
         return {"removed": passkey_id}
 
     @app.post("/api/auth/logout")
     def auth_logout(request: Request, response: Response) -> dict:
+        signed_in = accounts.user_for_token(request.cookies.get(SESSION_COOKIE))
+        if signed_in:
+            audit("sign_out", request, signed_in)
         accounts.logout(request.cookies.get(SESSION_COOKIE))
         response.delete_cookie(SESSION_COOKIE, path="/")
         return {"signed_out": True}
@@ -424,6 +459,7 @@ def create_app(
             raise HTTPException(429, str(e)) from e
         except AuthError as e:
             raise HTTPException(400, str(e)) from e
+        audit("password_changed", request, user)
         return {"changed": True}
 
     # ---------- family members (admin) ----------
@@ -433,16 +469,17 @@ def create_app(
         return accounts.list_users()
 
     @app.post("/api/users")
-    def add_user(req: NewMember, user: dict = Depends(admin_user)) -> dict:
+    def add_user(req: NewMember, request: Request, user: dict = Depends(admin_user)) -> dict:
         try:
             member = accounts.add_member(req.name, req.password, is_admin=req.is_admin)
         except AuthError as e:
             raise HTTPException(400, str(e)) from e
         logger.info("%s added family member %s", user["name"], member["name"])
+        audit("member_added", request, user, detail=member["name"])
         return member
 
     @app.post("/api/users/{user_id}/password")
-    def reset_password(user_id: int, req: PasswordReset, user: dict = Depends(admin_user)) -> dict:
+    def reset_password(user_id: int, req: PasswordReset, request: Request, user: dict = Depends(admin_user)) -> dict:
         if user_id == user["id"]:
             raise HTTPException(400, "Change your own password under Your account (it needs your current one).")
         try:
@@ -451,7 +488,31 @@ def create_app(
             raise HTTPException(400, str(e)) from e
         devices.revoke_all(user_id)  # a reset is often "someone else may know it": unpair their phones too
         logger.info("%s reset the password of user %d", user["name"], user_id)
+        audit("password_reset", request, user, detail=next((u["name"] for u in accounts.list_users() if u["id"] == user_id), None))
         return {"changed": True}
+
+    # ---------- activity (Phase 11) ----------
+
+    @app.get("/api/activity")
+    def activity(everyone: bool = False, user: dict = Depends(current_user)) -> dict:
+        """Your own sign-ins and document activity; the admin can see the whole family's."""
+        if everyone and not user.get("is_admin"):
+            raise HTTPException(403, "Only the vault's admin can see everyone's activity.")
+        return {"entries": access_log.entries(None if everyone else user["id"])}
+
+    @app.post("/api/backup")
+    def download_backup(req: BackupRequest, request: Request, user: dict = Depends(admin_user)) -> FileResponse:
+        """The whole vault as one encrypted file (admin only; only the backup password opens it)."""
+        folder = Path(tempfile.mkdtemp(prefix="vault-backup-"))
+        try:
+            path = make_backup(store, folder, req.password)
+        except BackupError as e:
+            shutil.rmtree(folder, ignore_errors=True)
+            raise HTTPException(400, str(e)) from e
+        audit("backup_made", request, user, detail=path.name)
+        return FileResponse(path, filename=path.name, media_type="application/octet-stream",
+                            headers={"Cache-Control": "private, no-store"},
+                            background=BackgroundTask(shutil.rmtree, folder, ignore_errors=True))
 
     # ---------- phones (Phase 7) ----------
 
@@ -498,6 +559,7 @@ def create_app(
             accounts.record_failure(throttle)
             raise HTTPException(401, str(e)) from e
         logger.info("%s paired a phone (%s)", user["name"], device["name"])
+        audit("phone_paired", request, {**user, "device_id": device["id"], "device_name": device["name"]})
         return {"token": token, "user": user, "device": device}
 
     @app.get("/api/devices")
@@ -507,9 +569,11 @@ def create_app(
                 "tunnel": any(u.startswith("https://100.") for u in urls), "devices": devices.list_for(user["id"])}
 
     @app.delete("/api/devices/{device_id}")
-    def remove_device(device_id: int, user: dict = Depends(current_user)) -> dict:
+    def remove_device(device_id: int, request: Request, user: dict = Depends(current_user)) -> dict:
+        names = {d["id"]: d["name"] for d in devices.list_for(user["id"])}
         if not devices.revoke(user["id"], device_id):
             raise HTTPException(404, "phone not found")
+        audit("phone_removed", request, user, detail=names.get(device_id))
         logger.info("%s removed a paired phone", user["name"])
         return {"removed": device_id}
 
@@ -548,7 +612,7 @@ def create_app(
         return [_public(d) for d in vault_of(user).list_documents()]
 
     @app.post("/api/documents")
-    def upload(files: list[UploadFile] = File(...), category: str = Form("auto"),
+    def upload(request: Request, files: list[UploadFile] = File(...), category: str = Form("auto"),
                password: str | None = Form(None, max_length=200),
                user: dict = Depends(current_user)) -> list[dict]:
         """`password` opens a locked PDF (e-Aadhaar, e-PAN); without it such a file comes back with
@@ -592,46 +656,64 @@ def create_app(
                     logger.exception("Failed to ingest %s", name)
                     results.append({"filename": name, "status": "error", "error": "Could not read this file."})
                     continue
+            if result.created:
+                audit("document_added", request, user, document_id=result.document["doc_id"], detail=name)
             results.append({"filename": name, "status": "added" if result.created else "duplicate",
                             "document": _public(result.document)})
         return results
 
     @app.get("/api/documents/{doc_id}/file")
-    def open_file(doc_id: str, user: dict = Depends(current_user)) -> FileResponse:
-        doc, path = _owned_file(user, doc_id)
-        return FileResponse(path, filename=doc["filename"], content_disposition_type="inline")
-
-    def _owned_file(user: dict, doc_id: str) -> tuple[dict, Path]:
-        mine = vault_of(user)
-        doc = mine.get(doc_id)  # only this person's documents are visible
-        path = mine.file_path(doc_id)
-        if not doc or not path or not path.exists():
+    def open_file(doc_id: str, request: Request, user: dict = Depends(current_user)) -> Response:
+        doc = _owned(user, doc_id)
+        audit_open(request, user, doc)
+        data = vault_of(user).read_file(doc_id)  # decrypted in memory, never written out plain
+        if data is None:
             raise HTTPException(404, "document not found")
-        return doc, path
+        media_type = mimetypes.guess_type(doc["filename"])[0] or "application/octet-stream"
+        return Response(data, media_type=media_type, headers={
+            "Content-Disposition": f"inline; filename*=utf-8''{quote(doc['filename'])}",
+            "Cache-Control": "private, no-store"})
+
+    def _owned(user: dict, doc_id: str) -> dict:
+        doc = vault_of(user).get(doc_id)  # only this person's documents are visible
+        if not doc:
+            raise HTTPException(404, "document not found")
+        return doc
+
+    @contextmanager
+    def _plain_copy(user: dict, doc_id: str):
+        _owned(user, doc_id)
+        with vault_of(user).plain_copy(doc_id) as path:
+            if path is None:
+                raise HTTPException(404, "document not found")
+            yield path
 
     @app.get("/api/documents/{doc_id}/pages/{page}/image")
-    def page_image_route(doc_id: str, page: int, user: dict = Depends(current_user)) -> Response:
-        _, path = _owned_file(user, doc_id)
-        if path.suffix.lower() != ".pdf" and path.suffix.lower() not in IMAGE_SUFFIXES:
+    def page_image_route(doc_id: str, page: int, request: Request, user: dict = Depends(current_user)) -> Response:
+        doc = _owned(user, doc_id)
+        audit_open(request, user, doc)
+        suffix = Path(doc["stored_as"]).suffix.lower()
+        if suffix != ".pdf" and suffix not in IMAGE_SUFFIXES:
             raise HTTPException(400, "page images are only available for PDFs, scans and photos")
-        try:
-            image, media_type = page_image(path, page)
-        except ValueError as e:
-            raise HTTPException(404, str(e)) from e
+        with _plain_copy(user, doc_id) as path:
+            try:
+                image, media_type = page_image(path, page)
+            except ValueError as e:
+                raise HTTPException(404, str(e)) from e
         return Response(image, media_type=media_type, headers={"Cache-Control": "private, no-store"})
 
     @app.post("/api/documents/{doc_id}/pages/{page}/highlights")
     def page_highlights(doc_id: str, page: int, req: HighlightRequest, user: dict = Depends(current_user)) -> dict:
-        _, path = _owned_file(user, doc_id)
         chunk = next((c for c in vault_of(user).chunks if c["chunk_id"] == req.chunk_id and c["doc_id"] == doc_id), None)
-        try:
-            result = highlights_for(path, page, chunk["text"] if chunk else None, req.answer)
-        except ValueError as e:
-            raise HTTPException(404, str(e)) from e
+        with _plain_copy(user, doc_id) as path:
+            try:
+                result = highlights_for(path, page, chunk["text"] if chunk else None, req.answer)
+            except ValueError as e:
+                raise HTTPException(404, str(e)) from e
         return asdict(result)
 
     @app.patch("/api/documents/{doc_id}")
-    def update_document(doc_id: str, req: DocumentUpdate, user: dict = Depends(current_user)) -> dict:
+    def update_document(doc_id: str, req: DocumentUpdate, request: Request, user: dict = Depends(current_user)) -> dict:
         if req.category is not None and req.category not in CATEGORIES:
             raise HTTPException(400, f"category must be one of {CATEGORIES}")
         mine = vault_of(user)
@@ -652,6 +734,8 @@ def create_app(
             chunks = [{**c, "category": req.category} for c in mine.chunks_of(doc_id)]
             vectors = embedder.encode_passages(passage_texts(chunks)) if chunks else None
             doc = mine.update_category(doc_id, req.category, vectors)
+        audit("document_changed", request, user, document_id=doc_id,
+              detail=f"{doc['filename']}: {', '.join(req.model_dump(exclude_unset=True))}")
         return _public(doc)
 
     @app.get("/api/upcoming")
@@ -718,6 +802,7 @@ def create_app(
             "ocr_available": ocr_available(),
             "search_method": search_method,
             "facts_reader": facts_reader.name,
+            "key_kept_in": vault_keys.where(store._vault.vault_id),  # Phase 11: encrypted at rest
         }
 
     @app.get("/api/settings")
@@ -749,9 +834,11 @@ def create_app(
         return settings_view(user)
 
     @app.delete("/api/documents/{doc_id}")
-    def delete(doc_id: str, user: dict = Depends(current_user)) -> dict:
+    def delete(doc_id: str, request: Request, user: dict = Depends(current_user)) -> dict:
+        doc = vault_of(user).get(doc_id)
         if not vault_of(user).delete(doc_id):
             raise HTTPException(404, "document not found")
+        audit("document_deleted", request, user, document_id=doc_id, detail=doc["filename"] if doc else None)
         return {"deleted": doc_id}
 
     @app.get("/api/search")
@@ -891,10 +978,11 @@ def main() -> None:
     from backend.upload.ingest import passage_texts
 
     from backend.database.db import DatabaseUnavailableError, database_url, default_owner
+    from backend.security.keys import KeyMissingError
 
     try:
         store = DocumentStore(args.index_dir, database_url(args.database_url), owner=default_owner(args.owner))
-    except DatabaseUnavailableError as e:
+    except (DatabaseUnavailableError, KeyMissingError) as e:
         raise SystemExit(str(e)) from e
     embedder = Embedder(args.model or DEFAULT_MODEL, device=args.device)
     if store.model and store.model != embedder.model_name:
