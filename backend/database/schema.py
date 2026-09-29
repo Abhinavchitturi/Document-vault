@@ -2,6 +2,7 @@
 
     users            family members: who owns documents, and their sign-in (Phase 6)
     devices          paired phones (Phase 7): the SHA-256 of each phone's access key
+    reminder_*       Phase 10: reminder choices, "done" marks, and what the Mac already showed
     passkeys         Touch ID / Face ID / fingerprint sign-ins: each device's public key
     sessions         who is signed in, on which browser (the cookie holds a random token;
                      only its SHA-256 is stored, so a copied database can't sign anyone in)
@@ -67,6 +68,35 @@ devices = Table(  # paired phones (Phase 7): each holds its own long-lived, revo
     Column("last_seen_at", DateTime(timezone=True)),
 )
 Index("ix_devices_user_id", devices.c.user_id)
+
+reminder_settings = Table(  # Phase 10: each person's reminder choices
+    "reminder_settings",
+    metadata,
+    Column("user_id", Integer, ForeignKey("users.id", ondelete="CASCADE"), primary_key=True),
+    Column("expiry_days", String(64), nullable=False),  # days before an expiry to remind, e.g. "30,7,1,0"
+    Column("due_days", String(64), nullable=False),  # days before a payment is due, e.g. "7,1,0"
+    Column("time_of_day", String(5), nullable=False),  # "09:00": when phone reminders appear
+    Column("desktop", Boolean, nullable=False),  # also show them as notifications on this Mac
+)
+
+reminder_done = Table(  # "paid" / "renewed": no more reminders for that date
+    "reminder_done",
+    metadata,
+    Column("document_id", String(32), ForeignKey("documents.id", ondelete="CASCADE"), primary_key=True),
+    Column("kind", String(8), primary_key=True),  # expires / due
+    Column("date", Date, primary_key=True),
+    Column("done_at", DateTime(timezone=True), nullable=False),
+)
+
+reminders_sent = Table(  # what was already shown on the Mac, so it isn't repeated
+    "reminders_sent",
+    metadata,
+    Column("document_id", String(32), ForeignKey("documents.id", ondelete="CASCADE"), primary_key=True),
+    Column("kind", String(8), primary_key=True),
+    Column("date", Date, primary_key=True),
+    Column("lead", Integer, primary_key=True),  # days before the date
+    Column("sent_at", DateTime(timezone=True), nullable=False),
+)
 
 passkeys = Table(  # Touch ID / Face ID / fingerprint sign-in (WebAuthn), see backend/auth/passkeys.py
     "passkeys",

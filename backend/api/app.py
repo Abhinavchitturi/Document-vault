@@ -6,6 +6,10 @@ Endpoints:
     GET    /api/documents                 all documents in the library
     PATCH  /api/documents/{id}            change a document's type, or correct its key facts
     GET    /api/upcoming?days=90          expiries and due dates coming up (and missed in the last 30 days)
+    GET    /api/reminders                 open reminders + this person's reminder choices
+    POST   /api/reminders/done | settings mark paid / renewed; change reminder days, time, Mac notifications
+    GET    /api/reminders/schedule        future reminders for the phone to schedule
+    GET    /api/reminders/calendar.ics    the same as a calendar file
     GET    /api/settings                  owner, models, where data lives
     POST   /api/settings                  switch the answer model (one already downloaded in Ollama)
     POST   /api/documents                 upload one or more files (form fields: files, category)
@@ -58,6 +62,7 @@ from backend.auth.accounts import SESSION_DAYS, Accounts, AuthError, TooManyAtte
 from backend.auth.devices import Devices
 from backend.classify.classifier import REVIEW_BELOW, Classifier
 from backend.extract.facts import FactsReader
+from backend.reminders.reminders import Reminders
 from backend.auth.passkeys import Passkeys
 from backend.llm.answer import LLM, answer_question, finalize, stream_answer
 from backend.llm.ollama import LLMUnavailableError
@@ -106,6 +111,19 @@ class ChatRequest(BaseModel):
     history: list[ChatTurn] = Field(default_factory=list, max_length=20)
     category: str | None = None
     k: int = Field(5, ge=1, le=10)
+
+
+class ReminderMark(BaseModel):
+    doc_id: str = Field(..., max_length=32)
+    kind: Literal["expires", "due"]
+    done: bool = True
+
+
+class ReminderSettings(BaseModel):
+    expiry_days: list[int] | None = Field(None, max_length=10)
+    due_days: list[int] | None = Field(None, max_length=10)
+    time_of_day: str | None = Field(None, max_length=5)
+    desktop: bool | None = None
 
 
 class DocumentUpdate(BaseModel):
@@ -251,6 +269,7 @@ def create_app(
     accounts = accounts or Accounts(store.engine)
     classifier = Classifier(embedder, llm)  # Phase 8: sorts uploads marked "auto"
     facts_reader = FactsReader(llm)  # Phase 9: expiry, due date, amount, reference, issuer (Needle 3 if installed)
+    reminders = Reminders(store.engine)  # Phase 10
     keys = Passkeys(store.engine, passkey_hosts)
     devices = devices or Devices(store.engine)
 
@@ -645,6 +664,39 @@ def create_app(
                                       "amount": doc.get("amount"), "issuer": doc.get("issuer")})
         return sorted(items, key=lambda i: i["date"])
 
+    # ---------- reminders (Phase 10) ----------
+
+    @app.get("/api/reminders")
+    def list_reminders(user: dict = Depends(current_user)) -> dict:
+        return {"items": reminders.items(vault_of(user)), "settings": reminders.settings(user["id"])}
+
+    @app.post("/api/reminders/done")
+    def reminder_done(req: ReminderMark, user: dict = Depends(current_user)) -> dict:
+        doc = vault_of(user).get(req.doc_id)
+        if doc is None or not doc.get("expires_on" if req.kind == "expires" else "due_on"):
+            raise HTTPException(404, "no such reminder")
+        reminders.mark_done(doc, req.kind, req.done)
+        return {"items": reminders.items(vault_of(user))}
+
+    @app.post("/api/reminders/settings")
+    def reminder_settings_save(req: ReminderSettings, user: dict = Depends(current_user)) -> dict:
+        try:
+            return reminders.save_settings(user["id"], req.model_dump())
+        except ValueError as e:
+            raise HTTPException(400, str(e)) from e
+
+    @app.get("/api/reminders/schedule")
+    def reminder_schedule(user: dict = Depends(current_user)) -> dict:
+        """Every future reminder, for the phone app to schedule as phone notifications."""
+        return {"time_of_day": reminders.settings(user["id"])["time_of_day"],
+                "reminders": reminders.schedule(vault_of(user))}
+
+    @app.get("/api/reminders/calendar.ics")
+    def reminder_calendar(user: dict = Depends(current_user)) -> Response:
+        return Response(reminders.calendar_file(vault_of(user)), media_type="text/calendar; charset=utf-8",
+                        headers={"Content-Disposition": 'attachment; filename="document-vault.ics"',
+                                 "Cache-Control": "private, no-store"})
+
     def settings_view(user: dict) -> dict:
         list_models = getattr(llm, "list_models", None)
         return {
@@ -880,9 +932,14 @@ def main() -> None:
     else:
         logger.info("%d family members. Answers: %s. Open http://localhost:%d",
                     len(accounts.list_users()), llm.name if llm else "off", args.port)
+    from backend.reminders import desktop
+    from backend.reminders.reminders import Reminders as _Reminders
+
+    stop_reminders = desktop.start(store, _Reminders(store.engine))  # Mac notifications while running
     try:
         uvicorn.run(app, host="127.0.0.1", port=args.port)
     finally:
+        stop_reminders.set()
         if phone_server:
             phone_server.should_exit = True
 

@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:path_provider/path_provider.dart';
 
 import 'pairing.dart';
+import 'phone_reminders.dart';
 import 'screens/home_screen.dart';
 import 'screens/lock_screen.dart';
 import 'screens/pair_screen.dart';
@@ -31,7 +32,10 @@ ThemeData _theme(Brightness b) {
 /// What every screen can reach: the vault connection, and what to do when the phone gets unpaired.
 class VaultScope extends InheritedWidget {
   const VaultScope({super.key, required this.api, required this.pairing, required this.store,
-      required this.onUnpaired, required this.queue, required super.child});
+      required this.onUnpaired, required this.queue, required this.reminders, required super.child});
+
+  /// The phone's notification system, for reminders.
+  final ReminderScheduler reminders;
 
   final VaultApi api;
 
@@ -58,7 +62,11 @@ class VaultScope extends InheritedWidget {
 }
 
 class VaultApp extends StatefulWidget {
-  const VaultApp({super.key, required this.store, required this.connect, this.authenticate, this.storageDir});
+  const VaultApp({super.key, required this.store, required this.connect, this.authenticate, this.storageDir,
+      this.reminders});
+
+  /// Phone notifications for reminders; replaced in tests.
+  final ReminderScheduler? reminders;
 
   final PairingStore store;
   final VaultApi Function(Pairing) connect;
@@ -77,6 +85,7 @@ class _VaultAppState extends State<VaultApp> with WidgetsBindingObserver {
   Pairing? _pairing;
   VaultApi? _api;
   UploadQueue? _queue;
+  late final ReminderScheduler _reminders = widget.reminders ?? PhoneNotifications();
   bool _loading = true;
   bool _locked = false;
   DateTime? _backgroundSince;
@@ -141,6 +150,7 @@ class _VaultAppState extends State<VaultApp> with WidgetsBindingObserver {
     // Waiting scans belonged to that pairing (and a removed phone may be a lost one): don't keep them.
     final queue = _queue;
     if (queue != null) unawaited(_clear(queue));
+    unawaited(_reminders.clear().catchError((_) {})); // an unpaired phone shouldn't keep reminding
   }
 
   static Future<void> _clear(UploadQueue queue) async {
@@ -170,7 +180,8 @@ class _VaultAppState extends State<VaultApp> with WidgetsBindingObserver {
       darkTheme: _theme(Brightness.dark),
       // Above the navigator, so screens opened on top (a source page) can reach the vault too.
       builder: (context, child) => signedIn
-          ? VaultScope(api: _api!, pairing: _pairing!, store: widget.store, onUnpaired: _unpaired, queue: _queue!, child: child!)
+          ? VaultScope(api: _api!, pairing: _pairing!, store: widget.store, onUnpaired: _unpaired, queue: _queue!,
+              reminders: _reminders, child: child!)
           : child!,
       home: home,
     );

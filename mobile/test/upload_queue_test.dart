@@ -42,7 +42,7 @@ void main() {
       await store.save(testPairing);
       await store.setLockEnabled(false);
     });
-    await tester.pumpWidget(VaultApp(store: store, connect: (_) => vault, storageDir: tmp));
+    await tester.pumpWidget(VaultApp(store: store, connect: (_) => vault, storageDir: tmp, reminders: FakeScheduler()));
     for (var i = 0; i < 60 && vault.uploads.isEmpty; i++) {
       await tester.runAsync(() => Future<void>.delayed(const Duration(milliseconds: 20))); // real file reads, a step at a time
       await tester.pump();

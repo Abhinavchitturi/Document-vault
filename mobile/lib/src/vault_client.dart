@@ -10,6 +10,7 @@ import 'package:http/http.dart' as http;
 import 'package:http/io_client.dart';
 
 import 'models.dart';
+import 'phone_reminders.dart';
 import 'pairing.dart';
 
 /// Something the person can act on; [message] is safe to show.
@@ -53,6 +54,9 @@ abstract class VaultApi {
   Future<Uint8List> file(String docId);
   Future<List<UploadResult>> upload(List<({String path, String name})> files, String category);
   Future<void> unpair(int deviceId);
+
+  /// Every upcoming reminder for this person, to schedule on the phone (Phase 10).
+  Future<List<ScheduledReminder>> reminderSchedule();
 }
 
 class VaultClient implements VaultApi {
@@ -252,6 +256,12 @@ class VaultClient implements VaultApi {
 
   @override
   Future<void> unpair(int deviceId) => _call('DELETE', '/api/devices/$deviceId');
+
+  @override
+  Future<List<ScheduledReminder>> reminderSchedule() async =>
+      (((await _call('GET', '/api/reminders/schedule')) as Map)['reminders'] as List)
+          .map((r) => ScheduledReminder.fromJson(r as Map<String, dynamic>))
+          .toList();
 
   void close() => _http.close();
 }

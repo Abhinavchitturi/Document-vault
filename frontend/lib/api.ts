@@ -59,6 +59,29 @@ export interface Upcoming {
   issuer: string | null;
 }
 
+export interface Reminder {
+  doc_id: string;
+  filename: string;
+  category: Category;
+  kind: "expires" | "due";
+  date: string;
+  days_left: number;
+  done: boolean;
+  status: "overdue" | "today" | "soon" | "upcoming" | "done";
+  next_notice: string | null;
+  title: string;
+  body: string;
+  amount: string | null;
+  issuer: string | null;
+}
+
+export interface ReminderSettings {
+  expiry_days: number[];
+  due_days: number[];
+  time_of_day: string;
+  desktop: boolean;
+}
+
 export type DocumentChanges = Partial<Pick<VaultDocument, "category" | "expires_on" | "due_on" | "amount" | "reference" | "issuer">>;
 
 export interface PhoneAccess {
@@ -226,6 +249,11 @@ export const api = {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(changes),
     }).then((r) => json<VaultDocument>(r)),
+  reminders: () => fetch("/api/reminders").then((r) => json<{ items: Reminder[]; settings: ReminderSettings }>(r)),
+  markReminder: (doc_id: string, kind: Reminder["kind"], done: boolean) =>
+    postJson("/api/reminders/done", { doc_id, kind, done }).then((r) => json<{ items: Reminder[] }>(r)),
+  saveReminderSettings: (changes: Partial<ReminderSettings>) =>
+    postJson("/api/reminders/settings", changes).then((r) => json<ReminderSettings>(r)),
   upcoming: (days = 90) => fetch(`/api/upcoming?days=${days}`).then((r) => json<Upcoming[]>(r)),
   setCategory: (id: string, category: Category) =>
     fetch(`/api/documents/${encodeURIComponent(id)}`, {
