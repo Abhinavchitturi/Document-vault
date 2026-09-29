@@ -1,0 +1,7 @@
+#!/bin/sh
+# The vault's control command on the Mac: ./vault start | stop | status | logs | update | autostart on|off
+cd "$(dirname "$0")" || exit 1
+for py in .venv/bin/python venv/bin/python; do
+  if [ -x "$py" ]; then exec "$py" -m backend.deploy.vault "$@"; fi
+done
+exec python3 -m backend.deploy.vault "$@"

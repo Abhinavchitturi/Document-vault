@@ -28,7 +28,7 @@ and the privacy decisions.
 | 10 | Reminders | ✅ Before expiries and due dates: phone notifications (even with the Mac off), Mac notifications, a calendar file, and the Dashboard; days, time and "Paid / Done" per person |
 | 11 | Security | ✅ Documents, scans, search index, file names and ID numbers encrypted on disk (AES-256), key in the macOS Keychain with a paper recovery key; encrypted one-file backups; an activity log of sign-ins and document access |
 | 12 | Family sharing | ✅ Whole-family mode (default): everyone sees every document not marked private; or each person's own plus documents shared with chosen members. Only the owner changes or deletes a document; every change in the activity log |
-| 13 | Deployment | ⏳ |
+| 13 | Deployment | ✅ `./vault start / stop / status / logs / update`, Start/Stop Vault in Finder: checks and starts PostgreSQL, Ollama and Tailscale, runs in the background under macOS launchd (restarted after a crash, logs in `data/logs/`), optional start at login; `update` pulls, installs what changed and says whether phones need a new app |
 
 ## Privacy
 - For our family only. The repository is private and contains **code and fictional samples only**.
@@ -121,9 +121,28 @@ cd ..
 The first run also downloads the Arctic Embed embedding model (~440 MB) from Hugging Face; after
 that everything works offline.
 
-## Run
+## Run on the Mac (Phase 13)
+From the vault folder in Terminal:
 ```bash
-python -m backend.api.app
+./vault start
+```
+It checks the database, Ollama (answers), Tailscale (phones away from home) and the web pages,
+starts what's missing, runs the vault in the background with phone access on, and opens it in
+the browser. Closing Terminal doesn't stop it; it restarts by itself if it ever crashes.
+Or double-click **Start Vault.command** / **Stop Vault.command** in Finder.
+
+| Command | What it does |
+|---|---|
+| `./vault start` | Start (or restart) the vault in the background |
+| `./vault stop` | Stop it; phones show "can't reach the vault" until the next start |
+| `./vault status` | Running or not, and whether PostgreSQL, Ollama, Tailscale, pages and OCR are ready |
+| `./vault logs` | The end of `data/logs/vault.log` (`./vault logs -f` to follow) |
+| `./vault update` | `git pull`, install new packages / rebuild pages only if they changed, restart; says whether phones need a new app |
+| `./vault autostart on` | Start the vault whenever you log in to the Mac (`off`: only when you start it) |
+
+The Mac is kept awake while the vault runs. By hand, in the foreground (for troubleshooting):
+```bash
+python -m backend.api.app --phones
 ```
 Then open http://localhost:8000 (use `localhost`, not `127.0.0.1`: passkeys only work there). One process serves both the pages and the API; Node is only
 needed to build the pages.
