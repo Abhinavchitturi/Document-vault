@@ -10,3 +10,6 @@ venv/
 # Everything under data/ is local only: it holds the family's uploaded documents
 # (data/index/files/) and their extracted text. Never commit it.
 data/
+
+# Personal recording notes (not part of the repo)
+RECORDING_GUIDE.md
