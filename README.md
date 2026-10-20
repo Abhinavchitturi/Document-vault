@@ -12,6 +12,44 @@ Built in 13 phases, from a core RAG engine to a mobile app with reminders and fa
 See **[PROJECT_BRIEF.md](./PROJECT_BRIEF.md)** for the vision, the phases, the architecture
 and the privacy decisions.
 
+## Quick start (with sample documents)
+
+Runs on a Mac. Everything is local, and the samples are fictional, so you can try it without any
+real papers. Details for each step are under [Setup](#setup-once) below.
+
+```bash
+# 1. Python packages
+python3 -m venv venv && source venv/bin/activate
+pip install -r requirements.txt
+
+# 2. Tools: Tesseract (reads scans and photos), Node (builds the web pages)
+brew install tesseract tesseract-lang node
+
+# 3. A local answer model (install Ollama from https://ollama.com first)
+ollama pull llama3.1:8b
+
+# 4. Build the web pages
+cd frontend && npm install && npm run build && cd ..
+
+# 5. Load the sample documents into a single-file database (no PostgreSQL needed)
+export VAULT_DATABASE_URL=sqlite:///data/index/vault.db
+python -m backend.upload.ingest samples/pdfs samples/scans --owner abhinav
+
+# 6. Start it
+./vault start
+```
+
+Open http://localhost:8000, choose a password for `abhinav` on the first screen, and ask
+*"When does my bike insurance expire?"*. The first run downloads the embedding model (~440 MB);
+after that everything works offline. Stop with `./vault stop`.
+
+To try uploading yourself, drag `samples/upload-demo/Laptop Warranty.pdf` onto the **Upload** page
+(it is not in the sample set), then ask *"When does my laptop warranty expire?"*.
+The locked `samples/scans/identity/e-Aadhaar (locked).pdf` asks for its password: `ARJU1988`.
+
+Want to start empty? Delete the `data/` folder and skip step 5. `./vault` uses
+`sqlite:///data/index/vault.db` unless you set `VAULT_DATABASE_URL` to a PostgreSQL address.
+
 ## Status
 
 | Phase | | State |
