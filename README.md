@@ -95,6 +95,20 @@ after that everything works offline. Stop with `./vault stop`.
 *"When does my laptop warranty expire?"*. The locked card in `samples/scans/identity/` uses the
 password `ARJU1988`.
 
+**Not on a Mac?** `./vault` relies on macOS. On Linux, install Tesseract and Ollama with your package
+manager, run steps 1, 3, 4 and 5, then start the server directly with `python -m backend.api.app`.
+The encryption key is then kept in `~/.document-vault/keys/` instead of the Keychain.
+Neither Linux nor Windows has been tested.
+
+**If something doesn't work**
+
+| Symptom | Fix |
+|---|---|
+| Header says **Assistant offline** | Open the Ollama app, then check `ollama list` shows `llama3.1:8b` |
+| Scans or photos fail, or are "hard to read" | `brew install tesseract tesseract-lang` |
+| Web pages missing at `localhost:8000` | Build the web app: `cd frontend && npm install && npm run build` |
+| Want a clean start | `./vault stop`, delete the `data/` folder, repeat step 5 and `./vault start` |
+
 | Command | What it does |
 |---|---|
 | `./vault start` / `stop` | Start or stop the vault in the background |

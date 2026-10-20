@@ -111,12 +111,12 @@ def test_automatic_owner_follows_the_computer_user_name(tmp_path, monkeypatch):
     from backend.vector_store import store as store_module
 
     root = tmp_path / "index"
-    monkeypatch.setattr(store_module, "fallback_owner", lambda: "ramesh")
+    monkeypatch.setattr(store_module, "fallback_owner", lambda: "olduser")
     store = DocumentStore(root)
     (tmp_path / "bill.txt").write_text("Water bill due 15 July")
     from backend.upload.ingest import ingest_file
     ingest_file(tmp_path / "bill.txt", store, FakeEmbedder(), RegexTokenizer())
-    assert store.owner == "ramesh"
+    assert store.owner == "olduser"
 
     monkeypatch.setattr(store_module, "fallback_owner", lambda: "abhinav")  # Mac user renamed
     after = DocumentStore(root)

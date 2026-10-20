@@ -435,7 +435,7 @@ Layout:
 ```bash
 pytest -q
 ```
-151 tests. They use a fake embedder and a fake LLM, so they run in a few seconds without
+163 tests. They use a fake embedder and a fake LLM, so they run in a few seconds without
 downloading models or running Ollama. By default they use SQLite; to run them against
 PostgreSQL (each test gets a throwaway database):
 ```bash

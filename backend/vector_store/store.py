@@ -221,7 +221,7 @@ class DocumentStore:
         """Owner when none is given: the vault's existing owner, or the computer's user name.
 
         An owner that was only ever named automatically after the computer's user follows that
-        user name if it changes (Mac user "ramesh" renamed to "abhinav"). A name someone chose
+        user name if it changes (Mac user "olduser" renamed to "newuser"). A name someone chose
         (Settings or the sign-in screen) is kept as is.
         """
         with self.engine.connect() as conn:  # after Phase 6 setup: the admin, never a new stranger
