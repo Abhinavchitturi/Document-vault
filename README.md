@@ -12,6 +12,7 @@ Every model runs on your own computer. Nothing is sent to a cloud AI service.
 ![Next.js](https://img.shields.io/badge/Next.js-frontend-000000?logo=nextdotjs&logoColor=white)
 ![Flutter](https://img.shields.io/badge/Flutter-mobile-02569B?logo=flutter&logoColor=white)
 ![Ollama](https://img.shields.io/badge/LLM-Ollama%20(local)-444444)
+![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)
 ![Encryption](https://img.shields.io/badge/at%20rest-AES--256--GCM-2E7D32)
 
 </div>
@@ -180,3 +181,7 @@ cd frontend && npm run dev         # web app on :3000, forwarding /api to :8000
 
 Built in 13 phases, from a core RAG engine to a mobile app with family sharing and one-command
 deployment. All 13 are complete; see the [user guide](docs/USER_GUIDE.md#status) for the list.
+
+## License
+
+Released under the [MIT License](LICENSE).
