@@ -69,6 +69,7 @@ from backend.extract.facts import FactsReader
 from backend.reminders.reminders import Reminders
 from backend.security import keys as vault_keys
 from backend.security.access_log import AccessLog
+from backend.security import autobackup
 from backend.security.backup import BackupError, make_backup
 from backend.auth.passkeys import Passkeys
 from backend.llm.answer import LLM, answer_question, finalize, stream_answer
@@ -184,6 +185,14 @@ class ShareRequest(BaseModel):
 
 class BackupRequest(BaseModel):
     password: str = Field(..., max_length=500)
+
+
+class BackupScheduleRequest(BaseModel):
+    enabled: bool
+    folder: str = Field("", max_length=1000)
+    frequency: str = Field("daily", max_length=10)
+    keep: int = Field(7, ge=1, le=100)
+    password: str | None = Field(None, max_length=500)  # only when setting or changing it
 
 
 class PasskeyResponse(BaseModel):
@@ -549,6 +558,29 @@ def create_app(
         return FileResponse(path, filename=path.name, media_type="application/octet-stream",
                             headers={"Cache-Control": "private, no-store"},
                             background=BackgroundTask(shutil.rmtree, folder, ignore_errors=True))
+
+    @app.get("/api/backup/schedule")
+    def backup_schedule(user: dict = Depends(admin_user)) -> dict:
+        """Scheduled backups: the settings, whether a password is saved, and how the last one went."""
+        return autobackup.status(store)
+
+    @app.put("/api/backup/schedule")
+    def set_backup_schedule(req: BackupScheduleRequest, request: Request, user: dict = Depends(admin_user)) -> dict:
+        try:
+            result = autobackup.configure(store, enabled=req.enabled, folder=req.folder, frequency=req.frequency,
+                                          keep=req.keep, password=req.password)
+        except autobackup.AutoBackupError as e:
+            raise HTTPException(400, str(e)) from e
+        audit("backup_schedule_changed", request, user, detail="on" if req.enabled else "off")
+        return result
+
+    @app.post("/api/backup/schedule/run")
+    def run_scheduled_backup(request: Request, user: dict = Depends(admin_user)) -> dict:
+        """Back up now into the chosen folder (a failure is reported in the result, not as an error)."""
+        result = autobackup.run_now(store)
+        if not result["last_error"]:
+            audit("backup_made", request, user, detail=result["last_file"])
+        return result
 
     # ---------- phones (Phase 7) ----------
 
@@ -1147,10 +1179,12 @@ def main() -> None:
     from backend.reminders.reminders import Reminders as _Reminders
 
     stop_reminders = desktop.start(store, _Reminders(store.engine))  # Mac notifications while running
+    stop_autobackup = autobackup.start(store)  # scheduled encrypted backups, if the admin turned them on
     try:
         uvicorn.run(app, host="127.0.0.1", port=args.port, access_log=False)  # vault.requests says who, too
     finally:
         stop_reminders.set()
+        autobackup.stop_and_wake(stop_autobackup)
         if phone_server:
             phone_server.should_exit = True
 

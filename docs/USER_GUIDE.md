@@ -70,6 +70,19 @@ python -m backend.security.cli restore ~/Desktop/"Document Vault backup 2026-09-
 Restoring works on a Mac that has never seen the vault (the backup carries the key, wrapped by the
 backup password). Afterwards everyone signs in again; paired phones keep working.
 
+**Automatic backups** (Settings → Security → Automatic backups, admin): the same encrypted backup, made by
+itself into a folder you choose, daily or weekly, keeping the newest N and deleting older ones (only files it made).
+Use a second disk, a USB drive, or a NAS share mounted on this Mac (e.g. `/Volumes/NAS/Backups`; the folder must
+already exist and be writable). The backup password is saved on this Mac next to the vault key (Keychain, or a
+`0600` file in `~/.document-vault/keys/` where there is none) so backups run with nobody at the keyboard; keep a
+copy of it elsewhere too. The first backup runs when you save, and again on every start while one is due. If the
+folder is missing (NAS off, drive unplugged) the backup fails, the reason shows in Settings, and it retries after
+an hour; it never creates the folder itself. "Back up now" runs one on demand. Each backup is read back for a sanity
+check before older ones are pruned.
+
+The live vault stays on the Mac's own disk: its database and search index are written all the time and SQLite is
+unsafe on network shares. This is backup, not replication: changes since the last backup are lost if the disk dies.
+
 **Activity log**: sign-ins (and failed ones), documents added, opened, changed and removed, phones
 paired and removed, backups. Settings → Activity shows your own; the admin can see everyone's.
 Kept for a year; document names in it are encrypted too. From the terminal:
@@ -435,7 +448,7 @@ Layout:
 ```bash
 pytest -q
 ```
-163 tests. They use a fake embedder and a fake LLM, so they run in a few seconds without
+170 tests. They use a fake embedder and a fake LLM, so they run in a few seconds without
 downloading models or running Ollama. By default they use SQLite; to run them against
 PostgreSQL (each test gets a throwaway database):
 ```bash

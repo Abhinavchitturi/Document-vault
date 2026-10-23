@@ -84,3 +84,52 @@ def save(vault_id: str, key: bytes) -> str:
     with os.fdopen(fd, "w") as f:
         f.write(value + "\n")
     return str(path)
+
+
+# ---------- the backup password for scheduled backups ----------
+# Scheduled backups run with nobody at the keyboard, so the backup password has to be kept: in the
+# same place as the vault key (Keychain, else a 0600 file outside the vault folder). A backup is
+# still ciphertext on the NAS or disk; this only lets this Mac write new ones.
+
+def _backup_account(vault_id: str) -> str:
+    return f"{vault_id}:backup-password"
+
+
+def load_backup_password(vault_id: str) -> str | None:
+    ring = _keyring()
+    if ring is not None:
+        try:
+            value = ring.get_password(SERVICE, _backup_account(vault_id))
+        except Exception as e:
+            logger.warning("Keychain did not answer (%s); looking for a file instead", e)
+            value = None
+        if value:
+            return value
+    path = _key_dir() / f"{vault_id}.backup-password"
+    return path.read_text().strip() if path.exists() else None
+
+
+def save_backup_password(vault_id: str, password: str) -> None:
+    ring = _keyring()
+    if ring is not None:
+        try:
+            ring.set_password(SERVICE, _backup_account(vault_id), password)
+            return
+        except Exception as e:
+            logger.warning("could not save to the Keychain (%s); using a file", e)
+    folder = _key_dir()
+    folder.mkdir(parents=True, exist_ok=True)
+    os.chmod(folder, 0o700)
+    fd = os.open(folder / f"{vault_id}.backup-password", os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    with os.fdopen(fd, "w") as f:
+        f.write(password + "\n")
+
+
+def delete_backup_password(vault_id: str) -> None:
+    ring = _keyring()
+    if ring is not None:
+        try:
+            ring.delete_password(SERVICE, _backup_account(vault_id))
+        except Exception:  # nothing stored there
+            pass
+    (_key_dir() / f"{vault_id}.backup-password").unlink(missing_ok=True)

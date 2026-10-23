@@ -34,6 +34,7 @@ Click a source and the original page opens with the answer highlighted on it.
 - **Understands what it stores.** Documents are sorted by type, and expiry dates, due dates, amounts and reference numbers are extracted automatically.
 - **Reminders.** Before expiries and due dates: phone notifications, Mac notifications, a calendar file and a dashboard.
 - **Encrypted at rest.** AES-256-GCM for files, scans, search index, file names and ID numbers. The key lives in the macOS Keychain, with a paper recovery key and encrypted backups.
+- **Automatic backups.** Scheduled encrypted backups to a second disk, a USB drive or a NAS share, with the last results shown in Settings.
 - **Family-ready.** Password and passkey (Touch ID / Face ID) sign-in, per-person accounts, private or shared documents, and an activity log.
 - **Web and phone.** A Next.js web app and a Flutter phone app paired by QR code over HTTPS with certificate pinning.
 
@@ -65,6 +66,15 @@ flowchart LR
 ## Quick start
 
 Runs on macOS. The samples are fictional, so you can try everything without any real papers.
+
+**Fastest:** install [Homebrew](https://brew.sh) and [Ollama](https://ollama.com) (open it once), then:
+
+```bash
+./install.sh --with-samples    # Python packages, OCR, web app, answer model, sample documents
+./vault start
+```
+
+**Or step by step:**
 
 ```bash
 # 1. Python packages
@@ -139,6 +149,24 @@ Neither Linux nor Windows has been tested.
 
 The repository holds code and fictional samples only. Your own data lives in `data/`, which is git-ignored.
 
+## Backups and disk failures
+
+The vault lives on one Mac, so a dead disk would take it with it unless you keep backups elsewhere.
+
+- **Automatic backups:** *Settings → Security → Automatic backups* (admin). Choose a folder, daily or weekly,
+  and how many to keep. The first backup runs right away; the last result, or the reason it failed, is shown there.
+- **Where to point it:** a second disk, a USB drive, or a **NAS share mounted on the Mac** (for example
+  `/Volumes/NAS/Backups`). Each backup is one encrypted `.dvbackup` file, so the NAS only ever holds ciphertext.
+  A disconnected NAS makes the backup fail with a clear message and retry hourly; it never creates a stray local folder.
+- **Why the vault itself isn't on the NAS:** its database and search index are written constantly, and SQLite is
+  not safe on a network share. The reliable design is a local vault plus backups on the NAS.
+- **Restore** on any Mac, even a new one: `python -m backend.security.cli restore "<file>.dvbackup"`.
+- **Keep the backup password somewhere else too.** It is saved on the Mac next to the vault key so backups can run
+  unattended; without it a backup cannot be opened.
+
+This is backup, not live replication: you can lose up to one backup interval of changes, and there is no RAID or
+second live copy. Keep at least one backup off the Mac.
+
 ## Search quality
 
 Measured on the bundled sample set (13 documents, 32 questions, 8 of them lookups by a policy or serial number):
@@ -180,7 +208,9 @@ cd frontend && npm run dev         # web app on :3000, forwarding /api to :8000
 ## Roadmap
 
 Built in 13 phases, from a core RAG engine to a mobile app with family sharing and one-command
-deployment. All 13 are complete; see the [user guide](docs/USER_GUIDE.md#status) for the list.
+deployment; see the [user guide](docs/USER_GUIDE.md#status). Added since: automatic backups, and `install.sh`.
+
+Not done yet: a double-click installer (a signed `.app`), and running the live vault directly on network storage.
 
 ## License
 

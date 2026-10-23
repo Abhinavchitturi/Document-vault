@@ -244,6 +244,19 @@ async function json<T>(res: Response): Promise<T> {
 const postJson = (url: string, body: unknown) =>
   fetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
 
+export type BackupSchedule = {
+  enabled: boolean;
+  folder: string;
+  frequency: "daily" | "weekly";
+  keep: number;
+  has_password: boolean;
+  last_attempt: string | null;
+  last_success: string | null;
+  last_file: string | null;
+  last_error: string | null;
+  next_due: string | null;
+};
+
 export const api = {
   authStatus: () => fetch("/api/auth/status").then((r) => json<AuthStatus>(r)),
   setup: (name: string, password: string) => postJson("/api/auth/setup", { name, password }).then((r) => json<{ user: User }>(r)),
@@ -332,6 +345,14 @@ export const api = {
     setTimeout(() => URL.revokeObjectURL(url), 10_000);
     return a.download;
   },
+  backupSchedule: () => fetch("/api/backup/schedule").then((r) => json<BackupSchedule>(r)),
+  saveBackupSchedule: (body: { enabled: boolean; folder: string; frequency: string; keep: number; password?: string }) =>
+    fetch("/api/backup/schedule", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    }).then((r) => json<BackupSchedule>(r)),
+  runBackupNow: () => postJson("/api/backup/schedule/run", {}).then((r) => json<BackupSchedule>(r)),
   highlights: (docId: string, page: number, body: { chunk_id?: string; answer?: string }) =>
     fetch(`/api/documents/${encodeURIComponent(docId)}/pages/${page}/highlights`, {
       method: "POST",

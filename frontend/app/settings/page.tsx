@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import AppShell, { useVault } from "@/components/AppShell";
 import Icon from "@/components/Icon";
 import { useTheme, type Theme } from "@/components/ThemeToggle";
-import { api, formatDate, type ActivityEntry, type Device, type Member, type Pairing, type Passkey, type PhoneAccess, type ReminderSettings, type Settings } from "@/lib/api";
+import { api, formatDate, type ActivityEntry, type BackupSchedule, type Device, type Member, type Pairing, type Passkey, type PhoneAccess, type ReminderSettings, type Settings } from "@/lib/api";
 import { cancelled, createPasskey, deviceName, passkeysSupported } from "@/lib/passkey";
 
 const SEARCH_LABEL: Record<string, string> = {
@@ -564,6 +564,104 @@ function FamilyMembers({ familyMode, onFamilyMode }: { familyMode: boolean; onFa
   );
 }
 
+function AutoBackup() {
+  const [info, setInfo] = useState<BackupSchedule | null>(null);
+  const [enabled, setEnabled] = useState(false);
+  const [folder, setFolder] = useState("");
+  const [frequency, setFrequency] = useState("daily");
+  const [keep, setKeep] = useState(7);
+  const [password, setPassword] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [message, setMessage] = useState<{ ok: boolean; text: string } | null>(null);
+
+  const show = (r: BackupSchedule) => {
+    setInfo(r);
+    setEnabled(r.enabled);
+    setFolder(r.folder);
+    setFrequency(r.frequency);
+    setKeep(r.keep);
+  };
+  useEffect(() => {
+    api.backupSchedule().then(show).catch((e) => setMessage({ ok: false, text: e.message }));
+  }, []);
+
+  const when = (iso: string | null) =>
+    iso ? new Date(iso).toLocaleString(undefined, { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" }) : "never";
+
+  const save = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setBusy(true);
+    setMessage(null);
+    try {
+      show(await api.saveBackupSchedule({ enabled, folder, frequency, keep, password: password || undefined }));
+      setPassword("");
+      setMessage({ ok: true, text: enabled ? "Saved. Backups will be made automatically." : "Automatic backups are off." });
+    } catch (err) {
+      setMessage({ ok: false, text: (err as Error).message });
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const runNow = async () => {
+    setBusy(true);
+    setMessage(null);
+    try {
+      const r = await api.runBackupNow();
+      show(r);
+      setMessage(r.last_error ? { ok: false, text: r.last_error } : { ok: true, text: `Backed up: ${r.last_file}` });
+    } catch (err) {
+      setMessage({ ok: false, text: (err as Error).message });
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <form className="stack-form" onSubmit={save} style={{ marginTop: 20 }}>
+      <strong style={{ fontSize: 14 }}>Automatic backups</strong>
+      <span className="muted" style={{ fontSize: 14 }}>
+        Saves an encrypted backup by itself to a folder you choose: a second disk, a USB drive, or a NAS share
+        that is connected to this Mac. The folder only ever holds encrypted files. The vault itself stays on this Mac.
+      </span>
+      <label className="check"><input type="checkbox" checked={enabled} onChange={(e) => setEnabled(e.target.checked)} />
+        Back up automatically</label>
+      {enabled && (
+        <>
+          <label><span>Folder (full path, for example /Volumes/NAS/Backups)</span>
+            <input className="input" value={folder} onChange={(e) => setFolder(e.target.value)} autoComplete="off" spellCheck={false} required /></label>
+          <label><span>How often</span>
+            <select className="input" value={frequency} onChange={(e) => setFrequency(e.target.value)}>
+              <option value="daily">Every day</option>
+              <option value="weekly">Every week</option>
+            </select></label>
+          <label><span>Backups to keep (older ones are deleted)</span>
+            <input className="input" type="number" min={1} max={100} value={keep} onChange={(e) => setKeep(Number(e.target.value) || 1)} /></label>
+          <label><span>{info?.has_password ? "Backup password (leave empty to keep the saved one)" : "Backup password (10 or more characters)"}</span>
+            <input className="input" type="password" autoComplete="new-password" value={password} onChange={(e) => setPassword(e.target.value)}
+                   minLength={10} required={!info?.has_password} /></label>
+          <span className="muted" style={{ fontSize: 13 }}>
+            The password is saved on this Mac next to the vault key, so backups can run unattended. Keep a copy somewhere
+            else too: without it a backup can&apos;t be opened.
+          </span>
+        </>
+      )}
+      {info?.enabled && (
+        <div className="muted" style={{ fontSize: 14 }}>
+          Last successful backup: {when(info.last_success)}{info.last_file ? ` (${info.last_file})` : ""}
+          {info.last_success ? "" : ". The first one runs within a few minutes of saving."}
+        </div>
+      )}
+      {info?.last_error && <div className="notice bad" role="status"><Icon name="warn" />Last backup failed: {info.last_error}</div>}
+      {message && <div className={`notice ${message.ok ? "good" : "bad"}`} role="status"><Icon name={message.ok ? "ok" : "warn"} />{message.text}</div>}
+      <div className="row">
+        <button className="btn primary" type="submit" disabled={busy}>{busy ? "Working…" : "Save"}</button>
+        {info?.enabled && <button className="btn" type="button" onClick={runNow} disabled={busy}>Back up now</button>}
+      </div>
+    </form>
+  );
+}
+
 function Security({ settings }: { settings: Settings | null }) {
   const [password, setPassword] = useState("");
   const [again, setAgain] = useState("");
@@ -621,6 +719,7 @@ function Security({ settings }: { settings: Settings | null }) {
             {busy ? "Making the backup…" : "Download backup"}</button></div>
         </form>
       )}
+      {settings?.is_admin && <AutoBackup />}
     </section>
   );
 }
