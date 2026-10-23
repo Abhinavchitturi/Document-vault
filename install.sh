@@ -1,16 +1,53 @@
 #!/bin/sh
-# One-step setup for Document Vault on a Mac: ./install.sh [--with-samples]
+# One-command setup for Document Vault on a Mac.
 #
-# Installs what the vault needs (Homebrew packages, Python packages, the web app, the local answer
-# model), then tells you how to start it. Safe to run again: it skips what is already done.
+#   curl -fsSL https://raw.githubusercontent.com/Abhinavchitturi/Document-vault/main/install.sh | sh -s -- --with-samples
+#
+# or, from a copy you already downloaded:  ./install.sh --with-samples
+#
+# Downloads the vault (into ~/Document-Vault, or $DOCUMENT_VAULT_DIR) when it isn't already here,
+# installs what it needs (Homebrew packages, Python packages, the web app, the local answer model),
+# starts it and opens it in your browser. Safe to run again: it skips what is already done and
+# updates the download.
 #   --with-samples   also load the fictional sample documents, so there is something to try
+#   --no-start       set everything up but don't start the vault
 set -eu
-cd "$(dirname "$0")"
 
 say()  { printf '\n==> %s\n' "$1"; }
 fail() { printf '\nSetup stopped: %s\n' "$1" >&2; exit 1; }
 
+SAMPLES=0
+START=1
+for arg in "$@"; do
+  case "$arg" in
+    --with-samples) SAMPLES=1 ;;
+    --no-start) START=0 ;;
+    *) fail "unknown option '$arg' (use --with-samples and/or --no-start)" ;;
+  esac
+done
+
 [ "$(uname -s)" = "Darwin" ] || fail "this installer is for macOS. On Linux, follow 'Quick start' in the README by hand."
+
+REPO_URL="${DOCUMENT_VAULT_REPO:-https://github.com/Abhinavchitturi/Document-vault.git}"
+HERE="$(cd "$(dirname "$0")" 2>/dev/null && pwd || true)"
+if [ -n "$HERE" ] && [ -f "$HERE/backend/deploy/vault.py" ]; then
+  cd "$HERE"  # run from a copy that is already downloaded
+elif [ -f backend/deploy/vault.py ]; then
+  :  # piped into sh from inside a copy
+else
+  say "Downloading Document Vault"
+  command -v git >/dev/null 2>&1 || fail "git is missing. Run 'xcode-select --install', then run this again."
+  DIR="${DOCUMENT_VAULT_DIR:-$HOME/Document-Vault}"
+  if [ -d "$DIR/.git" ]; then
+    git -C "$DIR" pull --ff-only --quiet || printf 'Could not update %s; using the copy that is there.\n' "$DIR"
+  elif [ -e "$DIR" ] && [ -n "$(ls -A "$DIR" 2>/dev/null)" ]; then
+    fail "$DIR already exists and is not a Document Vault download. Move it, or set DOCUMENT_VAULT_DIR to another folder."
+  else
+    git clone --quiet "$REPO_URL" "$DIR" || fail "could not download $REPO_URL. Check your internet connection."
+  fi
+  cd "$DIR"
+  printf 'Using %s\n' "$PWD"
+fi
 
 say "Checking Homebrew"
 command -v brew >/dev/null 2>&1 || fail "Homebrew is missing. Install it from https://brew.sh, then run ./install.sh again."
@@ -50,15 +87,20 @@ if command -v ollama >/dev/null 2>&1 && ! ollama list | grep -q 'llama3.1:8b'; t
   ollama pull llama3.1:8b
 fi
 
-if [ "${1:-}" = "--with-samples" ]; then
+if [ "$SAMPLES" = 1 ]; then
   say "Loading the fictional sample documents"
   export VAULT_DATABASE_URL="${VAULT_DATABASE_URL:-sqlite:///data/index/vault.db}"
   venv/bin/python -m backend.upload.ingest samples/pdfs samples/scans --owner "$(id -un)" || true
 fi
 
-say "All set"
-cat <<'MSG'
-Start the vault:   ./vault start        (or double-click "Start Vault.command" in Finder)
-Then open:         http://localhost:8000   and choose a password.
-Stop it with:      ./vault stop
-MSG
+if [ "$START" = 1 ]; then
+  say "Starting the vault"
+  ./vault start
+  open "http://localhost:8000" 2>/dev/null || true
+  say "All set"
+  printf 'Document Vault is running at http://localhost:8000 (choose a password on the first screen).\n'
+  printf 'Stop it with:  %s/vault stop     Start it again with:  %s/vault start\n' "$PWD" "$PWD"
+else
+  say "All set"
+  printf 'Start the vault:  %s/vault start   then open http://localhost:8000 and choose a password.\n' "$PWD"
+fi

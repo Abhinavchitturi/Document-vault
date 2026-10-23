@@ -71,14 +71,22 @@ Restoring works on a Mac that has never seen the vault (the backup carries the k
 backup password). Afterwards everyone signs in again; paired phones keep working.
 
 **Automatic backups** (Settings → Security → Automatic backups, admin): the same encrypted backup, made by
-itself into a folder you choose, daily or weekly, keeping the newest N and deleting older ones (only files it made).
-Use a second disk, a USB drive, or a NAS share mounted on this Mac (e.g. `/Volumes/NAS/Backups`; the folder must
-already exist and be writable). The backup password is saved on this Mac next to the vault key (Keychain, or a
-`0600` file in `~/.document-vault/keys/` where there is none) so backups run with nobody at the keyboard; keep a
-copy of it elsewhere too. The first backup runs when you save, and again on every start while one is due. If the
-folder is missing (NAS off, drive unplugged) the backup fails, the reason shows in Settings, and it retries after
-an hour; it never creates the folder itself. "Back up now" runs one on demand. Each backup is read back for a sanity
-check before older ones are pruned.
+itself into up to five folders you choose, daily or weekly, keeping the newest N in each and deleting older ones
+(only files it made). Use a second disk, a USB drive, a NAS share mounted on this Mac (e.g. `/Volumes/NAS/Backups`),
+or a cloud-synced folder such as iCloud Drive or Dropbox (the cloud only ever sees ciphertext). Each folder must
+already exist and be writable. Spread them over different disks: Settings warns when a folder is on the same disk as
+the vault or as another location, because that copy would not survive a disk failure.
+
+One backup is built per run and copied to every location. Each copy is then read back from where it now lives and
+fully decrypted and checked (password, every chunk, the archive and the database table). A copy that fails is
+deleted and reported, and older backups are only pruned after a good one is in place. A location that fails (NAS
+off, drive unplugged) does not stop the others: its reason shows in Settings and it is retried after an hour. The
+app never creates a missing folder. Check any file by hand with
+`python -m backend.security.cli verify "<file>.dvbackup"`.
+
+The backup password is saved on this Mac next to the vault key (Keychain, or a `0600` file in
+`~/.document-vault/keys/` where there is none) so backups run with nobody at the keyboard; keep a copy of it
+elsewhere too. The first backup runs when you save. "Back up now" backs up every location on demand.
 
 The live vault stays on the Mac's own disk: its database and search index are written all the time and SQLite is
 unsafe on network shares. This is backup, not replication: changes since the last backup are lost if the disk dies.
@@ -448,7 +456,7 @@ Layout:
 ```bash
 pytest -q
 ```
-170 tests. They use a fake embedder and a fake LLM, so they run in a few seconds without
+176 tests. They use a fake embedder and a fake LLM, so they run in a few seconds without
 downloading models or running Ollama. By default they use SQLite; to run them against
 PostgreSQL (each test gets a throwaway database):
 ```bash

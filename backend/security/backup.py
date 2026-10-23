@@ -197,6 +197,25 @@ def _open(path: Path, password: str, into) -> tuple[dict, bytes]:
     return header, vault_key
 
 
+def verify_backup(path: str | Path, password: str) -> dict:
+    """Decrypt the whole file and look inside it, without restoring anything.
+    Raises BackupError if it can't be opened, is damaged or incomplete. Returns what it holds."""
+    path = Path(path).expanduser()
+    try:
+        with tempfile.TemporaryFile() as plain:
+            header, _ = _open(path, password, plain)
+            plain.seek(0)
+            with zipfile.ZipFile(plain) as z:
+                bad = z.testzip()
+                if bad:
+                    raise BackupError(f"{bad} inside the backup is damaged.")
+                tables = json.loads(z.read("database.json"))
+                files = sum(1 for name in z.namelist() if name.startswith("files/"))
+    except (zipfile.BadZipFile, KeyError, ValueError, struct.error) as e:
+        raise BackupError(f"The backup can't be read: {e}") from e
+    return {"created": header["created"], "documents": len(tables.get("documents", [])), "files": files}
+
+
 def restore_backup(path: str | Path, password: str, root: str | Path, database_url: str | None = None,
                    replace: bool = False) -> dict:
     """Put a backup back into `root` (and its database). Refuses to overwrite a vault that has

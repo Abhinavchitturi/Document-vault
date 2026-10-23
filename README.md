@@ -34,7 +34,7 @@ Click a source and the original page opens with the answer highlighted on it.
 - **Understands what it stores.** Documents are sorted by type, and expiry dates, due dates, amounts and reference numbers are extracted automatically.
 - **Reminders.** Before expiries and due dates: phone notifications, Mac notifications, a calendar file and a dashboard.
 - **Encrypted at rest.** AES-256-GCM for files, scans, search index, file names and ID numbers. The key lives in the macOS Keychain, with a paper recovery key and encrypted backups.
-- **Automatic backups.** Scheduled encrypted backups to a second disk, a USB drive or a NAS share, with the last results shown in Settings.
+- **Automatic backups.** Scheduled encrypted backups to several places at once (second disk, USB drive, NAS share, cloud-synced folder). Every copy is re-opened and checked, and each location's result is shown in Settings.
 - **Family-ready.** Password and passkey (Touch ID / Face ID) sign-in, per-person accounts, private or shared documents, and an activity log.
 - **Web and phone.** A Next.js web app and a Flutter phone app paired by QR code over HTTPS with certificate pinning.
 
@@ -67,12 +67,16 @@ flowchart LR
 
 Runs on macOS. The samples are fictional, so you can try everything without any real papers.
 
-**Fastest:** install [Homebrew](https://brew.sh) and [Ollama](https://ollama.com) (open it once), then:
+**One command.** Install [Homebrew](https://brew.sh) and [Ollama](https://ollama.com) (open Ollama once), then paste this into Terminal:
 
 ```bash
-./install.sh --with-samples    # Python packages, OCR, web app, answer model, sample documents
-./vault start
+curl -fsSL https://raw.githubusercontent.com/Abhinavchitturi/Document-vault/main/install.sh | sh -s -- --with-samples
 ```
+
+It downloads the vault to `~/Document-Vault`, installs the Python packages, OCR and web app, pulls the answer model,
+loads the sample documents, starts the vault and opens http://localhost:8000. Run it again any time to update.
+Prefer to read it first? [install.sh](install.sh) is a short script. Add `--no-start` to set up without starting,
+or run `./install.sh --with-samples` from a copy you cloned yourself.
 
 **Or step by step:**
 
@@ -98,7 +102,7 @@ python -m backend.upload.ingest samples/pdfs samples/scans --owner abhinav
 ./vault start
 ```
 
-Open **http://localhost:8000**, choose a password on the first screen, and ask
+Open **http://localhost:8000** (the one-command install does this for you), choose a password on the first screen, and ask
 *"When does my bike insurance expire?"*. The first run downloads the embedding model (about 440 MB);
 after that everything works offline. Stop with `./vault stop`.
 
@@ -153,11 +157,17 @@ The repository holds code and fictional samples only. Your own data lives in `da
 
 The vault lives on one Mac, so a dead disk would take it with it unless you keep backups elsewhere.
 
-- **Automatic backups:** *Settings → Security → Automatic backups* (admin). Choose a folder, daily or weekly,
-  and how many to keep. The first backup runs right away; the last result, or the reason it failed, is shown there.
-- **Where to point it:** a second disk, a USB drive, or a **NAS share mounted on the Mac** (for example
-  `/Volumes/NAS/Backups`). Each backup is one encrypted `.dvbackup` file, so the NAS only ever holds ciphertext.
-  A disconnected NAS makes the backup fail with a clear message and retry hourly; it never creates a stray local folder.
+- **Automatic backups:** *Settings → Security → Automatic backups* (admin). Choose up to five locations, daily or
+  weekly, and how many to keep. The first backup runs right away; each location's last result, or the reason it
+  failed, is shown there.
+- **Where to point it:** a second disk, a USB drive, a **NAS share mounted on the Mac** (for example
+  `/Volumes/NAS/Backups`), or a cloud-synced folder such as iCloud Drive or Dropbox. Each backup is one encrypted
+  `.dvbackup` file, so every location only ever holds ciphertext. Use more than one, on different disks: Settings
+  warns when two locations share a disk, or one shares the vault's disk.
+- **Every copy is checked.** After writing, the app reads each copy back and fully decrypts it. A bad copy is deleted
+  and reported, and older backups are only pruned once a good one exists. One location failing (NAS off, drive
+  unplugged) does not stop the others; it retries hourly and never creates a stray local folder.
+  Check a file by hand with `python -m backend.security.cli verify "<file>.dvbackup"`.
 - **Why the vault itself isn't on the NAS:** its database and search index are written constantly, and SQLite is
   not safe on a network share. The reliable design is a local vault plus backups on the NAS.
 - **Restore** on any Mac, even a new one: `python -m backend.security.cli restore "<file>.dvbackup"`.
@@ -208,9 +218,12 @@ cd frontend && npm run dev         # web app on :3000, forwarding /api to :8000
 ## Roadmap
 
 Built in 13 phases, from a core RAG engine to a mobile app with family sharing and one-command
-deployment; see the [user guide](docs/USER_GUIDE.md#status). Added since: automatic backups, and `install.sh`.
+deployment; see the [user guide](docs/USER_GUIDE.md#status). Added since: automatic backups to several places
+(each copy checked), and a one-command installer.
 
-Not done yet: a double-click installer (a signed `.app`), and running the live vault directly on network storage.
+Not planned: a double-click Mac app. Without a paid Apple Developer account (about $99 a year) macOS warns on
+unsigned apps, so installation stays a single Terminal command. Not done: running the live vault directly on
+network storage (backups to a NAS work; SQLite does not belong on a network share).
 
 ## License
 

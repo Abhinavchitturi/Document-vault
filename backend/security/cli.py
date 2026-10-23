@@ -5,6 +5,7 @@
     python -m backend.security.cli restore-key           # put the key back (new Mac, Keychain lost)
     python -m backend.security.cli backup ~/Desktop      # one encrypted file with everything
     python -m backend.security.cli restore "<file>.dvbackup" [--replace]
+    python -m backend.security.cli verify "<file>.dvbackup"   # opens it fully, restores nothing
     python -m backend.security.cli activity [--limit 50] # recent sign-ins and document activity
 
 Passwords and the recovery key are typed at a hidden prompt, never on the command line.
@@ -21,7 +22,7 @@ from sqlalchemy import select
 from backend.database.db import DatabaseUnavailableError, connect, database_url
 from backend.database.schema import vault_meta
 from backend.security import keys
-from backend.security.backup import MIN_PASSWORD, BackupError, make_backup, read_header, restore_backup
+from backend.security.backup import MIN_PASSWORD, BackupError, make_backup, read_header, restore_backup, verify_backup
 from backend.security.crypto import key_from_recovery_code, recovery_code
 
 
@@ -68,6 +69,8 @@ def main() -> None:
     restore = sub.add_parser("restore", help="restore a backup file into this vault")
     restore.add_argument("file")
     restore.add_argument("--replace", action="store_true", help="throw away the documents already in this vault")
+    verify = sub.add_parser("verify", help="check that a backup file opens and is complete (restores nothing)")
+    verify.add_argument("file")
     activity = sub.add_parser("activity", help="recent sign-ins and document activity (everyone)")
     activity.add_argument("--limit", type=int, default=50)
     args = parser.parse_args()
@@ -87,6 +90,16 @@ def main() -> None:
             raise SystemExit(str(e)) from e
         print(f"Restored {done['documents']} documents and {done['people']} family members.")
         print("Start the vault as usual. Everyone signs in again; paired phones keep working.")
+        return
+
+    if args.command == "verify":
+        if not Path(args.file).expanduser().is_file():
+            raise SystemExit(f"No such file: {args.file}")
+        try:
+            found = verify_backup(args.file, getpass.getpass("Backup password: "))
+        except BackupError as e:
+            raise SystemExit(f"NOT OK: {e}") from e
+        print(f"OK: made {found['created']}, {found['documents']} documents, {found['files']} stored files.")
         return
 
     if args.command == "restore-key":

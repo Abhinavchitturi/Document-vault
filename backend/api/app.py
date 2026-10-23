@@ -189,7 +189,7 @@ class BackupRequest(BaseModel):
 
 class BackupScheduleRequest(BaseModel):
     enabled: bool
-    folder: str = Field("", max_length=1000)
+    folders: list[str] = Field(default_factory=list, max_length=10)  # each a full path
     frequency: str = Field("daily", max_length=10)
     keep: int = Field(7, ge=1, le=100)
     password: str | None = Field(None, max_length=500)  # only when setting or changing it
@@ -567,7 +567,7 @@ def create_app(
     @app.put("/api/backup/schedule")
     def set_backup_schedule(req: BackupScheduleRequest, request: Request, user: dict = Depends(admin_user)) -> dict:
         try:
-            result = autobackup.configure(store, enabled=req.enabled, folder=req.folder, frequency=req.frequency,
+            result = autobackup.configure(store, enabled=req.enabled, folders=req.folders, frequency=req.frequency,
                                           keep=req.keep, password=req.password)
         except autobackup.AutoBackupError as e:
             raise HTTPException(400, str(e)) from e
@@ -576,10 +576,11 @@ def create_app(
 
     @app.post("/api/backup/schedule/run")
     def run_scheduled_backup(request: Request, user: dict = Depends(admin_user)) -> dict:
-        """Back up now into the chosen folder (a failure is reported in the result, not as an error)."""
+        """Back up now into every chosen folder (a failure is reported in the result, not as an error)."""
         result = autobackup.run_now(store)
-        if not result["last_error"]:
-            audit("backup_made", request, user, detail=result["last_file"])
+        made = [d["last_file"] for d in result["folders"] if d["last_file"] and not d["last_error"]]
+        if made:
+            audit("backup_made", request, user, detail=made[0])
         return result
 
     # ---------- phones (Phase 7) ----------

@@ -244,17 +244,25 @@ async function json<T>(res: Response): Promise<T> {
 const postJson = (url: string, body: unknown) =>
   fetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
 
-export type BackupSchedule = {
-  enabled: boolean;
-  folder: string;
-  frequency: "daily" | "weekly";
-  keep: number;
-  has_password: boolean;
+export type BackupDestination = {
+  path: string;
   last_attempt: string | null;
   last_success: string | null;
   last_file: string | null;
   last_error: string | null;
+  last_verified: string | null;
+  documents: number | null;
+  warning: string | null;
+};
+
+export type BackupSchedule = {
+  enabled: boolean;
+  folders: BackupDestination[];
+  frequency: "daily" | "weekly";
+  keep: number;
+  has_password: boolean;
   next_due: string | null;
+  good_copies: number;
 };
 
 export const api = {
@@ -346,7 +354,7 @@ export const api = {
     return a.download;
   },
   backupSchedule: () => fetch("/api/backup/schedule").then((r) => json<BackupSchedule>(r)),
-  saveBackupSchedule: (body: { enabled: boolean; folder: string; frequency: string; keep: number; password?: string }) =>
+  saveBackupSchedule: (body: { enabled: boolean; folders: string[]; frequency: string; keep: number; password?: string }) =>
     fetch("/api/backup/schedule", {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
