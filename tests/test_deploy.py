@@ -150,3 +150,20 @@ def test_update_installs_only_what_changed_and_says_whether_phones_need_a_new_ap
 
     mac.git_heads = ["bbb", "bbb"]
     assert v.update() and said[-1] == "Already up to date."
+
+
+def test_only_one_copy_of_the_vault_opens_a_folder(tmp_path):
+    import subprocess
+    import sys
+
+    from backend.deploy import single
+
+    lock = single.hold(tmp_path / "index")
+    other = subprocess.run([sys.executable, "-c", "import sys; from backend.deploy import single\n"
+                            "try:\n    single.hold(sys.argv[1])\nexcept single.AlreadyOpenError as e:\n    print(e); sys.exit(3)",
+                            str(tmp_path / "index")], capture_output=True, text=True)
+    assert other.returncode == 3 and "already open" in other.stdout
+    lock.close()  # the first copy stops: the next one may open the vault
+    again = subprocess.run([sys.executable, "-c", "import sys; from backend.deploy import single; single.hold(sys.argv[1])",
+                            str(tmp_path / "index")], capture_output=True, text=True)
+    assert again.returncode == 0, again.stderr

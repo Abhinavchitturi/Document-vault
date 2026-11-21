@@ -1138,6 +1138,12 @@ def start_vault(args: argparse.Namespace):
     from backend.database.db import DatabaseUnavailableError, database_url, default_owner
     from backend.security.keys import KeyMissingError
 
+    from backend.deploy import single
+
+    try:
+        lock = single.hold(args.index_dir)  # one copy per vault folder: never two writers on the same files
+    except single.AlreadyOpenError as e:
+        raise SystemExit(str(e)) from e
     try:
         store = DocumentStore(args.index_dir, database_url(args.database_url), owner=default_owner(args.owner))
     except (DatabaseUnavailableError, KeyMissingError) as e:
@@ -1205,6 +1211,7 @@ def start_vault(args: argparse.Namespace):
     stop_autobackup = autobackup.start(store)  # scheduled encrypted backups, if the admin turned them on
 
     def stop() -> None:
+        lock.close()  # the next copy may open the vault now
         stop_reminders.set()
         autobackup.stop_and_wake(stop_autobackup)
         if phone_server:
