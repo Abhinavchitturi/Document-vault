@@ -31,7 +31,7 @@ Nothing is sent to a cloud AI service.
 |---|---|---|
 | **macOS** 12+ | [**DocumentVault-macOS.dmg**](https://github.com/Abhinavchitturi/Document-vault/releases/latest/download/DocumentVault-macOS.dmg) | Apple Silicon or Intel |
 | **Windows** 10 / 11 | [**DocumentVault-Setup.exe**](https://github.com/Abhinavchitturi/Document-vault/releases/latest/download/DocumentVault-Setup.exe) | Beta |
-| **Android** 8+ | [**DocumentVault-Android.apk**](https://github.com/Abhinavchitturi/Document-vault/releases/latest/download/DocumentVault-Android.apk) | Companion app: pairs with the vault on your computer |
+| **Android** 7+ | [**DocumentVault-Android.apk**](https://github.com/Abhinavchitturi/Document-vault/releases/latest/download/DocumentVault-Android.apk) | Companion app: pairs with the vault on your computer |
 
 All releases: [Releases page](https://github.com/Abhinavchitturi/Document-vault/releases).
 
