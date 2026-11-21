@@ -22,6 +22,7 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
+$env:PYTHONUTF8 = "1"   # Python reads and writes UTF-8 here, not the console's old code page
 $RepoUrl = if ($env:DOCUMENT_VAULT_REPO) { $env:DOCUMENT_VAULT_REPO } else { "https://github.com/Abhinavchitturi/Document-vault.git" }
 $Model = "llama3.1:8b"
 

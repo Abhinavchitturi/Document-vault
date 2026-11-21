@@ -227,5 +227,5 @@ def test_vault_log_says_who_did_what_without_search_text(tmp_path, caplog):
     assert any(m.startswith("abhinav (browser) searched: 1 documents (bike_policy.txt)") for m in activity)
     assert any(m.startswith("abhinav (browser) POST /api/documents -> 200") for m in requests)
     leaks = [(r.name, r.getMessage()) for r in caplog.records
-             if "ABCDE1234F" in r.getMessage() and r.name != "httpx"]  # httpx: the test's own client
+             if "ABCDE1234F" in r.getMessage() and not r.name.startswith("httpx")]  # httpx / httpx2: the test's own client
     assert not leaks, leaks  # searched text never logged

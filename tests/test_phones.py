@@ -1,6 +1,7 @@
 """Phase 7: pairing phones, and the phone listener only serving paired phones."""
 
 import json
+import os
 import stat
 
 from fastapi.testclient import TestClient
@@ -101,7 +102,9 @@ def test_removing_a_phone_or_resetting_the_password_cuts_it_off(tmp_path):
 
 def test_certificate_is_made_once_and_kept_on_every_network(tmp_path):
     cert, key, fp = ensure_certificate(tmp_path / "tls")
-    assert len(fp) == 64 and stat.S_IMODE(key.stat().st_mode) == 0o600
+    assert len(fp) == 64
+    if os.name != "nt":  # Windows has no Unix modes: the vault folder sits in the user's own profile there
+        assert stat.S_IMODE(key.stat().st_mode) == 0o600
     assert ensure_certificate(tmp_path / "tls")[2] == fp  # same certificate next start, whatever the Wi-Fi
     assert json.dumps(fp)  # plain hex, fits in the QR payload
 

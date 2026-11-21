@@ -378,6 +378,7 @@ class WindowsVault(Vault):
         env = dict(os.environ)
         env.setdefault("VAULT_DATABASE_URL", DEFAULT_SQLITE)
         env["PYTHONUNBUFFERED"] = "1"
+        env["PYTHONUTF8"] = "1"  # not the console's old code page: logs and files hold any language
         env["PATH"] = os.pathsep.join([str(Path(self.python).parent), env.get("PATH", "")])
         return env
 
@@ -482,6 +483,9 @@ def main() -> None:
     auto = sub.add_parser("autostart", help="start the vault when you log in")
     auto.add_argument("state", choices=["on", "off"])
     args = parser.parse_args()
+    for stream in (sys.stdout, sys.stderr):  # a Windows console can't show every character (✓, ✗): don't crash on one
+        if hasattr(stream, "reconfigure"):
+            stream.reconfigure(errors="replace")
 
     if sys.platform not in ("darwin", "win32") and args.command in ("start", "stop", "restart", "autostart"):
         raise SystemExit("./vault manages the vault with macOS's launchd or Windows. Elsewhere run: "
