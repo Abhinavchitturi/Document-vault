@@ -10,6 +10,7 @@ struct DocumentVaultApp: App {
         WindowGroup("Document Vault", id: "main") {
             RootView()
                 .environment(model)
+                .tint(.vault)
                 .frame(minWidth: 860, minHeight: 560)
                 .task { await model.start() }
                 .onReceive(NotificationCenter.default.publisher(for: NSApplication.willTerminateNotification)) { _ in
@@ -102,6 +103,11 @@ extension StatusScreen where Actions == EmptyView {
     init(title: String, detail: String?, busy: Bool) {
         self.init(title: title, detail: detail, busy: busy) { EmptyView() }
     }
+}
+
+extension Color {
+    /// The vault's indigo (the app icon's colour), used instead of the Mac's own accent colour.
+    static let vault = Color(red: 0.345, green: 0.337, blue: 0.839)
 }
 
 /// The app's mark: a document with a lock, on the vault's indigo.

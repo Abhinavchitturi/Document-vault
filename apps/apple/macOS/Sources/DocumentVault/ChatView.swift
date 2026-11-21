@@ -92,7 +92,7 @@ struct ChatView: View {
                 Image(systemName: answering != nil ? "stop.circle.fill" : "arrow.up.circle.fill").font(.system(size: 26))
             }
             .buttonStyle(.plain)
-            .foregroundStyle(question.isEmpty && answering == nil ? Color.secondary : Color.accentColor)
+            .foregroundStyle(question.isEmpty && answering == nil ? Color.secondary : Color.vault)
             .disabled(question.trimmingCharacters(in: .whitespaces).isEmpty && answering == nil)
             .keyboardShortcut(.return, modifiers: .command)
         }
@@ -146,7 +146,7 @@ struct MessageView: View {
                 Text(message.text)
                     .padding(.horizontal, 14).padding(.vertical, 9)
                     .foregroundStyle(.white)
-                    .background(Color.accentColor, in: UnevenRoundedRectangle(topLeadingRadius: 18, bottomLeadingRadius: 18,
+                    .background(Color.vault, in: UnevenRoundedRectangle(topLeadingRadius: 18, bottomLeadingRadius: 18,
                                                                                bottomTrailingRadius: 5, topTrailingRadius: 18))
                     .textSelection(.enabled)
             }
@@ -161,6 +161,24 @@ struct MessageView: View {
                     }
                     if let problem = message.problem {
                         Label(problem, systemImage: "exclamationmark.triangle").font(.callout).foregroundStyle(.orange)
+                        if message.citations.isEmpty && !message.sources.isEmpty {
+                            VStack(alignment: .leading, spacing: 8) {  // what the search found, without an answer
+                                ForEach(message.sources.prefix(3)) { source in
+                                    Button { open(source) } label: {
+                                        VStack(alignment: .leading, spacing: 3) {
+                                            Label("\(source.filename) · p. \(source.page)", systemImage: source.category.symbol)
+                                                .font(.caption.weight(.semibold))
+                                            Text(source.text.prefix(220) + (source.text.count > 220 ? "…" : ""))
+                                                .font(.callout).foregroundStyle(.secondary).lineLimit(3)
+                                        }
+                                        .frame(maxWidth: .infinity, alignment: .leading)
+                                        .padding(10)
+                                        .background(.background.secondary, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+                                    }
+                                    .buttonStyle(.plain)
+                                }
+                            }
+                        }
                     }
                     let cited = message.citations.compactMap { n in message.sources.indices.contains(n - 1) ? message.sources[n - 1] : nil }
                     if !cited.isEmpty {

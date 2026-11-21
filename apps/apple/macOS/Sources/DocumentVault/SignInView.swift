@@ -27,7 +27,7 @@ struct SignInView: View {
             }
             Form {
                 TextField("Name", text: $name).textContentType(.username)
-                SecureField(firstTime ? "Password (8 or more characters)" : "Password", text: $password)
+                SecureField("Password", text: $password, prompt: Text(firstTime ? "8 or more characters" : ""))
                     .textContentType(firstTime ? .newPassword : .password)
                 if firstTime {
                     SecureField("Password again", text: $again).textContentType(.newPassword)

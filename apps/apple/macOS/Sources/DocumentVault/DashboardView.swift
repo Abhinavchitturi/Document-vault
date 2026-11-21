@@ -35,6 +35,7 @@ struct DashboardView: View {
                     } label: {
                         Label("Coming up", systemImage: "calendar").font(.headline)
                     }
+                    .frame(maxWidth: .infinity, alignment: .top)
 
                     GroupBox {
                         VStack(spacing: 0) {
@@ -46,6 +47,7 @@ struct DashboardView: View {
                     } label: {
                         Label("Recently added", systemImage: "clock").font(.headline)
                     }
+                    .frame(maxWidth: .infinity, alignment: .top)
                 }
             }
             .padding(24)
