@@ -113,3 +113,65 @@ jobs:
         run: gh release upload "$GITHUB_REF_NAME" dist/DocumentVault-macOS.dmg --clobber
         env:
           GH_TOKEN: ${{ github.token }}
+
+  windows-native:
+    # The native Windows app (WinUI 3): its core against the real engine, a build, and a screenshot of it running.
+    name: Windows app (WinUI)
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+      - run: python -m pip install -r requirements.txt
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "10.0.x"
+      - name: Core tests, against the real engine over the pipe
+        shell: pwsh
+        run: |
+          $env:VAULT_TEST_PYTHON = (Get-Command python).Source
+          dotnet test apps/windows/DocumentVault.Core.Tests
+      - name: Build the app
+        run: dotnet publish apps/windows/DocumentVault.App -c Release -r win-x64 -p:Platform=x64 -o dist/windows-app
+      - name: Open it and take a screenshot
+        shell: pwsh
+        run: |
+          $env:DOCUMENT_VAULT_DIR = "$PWD"
+          $env:DOCUMENT_VAULT_PYTHON = (Get-Command python).Source
+          $app = Start-Process dist/windows-app/DocumentVault.exe -PassThru
+          Start-Sleep -Seconds 90
+          Add-Type -AssemblyName System.Windows.Forms, System.Drawing
+          $bounds = [System.Windows.Forms.Screen]::PrimaryScreen.Bounds
+          $shot = New-Object System.Drawing.Bitmap $bounds.Width, $bounds.Height
+          [System.Drawing.Graphics]::FromImage($shot).CopyFromScreen($bounds.Location, [System.Drawing.Point]::Empty, $bounds.Size)
+          $shot.Save("$PWD/windows-app.png")
+          if ($app.HasExited) { Write-Error "The app quit by itself (code $($app.ExitCode))"; exit 1 }
+          Stop-Process -Id $app.Id
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: DocumentVault-Windows-app
+          path: |
+            dist/windows-app
+            windows-app.png
+            data/logs
+          if-no-files-found: ignore
+
+  mac-native:
+    # The native Mac app (SwiftUI), built with GitHub's Xcode.
+    name: Mac app (SwiftUI)
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: VaultKit tests
+        run: cd apps/apple/VaultKit && swift test
+      - name: Build Document Vault.app
+        run: sh apps/apple/macOS/build_app.sh
+      - name: Zip it
+        run: cd "apps/apple/macOS/build" && ditto -c -k --keepParent "Document Vault.app" ../../../../DocumentVault-Mac-app.zip
+      - uses: actions/upload-artifact@v4
+        with:
+          name: DocumentVault-Mac-app
+          path: DocumentVault-Mac-app.zip
