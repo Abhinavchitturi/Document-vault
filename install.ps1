@@ -193,7 +193,14 @@ if (-not $SkipModel) {
     }
 }
 
-# ---- 5. samples, start -------------------------------------------------------------------------------------------------
+# ---- 5. the search model and the fact reader (so the first start works offline) ----------------------------------------
+Say "Downloading the search model and the fact reader (about 500 MB, once)"
+& $venvPython -c "from backend.embeddings.embedder import Embedder; Embedder()"
+if ($LASTEXITCODE -ne 0) { Write-Host "Could not download the search model now; the vault downloads it on its first start." -ForegroundColor Yellow }
+& $venvPython -m backend.extract.needle_setup
+if ($LASTEXITCODE -ne 0) { Write-Host "Could not download the fact reader; dates and amounts use the simpler reader for now." -ForegroundColor Yellow }
+
+# ---- 6. samples, start -------------------------------------------------------------------------------------------------
 if (-not $env:VAULT_DATABASE_URL) { $env:VAULT_DATABASE_URL = "sqlite:///data/index/vault.db" }
 if ($WithSamples) {
     Say "Loading the fictional sample documents"

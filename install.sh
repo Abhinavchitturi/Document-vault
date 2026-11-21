@@ -87,6 +87,12 @@ if command -v ollama >/dev/null 2>&1 && ! ollama list | grep -q 'llama3.1:8b'; t
   ollama pull llama3.1:8b
 fi
 
+say "Downloading the search model and the fact reader (about 500 MB, once)"
+venv/bin/python -c "from backend.embeddings.embedder import Embedder; Embedder()" \
+  || printf 'Could not download the search model now; the vault downloads it on its first start.\n'
+venv/bin/python -m backend.extract.needle_setup \
+  || printf 'Could not download the fact reader; dates and amounts are read with the simpler reader until you run: venv/bin/python -m backend.extract.needle_setup\n'
+
 if [ "$SAMPLES" = 1 ]; then
   say "Loading the fictional sample documents"
   export VAULT_DATABASE_URL="${VAULT_DATABASE_URL:-sqlite:///data/index/vault.db}"
