@@ -1,4 +1,4 @@
-"""Run the vault on the Mac (Phase 13): start, stop, status, logs, update, start at login.
+"""Run the vault on the Mac or on Windows (Phase 13): start, stop, status, logs, update, start at login.
 
     ./vault start          checks PostgreSQL / Ollama / Tailscale, starts the vault in the background
     ./vault stop
@@ -8,6 +8,11 @@
     ./vault autostart on   start the vault whenever you log in to the Mac (off: only when you start it)
 
 Or double-click "Start Vault.command" / "Stop Vault.command" in Finder.
+
+On Windows the command is `vault` (vault.cmd) and the vault runs as a hidden background process of yours
+(its process id is kept in data/run/vault.pid, its log in data/logs/vault.log); "Start Vault.bat" /
+"Stop Vault.bat" are the double-click versions, and `vault autostart on` starts it at sign-in through the
+Startup folder. There is no launchd there, so a crashed vault is not restarted by itself.
 
 The vault runs under launchd, the Mac's own service manager, as a LaunchAgent labelled
 com.documentvault.server: it keeps running after Terminal is closed, is restarted if it crashes,
@@ -20,16 +25,19 @@ from __future__ import annotations
 import argparse
 import os
 import plistlib
+import shutil
 import subprocess
 import sys
 import time
 import urllib.request
+import webbrowser
 from dataclasses import dataclass
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 LABEL = "com.documentvault.server"
 PORT = 8000
+DEFAULT_SQLITE = "sqlite:///data/index/vault.db"
 MAX_LOG = 10 * 1024 * 1024
 BREW_PATHS = ("/opt/homebrew/bin", "/usr/local/bin")  # tesseract, tailscale, pg_isready...
 
@@ -70,7 +78,9 @@ class Vault:
         self.login_agent = home / "Library" / "LaunchAgents" / f"{LABEL}.plist"  # loaded at every login
         self.local_agent = root / "data" / "launchd" / f"{LABEL}.plist"  # loaded only by ./vault start
         self.log = root / "data" / "logs" / "vault.log"
-        self.domain = f"gui/{os.getuid() if uid is None else uid}"
+        self.domain = f"gui/{uid if uid is not None else getattr(os, 'getuid', lambda: 0)()}"
+        self.cmd = "./vault"  # how this command is typed, for the messages
+        self.npm = "npm"
 
     # ---------- the LaunchAgent ----------
 
@@ -126,10 +136,29 @@ class Vault:
                 return
             self.sleep(0.5)
 
+    def _launch(self) -> tuple[bool, str]:
+        """Start the vault in the background: (started, why not)."""
+        path = self._write_agent(at_login=self.autostart_enabled())
+        r = self.run(["launchctl", "bootstrap", self.domain, str(path)])
+        if r.returncode != 0:
+            return False, f"launchd refused to start the vault: {(r.stderr or r.stdout).strip()}"
+        return True, ""
+
+    def open_url(self, url: str) -> None:
+        self.run(["open", url])
+
+    def _open_ollama(self) -> None:
+        self.run(["open", "-a", "Ollama"])
+
+    def _tesseract_ok(self) -> bool:
+        return self.run(["tesseract", "--version"]).returncode == 0
+
+    def _tesseract_hint(self) -> str:
+        return "missing: brew install tesseract tesseract-lang (photos and scans can't be read)"
+
     # ---------- what the vault needs ----------
 
-    def checks(self, fix: bool = True) -> list[Check]:
-        out = []
+    def database_check(self, fix: bool) -> Check:
         pg = self.run(["pg_isready", "-q"])
         if pg.returncode != 0 and fix and not os.environ.get("VAULT_DATABASE_URL", "").startswith("sqlite"):
             self.say("Starting PostgreSQL…")
@@ -139,14 +168,17 @@ class Vault:
                 if self.run(["pg_isready", "-q"]).returncode == 0:
                     pg = subprocess.CompletedProcess([], 0)
                     break
-        out.append(Check("Database (PostgreSQL)", pg.returncode == 0,
-                         "running" if pg.returncode == 0 else "not running: brew services start postgresql@16",
-                         required=not os.environ.get("VAULT_DATABASE_URL", "").startswith("sqlite")))
+        return Check("Database (PostgreSQL)", pg.returncode == 0,
+                     "running" if pg.returncode == 0 else "not running: brew services start postgresql@16",
+                     required=not os.environ.get("VAULT_DATABASE_URL", "").startswith("sqlite"))
+
+    def checks(self, fix: bool = True) -> list[Check]:
+        out = [self.database_check(fix)]
 
         ollama = self.http_ok("http://localhost:11434/api/tags")
         if not ollama and fix:
             self.say("Opening Ollama…")
-            self.run(["open", "-a", "Ollama"])
+            self._open_ollama()
             for _ in range(20):
                 self.sleep(1)
                 if self.http_ok("http://localhost:11434/api/tags"):
@@ -162,9 +194,8 @@ class Vault:
         built = (self.root / "frontend" / "out" / "index.html").exists()
         out.append(Check("Web pages", built, "built" if built else
                          "not built: cd frontend && npm install && npm run build", required=True))
-        tess = self.run(["tesseract", "--version"]).returncode == 0
-        out.append(Check("Reading scans (Tesseract)", tess, "installed" if tess else
-                         "missing: brew install tesseract tesseract-lang (photos and scans can't be read)"))
+        tess = self._tesseract_ok()
+        out.append(Check("Reading scans (Tesseract)", tess, "installed" if tess else self._tesseract_hint()))
         return out
 
     def _show(self, checks: list[Check]) -> None:
@@ -188,17 +219,16 @@ class Vault:
             return False
         self._rotate_log()
         self._bootout()  # a running or crashed copy: start fresh
-        path = self._write_agent(at_login=self.autostart_enabled())
-        r = self.run(["launchctl", "bootstrap", self.domain, str(path)])
-        if r.returncode != 0:
-            self.say(f"launchd refused to start the vault: {(r.stderr or r.stdout).strip()}")
+        started, why = self._launch()
+        if not started:
+            self.say(why)
             return False
         self.say("Starting the vault (the first start after an update can take a minute)…")
         waited = 0.0
         while waited < wait:
             if self.http_ok(f"http://localhost:{PORT}/api/auth/status"):
                 self.say(f"The vault is running: http://localhost:{PORT}")
-                self.say("Phones can connect while this Mac is on and awake. Stop it with: ./vault stop")
+                self.say(f"Phones can connect while this computer is on and awake. Stop it with: {self.cmd} stop")
                 return True
             self.sleep(2)
             waited += 2
@@ -219,11 +249,11 @@ class Vault:
         up = self.http_ok(f"http://localhost:{PORT}/api/auth/status")
         if up:
             self.say(f"Vault: running (process {pid}) at http://localhost:{PORT}" if pid else
-                     f"Vault: running at http://localhost:{PORT} (started by hand, not with ./vault start)")
+                     f"Vault: running at http://localhost:{PORT} (started by hand, not with {self.cmd} start)")
         elif loaded:
-            self.say("Vault: starting, or restarting after a problem. See: ./vault logs")
+            self.say(f"Vault: starting, or restarting after a problem. See: {self.cmd} logs")
         else:
-            self.say("Vault: stopped. Start it with: ./vault start")
+            self.say(f"Vault: stopped. Start it with: {self.cmd} start")
         self.say(f"Start at login: {'on' if self.autostart_enabled() else 'off'}")
         self._show(self.checks(fix=False))
         return up
@@ -236,15 +266,18 @@ class Vault:
             f.seek(max(0, f.tell() - 64 * 1024))
             return "\n".join(f.read().decode("utf-8", "replace").splitlines()[-lines:])
 
+    def follow_log(self, lines: int) -> None:
+        os.execvp("tail", ["tail", "-n", str(lines), "-f", str(self.log)])
+
     def autostart(self, on: bool) -> None:
         loaded = self.loaded()[0]
         if on:
             self.local_agent.unlink(missing_ok=True)
             self._write_agent(at_login=True)
-            self.say("The vault will start by itself when you log in to this Mac.")
+            self.say("The vault will start by itself when you log in to this computer.")
         else:
             self.login_agent.unlink(missing_ok=True)
-            self.say("The vault will only run when you start it (./vault start or Start Vault.command).")
+            self.say(f"The vault will only run when you start it ({self.cmd} start).")
         if loaded:
             self.say("It's running now; the change applies from the next start.")
 
@@ -270,7 +303,8 @@ class Vault:
         if plan["frontend"]:
             self.say("Rebuilding the web pages…")
             front = str(self.root / "frontend")
-            for cmd in (["npm", "--prefix", front, "install", "--silent"], ["npm", "--prefix", front, "run", "build"]):
+            npm = self.npm
+            for cmd in ([npm, "--prefix", front, "install", "--silent"], [npm, "--prefix", front, "run", "build"]):
                 r = self.run(cmd, timeout=900)
                 if r.returncode != 0:
                     self.say(f"{' '.join(cmd[:1] + cmd[3:])} failed:\n" + (r.stderr or r.stdout).strip()[-2000:])
@@ -285,6 +319,143 @@ class Vault:
             self.say("Restarting the vault…")
             return self.start()
         return True
+
+
+def _spawn_detached(cmd: list[str], cwd: Path, env: dict, log: Path) -> int:
+    """Start a program that outlives this window, with no console of its own; returns its process id."""
+    flags = 0x00000008 | 0x00000200  # DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP (Windows only)
+    log.parent.mkdir(parents=True, exist_ok=True)
+    with open(log, "ab") as out:
+        proc = subprocess.Popen(cmd, cwd=cwd, env=env, stdin=subprocess.DEVNULL, stdout=out, stderr=out,
+                                creationflags=flags, close_fds=True)
+    return proc.pid
+
+
+class WindowsVault(Vault):
+    """The same commands on Windows: no launchd, so the vault is a hidden background process of yours.
+    Its process id is kept in data/run/vault.pid; `autostart` puts a small script in the Startup folder."""
+
+    def __init__(self, *args, spawn=None, appdata: Path | None = None, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.cmd = "vault"
+        self.npm = "npm.cmd"  # npm.ps1 is blocked by PowerShell's default policy
+        self.spawn = spawn or _spawn_detached
+        home = kwargs.get("home") or Path.home()
+        appdata = appdata or Path(os.environ.get("APPDATA") or home / "AppData" / "Roaming")
+        self.startup_script = (appdata / "Microsoft" / "Windows" / "Start Menu" / "Programs" / "Startup"
+                               / "Document Vault.vbs")
+        self.pidfile = self.root / "data" / "run" / "vault.pid"
+
+    # ---------- the background process ----------
+
+    def _pid(self) -> int | None:
+        try:
+            return int(self.pidfile.read_text().strip())
+        except (OSError, ValueError):
+            return None
+
+    def _alive(self, pid: int) -> bool:
+        r = self.run(["tasklist", "/FI", f"PID eq {pid}", "/FO", "CSV", "/NH"])
+        return r.returncode == 0 and f'"{pid}"' in r.stdout and "python" in r.stdout.lower()  # not a reused id
+
+    def loaded(self) -> tuple[bool, int | None]:
+        pid = self._pid()
+        if pid and self._alive(pid):
+            return True, pid
+        return False, None
+
+    def _bootout(self) -> None:
+        pid = self._pid()
+        if pid and self._alive(pid):
+            self.run(["taskkill", "/PID", str(pid), "/T", "/F"])  # /T: the whole tree (a venv's python.exe has a child)
+            for _ in range(20):
+                if not self._alive(pid):
+                    break
+                self.sleep(0.5)
+        self.pidfile.unlink(missing_ok=True)
+
+    def _env(self) -> dict:
+        env = dict(os.environ)
+        env.setdefault("VAULT_DATABASE_URL", DEFAULT_SQLITE)
+        env["PYTHONUNBUFFERED"] = "1"
+        env["PATH"] = os.pathsep.join([str(Path(self.python).parent), env.get("PATH", "")])
+        return env
+
+    def _launch(self) -> tuple[bool, str]:
+        try:
+            pid = self.spawn([self.python, "-m", "backend.api.app", "--phones"], cwd=self.root, env=self._env(),
+                             log=self.log)
+        except OSError as e:
+            return False, f"Windows could not start the vault: {e}"
+        self.pidfile.parent.mkdir(parents=True, exist_ok=True)
+        self.pidfile.write_text(str(pid))
+        return True, ""
+
+    # ---------- what the vault needs ----------
+
+    def database_check(self, fix: bool) -> Check:
+        url = os.environ.get("VAULT_DATABASE_URL", DEFAULT_SQLITE)
+        if url.startswith("sqlite"):
+            return Check("Database", True, "SQLite file in data/index")
+        ready = self.run(["pg_isready", "-q"]).returncode == 0
+        return Check("Database (PostgreSQL)", ready, "running" if ready else "not running: start the PostgreSQL service",
+                     required=True)
+
+    def _open_ollama(self) -> None:
+        app = Path(os.environ.get("LOCALAPPDATA", "")) / "Programs" / "Ollama" / "ollama app.exe"
+        env = dict(os.environ)
+        try:
+            if app.exists():
+                self.spawn([str(app)], cwd=self.root, env=env, log=self.log)
+            elif shutil.which("ollama"):
+                self.spawn(["ollama", "serve"], cwd=self.root, env=env, log=self.log)
+        except OSError:
+            pass  # the check that follows reports that Ollama isn't running
+
+    def _tesseract_ok(self) -> bool:
+        from backend.parser.ocr import tesseract_path
+
+        return tesseract_path() is not None
+
+    def _tesseract_hint(self) -> str:
+        return "missing: winget install UB-Mannheim.TesseractOCR (photos and scans can't be read)"
+
+    def open_url(self, url: str) -> None:
+        webbrowser.open(url)
+
+    # ---------- start at sign-in ----------
+
+    def autostart_enabled(self) -> bool:
+        return self.startup_script.exists()
+
+    def autostart(self, on: bool) -> None:
+        running = self.loaded()[0]
+        if on:
+            self.startup_script.parent.mkdir(parents=True, exist_ok=True)
+            launcher = str(self.root / "vault.cmd")
+            # one line of VBScript: run `vault.cmd start` with no window (quotes inside a string are doubled)
+            self.startup_script.write_text(
+                f'CreateObject("WScript.Shell").Run """{launcher}"" start", 0, False\r\n', encoding="utf-16")
+            self.say("The vault will start by itself when you sign in to Windows.")
+        else:
+            self.startup_script.unlink(missing_ok=True)
+            self.say("The vault will only run when you start it (vault start, or Start Vault.bat).")
+        if running:
+            self.say("It's running now; the change applies from the next start.")
+
+    def follow_log(self, lines: int) -> None:
+        print(self.tail(lines))
+        try:
+            with open(self.log, "rb") as f:
+                f.seek(0, 2)
+                while True:
+                    chunk = f.read()
+                    if chunk:
+                        print(chunk.decode("utf-8", "replace"), end="", flush=True)
+                    else:
+                        time.sleep(0.5)
+        except KeyboardInterrupt:
+            pass
 
 
 def update_plan(changed: list[str]) -> dict:
@@ -308,17 +479,18 @@ def main() -> None:
     logs.add_argument("-f", "--follow", action="store_true", help="keep showing new lines (Ctrl+C to stop)")
     logs.add_argument("-n", "--lines", type=int, default=60)
     sub.add_parser("update", help="get the latest version and restart")
-    auto = sub.add_parser("autostart", help="start the vault when you log in to the Mac")
+    auto = sub.add_parser("autostart", help="start the vault when you log in")
     auto.add_argument("state", choices=["on", "off"])
     args = parser.parse_args()
 
-    if sys.platform != "darwin" and args.command in ("start", "stop", "restart", "autostart"):
-        raise SystemExit("./vault manages the vault with macOS's launchd. Elsewhere run: python -m backend.api.app --phones")
-    vault = Vault()
+    if sys.platform not in ("darwin", "win32") and args.command in ("start", "stop", "restart", "autostart"):
+        raise SystemExit("./vault manages the vault with macOS's launchd or Windows. Elsewhere run: "
+                         "python -m backend.api.app --phones")
+    vault = WindowsVault() if sys.platform == "win32" else Vault()
     if args.command in ("start", "restart"):
         ok = vault.start()
         if ok and sys.stdout.isatty():
-            vault.run(["open", f"http://localhost:{PORT}"])
+            vault.open_url(f"http://localhost:{PORT}")
         raise SystemExit(0 if ok else 1)
     if args.command == "stop":
         vault.stop()
@@ -326,8 +498,9 @@ def main() -> None:
         raise SystemExit(0 if vault.status() else 3)
     elif args.command == "logs":
         if args.follow and vault.log.exists():
-            os.execvp("tail", ["tail", "-n", str(args.lines), "-f", str(vault.log)])
-        print(vault.tail(args.lines))
+            vault.follow_log(args.lines)
+        else:
+            print(vault.tail(args.lines))
     elif args.command == "update":
         raise SystemExit(0 if vault.update() else 1)
     elif args.command == "autostart":

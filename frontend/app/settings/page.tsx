@@ -635,7 +635,7 @@ function AutoBackup() {
       {enabled && (
         <>
           <div className="stack-form">
-            <span>Where to keep backups (full paths, for example /Volumes/USB/Backups). Use at least two, on different disks.</span>
+            <span>Where to keep backups (full paths, for example /Volumes/USB/Backups on a Mac or D:\Backups on Windows). Use at least two, on different disks.</span>
             {folders.map((f, i) => {
               const r = result(f);
               return (

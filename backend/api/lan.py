@@ -30,7 +30,8 @@ import subprocess
 from pathlib import Path
 
 PHONE_PORT = 8443
-TAILSCALE_CLI = ("tailscale", "/Applications/Tailscale.app/Contents/MacOS/Tailscale")
+TAILSCALE_CLI = ("tailscale", "/Applications/Tailscale.app/Contents/MacOS/Tailscale",
+                 r"C:\Program Files\Tailscale\tailscale.exe")
 TAILNET = ipaddress.ip_network("100.64.0.0/10")  # the range Tailscale gives devices
 
 
@@ -121,9 +122,22 @@ def fingerprint(cert_path: Path) -> str:
 
 
 def keep_awake() -> None:
-    """On a Mac, stop it from idle-sleeping while the vault serves phones (ends with the vault)."""
+    """Stop the computer from idle-sleeping while the vault serves phones (ends with the vault)."""
     import os
     import sys
 
     if sys.platform == "darwin" and shutil.which("caffeinate"):
         subprocess.Popen(["caffeinate", "-i", "-w", str(os.getpid())])
+    elif sys.platform == "win32":
+        import ctypes
+        import threading
+        import time
+
+        ES_CONTINUOUS, ES_SYSTEM_REQUIRED = 0x80000000, 0x00000001
+
+        def hold():  # the request lasts as long as this thread does
+            ctypes.windll.kernel32.SetThreadExecutionState(ES_CONTINUOUS | ES_SYSTEM_REQUIRED)
+            while True:
+                time.sleep(3600)
+
+        threading.Thread(target=hold, name="keep-awake", daemon=True).start()

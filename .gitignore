@@ -13,3 +13,6 @@ data/
 
 # Personal recording notes (not part of the repo)
 RECORDING_GUIDE.md
+
+# Built installers (packaging/)
+dist/
