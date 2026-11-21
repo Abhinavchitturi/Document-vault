@@ -25,6 +25,7 @@ ADMIN_URL = os.environ.get("VAULT_TEST_DATABASE_URL")
 os.environ.setdefault("VAULT_FACTS_READER", "rules")  # never reach for Needle's download during tests
 os.environ["VAULT_KEYCHAIN"] = "off"  # test vaults' keys never go in your real Keychain...
 os.environ["VAULT_KEY_DIR"] = tempfile.mkdtemp(prefix="vault-test-keys-")  # ...but in a throwaway folder
+os.environ["VAULT_LLM_DIR"] = tempfile.mkdtemp(prefix="vault-test-llm-")  # no real local AI: tests never start one
 _created: list[str] = []
 
 

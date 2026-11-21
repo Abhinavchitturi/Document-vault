@@ -1,0 +1,115 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  tests:
+    name: Tests (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+      - run: python -m pip install -r requirements.txt
+      - run: python -m pytest -q
+      - name: The pinned llama.cpp build downloads, checks out and runs here
+        shell: bash
+        run: |
+          python -c "from backend.llm import setup; setup.install_server()"
+          "$(python -c 'from backend.llm import llamacpp; print(llamacpp.server_path())')" --version
+
+  windows-vault:
+    # Starts the real vault on real Windows through the same commands a person uses, then stops it.
+    name: Windows start / stop
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - run: python -m pip install -r requirements.txt
+      - run: npm ci && npm run build
+        working-directory: frontend
+      - name: The installer script is valid PowerShell
+        shell: powershell
+        run: |
+          $errors = $null
+          [System.Management.Automation.Language.Parser]::ParseFile("$PWD\install.ps1", [ref]$null, [ref]$errors) | Out-Null
+          if ($errors) { $errors | ForEach-Object { Write-Error $_.Message }; exit 1 }
+      - name: Start, check, stop
+        shell: pwsh
+        run: |
+          cmd /c "vault.cmd start"; if ($LASTEXITCODE) { exit 1 }
+          Invoke-WebRequest http://localhost:8000/api/auth/status -UseBasicParsing | Out-Null
+          cmd /c "vault.cmd status"; if ($LASTEXITCODE) { exit 1 }
+          cmd /c "vault.cmd stop"; if ($LASTEXITCODE) { exit 1 }
+          Start-Sleep -Seconds 2
+          $up = $true
+          try { Invoke-WebRequest http://localhost:8000/api/auth/status -UseBasicParsing -TimeoutSec 3 | Out-Null } catch { $up = $false }
+          if ($up) { Write-Error "the vault is still running after vault stop"; exit 1 }
+          "stopped as expected"
+          exit 0
+      - name: Log, if it went wrong
+        if: failure()
+        shell: cmd
+        run: type data\logs\vault.log
+
+  installer:
+    name: Windows installer
+    runs-on: windows-latest
+    permissions:
+      contents: write  # to attach the installer to a release
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build DocumentVault-Setup.exe
+        shell: pwsh
+        run: |
+          if (-not (Test-Path "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe")) { choco install innosetup -y --no-progress }
+          $version = if ($env:GITHUB_REF -like 'refs/tags/v*') { $env:GITHUB_REF_NAME.TrimStart('v') } else { "0.0.0-dev" }
+          & "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe" "/DVersion=$version" packaging\windows\DocumentVault.iss
+          if ($LASTEXITCODE -ne 0) { exit 1 }
+      - uses: actions/upload-artifact@v4
+        with:
+          name: DocumentVault-Setup
+          path: dist/DocumentVault-Setup.exe
+      - name: Attach to the release
+        if: startsWith(github.ref, 'refs/tags/v')
+        shell: pwsh
+        run: gh release upload "$env:GITHUB_REF_NAME" dist/DocumentVault-Setup.exe --clobber
+        env:
+          GH_TOKEN: ${{ github.token }}
+
+  mac-app:
+    name: Mac app (.dmg)
+    runs-on: macos-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build DocumentVault-macOS.dmg
+        run: |
+          case "$GITHUB_REF" in refs/tags/v*) version="${GITHUB_REF_NAME#v}" ;; *) version="0.0.0-dev" ;; esac
+          sh packaging/macos/build_dmg.sh "$version"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: DocumentVault-macOS
+          path: dist/DocumentVault-macOS.dmg
+      - name: Attach to the release
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: gh release upload "$GITHUB_REF_NAME" dist/DocumentVault-macOS.dmg --clobber
+        env:
+          GH_TOKEN: ${{ github.token }}

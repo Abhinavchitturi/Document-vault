@@ -18,13 +18,15 @@ can highlight the answer on a scan exactly like on a normal PDF, and a confidenc
 the app can warn when a photo is too blurry to trust.
 
 Tesseract is a separate program: `brew install tesseract` on macOS (it includes English and
-orientation detection).
+orientation detection), `winget install UB-Mannheim.TesseractOCR` on Windows (installed in
+C:\\Program Files, which is usually not on PATH: the vault looks there too).
 """
 
 from __future__ import annotations
 
 import json
 import logging
+import os
 import re
 import shutil
 from dataclasses import asdict, dataclass, field
@@ -33,6 +35,36 @@ from pathlib import Path
 import ftfy
 
 logger = logging.getLogger(__name__)
+
+ROOT = Path(__file__).resolve().parents[2]
+WINDOWS_TESSERACT = (  # where the Windows installers put it; neither is added to PATH
+    r"C:\Program Files\Tesseract-OCR\tesseract.exe",
+    r"C:\Program Files (x86)\Tesseract-OCR\tesseract.exe",
+)
+
+
+def tesseract_path() -> str | None:
+    """The tesseract program: on PATH, else where the Windows installer puts it."""
+    found = shutil.which("tesseract")
+    if found:
+        return found
+    local = os.environ.get("LOCALAPPDATA")
+    candidates = [*WINDOWS_TESSERACT, *([str(Path(local) / "Programs" / "Tesseract-OCR" / "tesseract.exe")] if local else [])]
+    return next((c for c in candidates if Path(c).is_file()), None)
+
+
+def _pytesseract():
+    """pytesseract, pointed at the tesseract program and at extra language data if the installer added any
+    (data/tessdata, which the Windows installer fills with English, orientation and Hindi)."""
+    import pytesseract
+
+    path = tesseract_path()
+    if path:
+        pytesseract.pytesseract.tesseract_cmd = path
+    extra = ROOT / "data" / "tessdata"
+    if (extra / "eng.traineddata").is_file():
+        os.environ.setdefault("TESSDATA_PREFIX", str(extra))
+    return pytesseract
 
 MIN_OCR_WIDTH = 1600  # smaller images are enlarged before reading
 RETRY_WIDTH = 2400  # an unclear small image is read once more at this size
@@ -96,7 +128,7 @@ def ocr_languages() -> str:
             _langs = wanted
         else:
             try:
-                import pytesseract
+                pytesseract = _pytesseract()
 
                 installed = set(pytesseract.get_languages(config=""))
             except Exception:
@@ -106,7 +138,7 @@ def ocr_languages() -> str:
 
 
 def ocr_available() -> bool:
-    return shutil.which("tesseract") is not None
+    return tesseract_path() is not None
 
 
 def require_ocr(what: str = "This file") -> None:
@@ -130,7 +162,7 @@ def rotate(image, rotation: int):
 
 
 def _detect_rotation(image) -> int:
-    import pytesseract
+    pytesseract = _pytesseract()
 
     small = image.convert("L")
     if small.width > 2000:  # orientation doesn't need full resolution
@@ -225,7 +257,7 @@ def _devanagari_share(text: str) -> float:
 
 
 def _read(image, rotation: int, width: int, flatten: bool = False, lang: str | None = None) -> OcrPage:
-    import pytesseract
+    pytesseract = _pytesseract()
 
     cleaned, scale = _cleaned(image, width, flatten)
     data = pytesseract.image_to_data(cleaned, lang=lang or ocr_languages(), output_type=pytesseract.Output.DICT)
@@ -271,7 +303,7 @@ def _reread_mixed(image, word: str, conf: float, box: list[int]) -> tuple[str, f
     only; the most confident reading wins, if it is clearly more confident than the first."""
     if conf >= SURE or not _MIXED.match(word):
         return word, conf
-    import pytesseract
+    pytesseract = _pytesseract()
 
     x, y, w, h = box
     pad = max(4, h // 3)

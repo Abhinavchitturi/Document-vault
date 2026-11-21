@@ -20,6 +20,7 @@ import json
 import logging
 import os
 import shutil
+import sys
 import tempfile
 import threading
 from datetime import datetime, timedelta, timezone
@@ -38,6 +39,7 @@ DEFAULT_KEEP = 7
 MAX_KEEP = 100
 MAX_DESTINATIONS = 5
 PREFIX = "Document Vault backup "
+EXAMPLE_FOLDER = r"D:\Backups or \\NAS\Backups" if sys.platform == "win32" else "/Volumes/NAS/Backups"
 
 _LONG_AGO = datetime.min.replace(tzinfo=timezone.utc)  # never backed up: due since forever
 _wake = threading.Event()  # set when the settings change, so a newly enabled schedule doesn't wait for the next check
@@ -127,7 +129,7 @@ def _check_folder(folder: str) -> Path:
         raise AutoBackupError("Choose the folder the backups go to.")
     path = Path(folder).expanduser()
     if not path.is_absolute():
-        raise AutoBackupError("Give the full path of the folder, for example /Volumes/NAS/Backups.")
+        raise AutoBackupError(f"Give the full path of the folder, for example {EXAMPLE_FOLDER}.")
     if not path.is_dir():
         raise AutoBackupError(f"{path} isn't there. Is the drive or NAS connected, and the folder created?")
     probe = path / ".vault-write-test"

@@ -4,6 +4,9 @@ from __future__ import annotations
 
 import plistlib
 import subprocess
+import sys
+
+import pytest
 
 from backend.deploy.vault import LABEL, Vault, update_plan
 
@@ -66,6 +69,7 @@ def vault(tmp_path, mac, built=True):
     return v, said
 
 
+@pytest.mark.skipif(sys.platform == "win32", reason="the launchd agent is macOS-only, with POSIX paths")
 def test_the_launch_agent_runs_the_vault_for_phones_and_restarts_it_after_a_crash(tmp_path):
     v, _ = vault(tmp_path, FakeMac())
     p = plistlib.loads(plistlib.dumps(v.plist(at_login=False)))

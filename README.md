@@ -2,41 +2,51 @@
 
 # Document Vault
 
-**A private, local-first vault for your important papers. Ask questions about them in plain English.**
+**A private, local-first vault for your family's important papers. Ask questions about them in plain English.**
 
-Insurance policies, warranty cards, bills, property papers and ID cards: upload them once, then just ask.
-Every model runs on your own computer. Nothing is sent to a cloud AI service.
-
+[![CI](https://github.com/Abhinavchitturi/Document-vault/actions/workflows/ci.yml/badge.svg)](https://github.com/Abhinavchitturi/Document-vault/actions/workflows/ci.yml)
 ![Python](https://img.shields.io/badge/Python-3.11+-3776AB?logo=python&logoColor=white)
 ![FastAPI](https://img.shields.io/badge/FastAPI-backend-009688?logo=fastapi&logoColor=white)
-![Next.js](https://img.shields.io/badge/Next.js-frontend-000000?logo=nextdotjs&logoColor=white)
+![Next.js](https://img.shields.io/badge/Next.js-web-000000?logo=nextdotjs&logoColor=white)
 ![Flutter](https://img.shields.io/badge/Flutter-mobile-02569B?logo=flutter&logoColor=white)
-![Ollama](https://img.shields.io/badge/LLM-Ollama%20(local)-444444)
-![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)
+![llama.cpp](https://img.shields.io/badge/LLM-llama.cpp%20(local)-444444)
 ![Encryption](https://img.shields.io/badge/at%20rest-AES--256--GCM-2E7D32)
+![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)
+
+<img src="docs/images/banner.png" alt="Document Vault: ask a question, get the answer with the exact page highlighted" width="820">
 
 </div>
 
----
+Insurance policies, warranty cards, bills, property papers and ID cards: upload them once, then ask.
+Document Vault answers from your own documents, cites the exact page, and runs every model on your own computer.
+Nothing is sent to a cloud AI service.
 
-> **You:** When does my bike insurance expire?
-> **Vault:** Your bike insurance expires on **14 March 2027** [1].
-> *[1] Bike Insurance 2026.pdf, page 1*
+> **You:** When does my bike insurance expire?<br>
+> **Vault:** Your bike insurance expires on **14 March 2027** [1].<br>
+> *[1] Bike Insurance 2026.pdf, page 1 (click to open the page with the answer highlighted)*
 
-Click a source and the original page opens with the answer highlighted on it.
+## Status: native apps on the way
+
+Native apps for **macOS (SwiftUI), Windows (WinUI), iPhone (SwiftUI) and Android (Jetpack Compose)** are being built,
+one at a time. Downloadable installers will appear on the [Releases page](https://github.com/Abhinavchitturi/Document-vault/releases)
+as each one is ready. Until then, install with one command (below); the vault then runs on your computer and you use it
+in your browser at `http://localhost:8000`.
+
+Plan for **8 GB of RAM (16 GB recommended)** and **10 GB of free disk space**: setup downloads the Python packages,
+the AI engine (llama.cpp) and the AI models (about 6 GB, once). After that everything works offline.
 
 ## Highlights
 
-- **Ask, don't search.** A chat that answers from your documents and cites the exact page.
-- **Fully local.** Embeddings (Snowflake Arctic Embed), answers (Ollama) and OCR (Tesseract) run on your machine. The LLM client refuses any non-local address, and the web app loads nothing from the internet.
-- **Hybrid retrieval.** Meaning (vector search) and exact words and numbers (BM25) are fused, so both *"when does my bike cover end"* and *"find policy KMI/PC/25/0093318"* work.
-- **Reads scans and photos.** Auto-rotation, clean-up, English and Hindi OCR, locked PDFs (e-Aadhaar, e-PAN), HEIC photos.
+- **Ask, don't search.** A chat that answers from your documents and cites the exact page, with the answer highlighted on the original.
+- **Fully local.** Embeddings (Snowflake Arctic Embed), answers (Llama 3.1 8B in llama.cpp, started by the vault itself) and OCR (Tesseract) run on your machine. No separate AI app to install. The LLM client refuses non-local addresses, and the web app loads nothing from the internet.
+- **Hybrid retrieval.** Vector search and BM25 keyword search are fused with Reciprocal Rank Fusion, so both *"when does my bike cover end"* and *"find policy KMI/PC/25/0093318"* work.
+- **Reads scans and photos.** Auto-rotation, clean-up, English and Hindi OCR, locked PDFs (e-Aadhaar, e-PAN) and HEIC photos.
 - **Understands what it stores.** Documents are sorted by type, and expiry dates, due dates, amounts and reference numbers are extracted automatically.
-- **Reminders.** Before expiries and due dates: phone notifications, Mac notifications, a calendar file and a dashboard.
-- **Encrypted at rest.** AES-256-GCM for files, scans, search index, file names and ID numbers. The key lives in the macOS Keychain, with a paper recovery key and encrypted backups.
-- **Automatic backups.** Scheduled encrypted backups to several places at once (second disk, USB drive, NAS share, cloud-synced folder). Every copy is re-opened and checked, and each location's result is shown in Settings.
+- **Reminders.** Before expiries and due dates: phone notifications, desktop notifications on the Mac, a calendar file and a dashboard.
+- **Encrypted at rest.** AES-256-GCM for files, scans, the search index, file names and ID numbers. The key is kept in the macOS Keychain or Windows Credential Manager, with a paper recovery key.
+- **Automatic backups.** Scheduled encrypted backups to several places at once (second disk, USB drive, NAS share, cloud-synced folder). Every copy is re-opened and verified.
 - **Family-ready.** Password and passkey (Touch ID / Face ID) sign-in, per-person accounts, private or shared documents, and an activity log.
-- **Web and phone.** A Next.js web app and a Flutter phone app paired by QR code over HTTPS with certificate pinning.
+- **Web and phone.** A Next.js web app, and a Flutter phone app paired by QR code over HTTPS with certificate pinning. Works on home Wi-Fi, or from anywhere through a private Tailscale tunnel.
 
 ## How it works
 
@@ -48,7 +58,7 @@ flowchart LR
     E --> S[(Vault<br/>SQL + FAISS +<br/>encrypted files)]
     Q[Your question] --> R[Hybrid retrieval<br/>vector + BM25]
     S --> R
-    R --> L[Local LLM<br/>Ollama]
+    R --> L[Local LLM<br/>llama.cpp]
     L --> A[Answer with<br/>cited sources]
 ```
 
@@ -56,31 +66,77 @@ flowchart LR
 |---|---|
 | Backend | Python, FastAPI |
 | Web app | Next.js, React, TypeScript (static export served by FastAPI) |
-| Mobile | Flutter (Android and iOS) |
+| Mobile | Flutter |
 | Embeddings and search | Snowflake Arctic Embed, FAISS, BM25 with Reciprocal Rank Fusion |
-| Answers | Ollama (default `llama3.1:8b`) |
-| OCR | Tesseract |
-| Storage | SQLite or PostgreSQL for records, FAISS for vectors, encrypted files on disk |
-| Security | AES-256-GCM, macOS Keychain, scrypt, passkeys (WebAuthn) |
+| Answers | llama.cpp (`llama-server`) with Llama 3.1 8B; Ollama also works |
+| OCR | Tesseract (English and Hindi) |
+| Storage | SQLite (default) or PostgreSQL for records, FAISS for vectors, encrypted files on disk |
+| Security | AES-256-GCM, macOS Keychain / Windows Credential Manager, scrypt, passkeys (WebAuthn) |
 
-## Quick start
+The answer model is Meta's [Llama 3.1 8B Instruct](https://huggingface.co/meta-llama/Llama-3.1-8B-Instruct) (as a
+[GGUF file](https://huggingface.co/bartowski/Meta-Llama-3.1-8B-Instruct-GGUF), under the Llama 3.1 Community License),
+run by a pinned [llama.cpp](https://github.com/ggml-org/llama.cpp) build. Both are downloaded from their publishers and
+checked against published checksums; neither is redistributed here.
 
-Runs on macOS. The samples are fictional, so you can try everything without any real papers.
+## Getting started
 
-**One command.** Install [Homebrew](https://brew.sh) and [Ollama](https://ollama.com) (open Ollama once), then paste this into Terminal:
+### macOS
+
+Install [Homebrew](https://brew.sh), then run:
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/Abhinavchitturi/Document-vault/main/install.sh | sh -s -- --with-samples
 ```
 
-It downloads the vault to `~/Document-Vault`, installs the Python packages, OCR and web app, pulls the answer model,
-loads the sample documents, starts the vault and opens http://localhost:8000. Run it again any time to update.
-Prefer to read it first? [install.sh](install.sh) is a short script. Add `--no-start` to set up without starting,
-or run `./install.sh --with-samples` from a copy you cloned yourself.
+It downloads the vault to `~/Document-Vault`, sets everything up (AI models included), starts it and opens it.
+`--with-samples` loads fictional sample documents so you can try it straight away. Run it again any time to update.
 
-**Or step by step:**
+### Windows (beta)
+
+In PowerShell:
+
+```powershell
+& ([scriptblock]::Create((irm https://raw.githubusercontent.com/Abhinavchitturi/Document-vault/main/install.ps1))) -WithSamples
+```
+
+It installs Git, Python, Node and Tesseract through `winget` (Windows may ask for permission for some of them) and
+then does the same as on the Mac. The Windows version is tested automatically on Windows in CI but has had far less
+real-world use. Not on Windows yet: desktop pop-up reminders (phone reminders and the calendar file work).
+
+### Phone (Android and iPhone)
+
+1. On the computer, open **Settings → Phones → Pair a phone**: it shows a QR code.
+2. On the phone, open the Document Vault app ([build it](mobile/README.md) for now) and tap **Scan pairing code**.
+
+### Use it from anywhere with Tailscale
+
+At home, the phone reaches the vault over your Wi-Fi. To use it anywhere else (on mobile data, at work, travelling),
+connect your devices with [Tailscale](https://tailscale.com), a free private network between your own devices:
+
+1. Install Tailscale on the **computer** ([tailscale.com/download](https://tailscale.com/download)) and sign in.
+2. Install Tailscale on the **phone** (App Store or Play Store) and sign in with the **same account**.
+3. Leave Tailscale switched on on both. Pair the phone as above (or, if it is already paired, open the app once on home
+   Wi-Fi): it learns the computer's Tailscale address, and uses it whenever home Wi-Fi isn't there.
+
+Traffic between your devices is end-to-end encrypted by Tailscale (WireGuard), and the vault adds its own HTTPS with
+the app pinned to the vault's certificate. Nothing is opened to the public internet, and Tailscale's servers only
+introduce your devices to each other: they cannot read the traffic. The computer has to be on and the vault running.
+`./vault status` shows whether Tailscale is connected.
+
+### First steps
+
+Open **http://localhost:8000**, choose a password, and ask *"When does my bike insurance expire?"*. The first run
+downloads the embedding model (about 440 MB); after that everything works offline.
+
+To try an upload, drag `samples/upload-demo/Laptop Warranty.pdf` onto the **Upload** page and ask
+*"When does my laptop warranty expire?"*. The locked e-Aadhaar sample uses the password `ARJU1988`.
+
+<details>
+<summary><b>Install from source, step by step</b></summary>
 
 ```bash
+git clone https://github.com/Abhinavchitturi/Document-vault.git && cd Document-vault
+
 # 1. Python packages
 python3 -m venv venv && source venv/bin/activate
 pip install -r requirements.txt
@@ -88,94 +144,73 @@ pip install -r requirements.txt
 # 2. Tesseract (scans and photos) and Node (builds the web pages)
 brew install tesseract tesseract-lang node
 
-# 3. A local answer model (install Ollama from https://ollama.com first)
-ollama pull llama3.1:8b
+# 3. The local AI: llama.cpp and the answer model (about 5 GB, checked against published checksums)
+python -m backend.llm.setup
 
 # 4. Build the web app
 cd frontend && npm install && npm run build && cd ..
 
 # 5. Load the sample documents into a single-file database (no PostgreSQL needed)
 export VAULT_DATABASE_URL=sqlite:///data/index/vault.db
-python -m backend.upload.ingest samples/pdfs samples/scans --owner abhinav
+python -m backend.upload.ingest samples/pdfs samples/scans --owner "$USER"
 
 # 6. Start the vault
 ./vault start
 ```
 
-Open **http://localhost:8000** (the one-command install does this for you), choose a password on the first screen, and ask
-*"When does my bike insurance expire?"*. The first run downloads the embedding model (about 440 MB);
-after that everything works offline. Stop with `./vault stop`.
+**Linux:** install Tesseract with your package manager, run steps 1, 3, 4 and 5, then start the server
+with `python -m backend.api.app --phones`. The key is then kept in `~/.document-vault/keys/`. Not tested.
 
-**Try an upload:** drag `samples/upload-demo/Laptop Warranty.pdf` onto the Upload page, then ask
-*"When does my laptop warranty expire?"*. The locked card in `samples/scans/identity/` uses the
-password `ARJU1988`.
+</details>
 
-**Not on a Mac?** `./vault` relies on macOS. On Linux, install Tesseract and Ollama with your package
-manager, run steps 1, 3, 4 and 5, then start the server directly with `python -m backend.api.app`.
-The encryption key is then kept in `~/.document-vault/keys/` instead of the Keychain.
-Neither Linux nor Windows has been tested.
+<details>
+<summary><b>Everyday commands and troubleshooting</b></summary>
 
-**If something doesn't work**
-
-| Symptom | Fix |
-|---|---|
-| Header says **Assistant offline** | Open the Ollama app, then check `ollama list` shows `llama3.1:8b` |
-| Scans or photos fail, or are "hard to read" | `brew install tesseract tesseract-lang` |
-| Web pages missing at `localhost:8000` | Build the web app: `cd frontend && npm install && npm run build` |
-| Want a clean start | `./vault stop`, delete the `data/` folder, repeat step 5 and `./vault start` |
+Run these from the vault folder (`~/Document-Vault`, or `%USERPROFILE%\Document-Vault` on Windows, where the
+command is `vault` instead of `./vault`).
 
 | Command | What it does |
 |---|---|
 | `./vault start` / `stop` | Start or stop the vault in the background |
-| `./vault status` | Check the database, Ollama, OCR, web pages and phone tunnel |
+| `./vault status` | Check the database, the local AI, OCR, web pages and phone tunnel |
 | `./vault logs` | Show the log (`-f` to follow) |
 | `./vault update` | Pull changes, rebuild what changed, restart |
-| `./vault autostart on` | Start at login |
+| `./vault autostart on` | Start when you log in |
 
-## What's inside
-
-| Page | Purpose |
+| Symptom | Fix |
 |---|---|
-| **Dashboard** | Counts by type, recent documents, upcoming expiries and due dates, quick ask box |
-| **Chat** | Streaming answers with numbered sources and in-page highlighting |
-| **Documents** | Filter and search, change type, view or open the original, share or make private |
-| **Upload** | Drag and drop PDFs, Word files and photos; type is detected automatically |
-| **Settings** | Answer model, theme, reminders, family members, phones, backups, activity log |
+| Header says **Assistant offline** | Run `python -m backend.llm.setup --check`; if anything is missing, `python -m backend.llm.setup` downloads it |
+| Scans or photos fail, or are "hard to read" | Install Tesseract: `brew install tesseract tesseract-lang` (Windows: `winget install UB-Mannheim.TesseractOCR`) |
+| Web pages missing at `localhost:8000` | Build the web app: `cd frontend && npm install && npm run build` |
+| Want a clean start | `./vault stop`, delete the `data/` folder, load the samples again and `./vault start` |
+
+</details>
 
 ## Privacy and security
 
-- **Local only.** No document text, question or embedding leaves the machine. The LLM client refuses non-local addresses.
-- **Encrypted on disk.** Without the key, a copy of `data/` is unreadable. The key is in the macOS Keychain, never in the project folder.
-- **Recovery and backups.** A paper recovery key and single-file encrypted `.dvbackup` backups.
+- **Local only.** No document text, question or embedding leaves your computer. The LLM client refuses non-local addresses.
+- **Encrypted on disk.** Without the key, a copy of `data/` is unreadable. The key lives in the system keychain, never in the vault folder.
+- **Recovery.** A paper recovery key, and single-file encrypted `.dvbackup` backups that restore on a new computer.
 - **Accounts.** Passwords stored only as salted scrypt hashes, HttpOnly SameSite cookies, lockout after repeated failures, passkey sign-in.
-- **Phones.** Paired by QR code, served over HTTPS with the app pinned to the vault's own certificate. Remote access can use a private Tailscale tunnel; nothing is opened to the public internet.
+- **Phones.** Paired by QR code and served over HTTPS, with the app pinned to the vault's own certificate. Remote access goes through Tailscale; nothing is exposed to the public internet.
 - **Activity log.** Sign-ins, document access and changes, recorded without the words you typed.
 
-The repository holds code and fictional samples only. Your own data lives in `data/`, which is git-ignored.
+This repository holds code and fictional samples only. Your own documents live in `data/`, which is git-ignored.
 
 ## Backups and disk failures
 
-The vault lives on one Mac, so a dead disk would take it with it unless you keep backups elsewhere.
-
 - **Automatic backups:** *Settings → Security → Automatic backups* (admin). Choose up to five locations, daily or
-  weekly, and how many to keep. The first backup runs right away; each location's last result, or the reason it
-  failed, is shown there.
-- **Where to point it:** a second disk, a USB drive, a **NAS share mounted on the Mac** (for example
-  `/Volumes/NAS/Backups`), or a cloud-synced folder such as iCloud Drive or Dropbox. Each backup is one encrypted
-  `.dvbackup` file, so every location only ever holds ciphertext. Use more than one, on different disks: Settings
-  warns when two locations share a disk, or one shares the vault's disk.
-- **Every copy is checked.** After writing, the app reads each copy back and fully decrypts it. A bad copy is deleted
-  and reported, and older backups are only pruned once a good one exists. One location failing (NAS off, drive
-  unplugged) does not stop the others; it retries hourly and never creates a stray local folder.
-  Check a file by hand with `python -m backend.security.cli verify "<file>.dvbackup"`.
-- **Why the vault itself isn't on the NAS:** its database and search index are written constantly, and SQLite is
-  not safe on a network share. The reliable design is a local vault plus backups on the NAS.
-- **Restore** on any Mac, even a new one: `python -m backend.security.cli restore "<file>.dvbackup"`.
-- **Keep the backup password somewhere else too.** It is saved on the Mac next to the vault key so backups can run
-  unattended; without it a backup cannot be opened.
+  weekly, and how many backups to keep. Each location's last result, or the reason it failed, is shown there.
+- **Where to keep them:** a second disk, a USB drive, a NAS share mounted on the computer (for example
+  `/Volumes/NAS/Backups`), or a cloud-synced folder such as iCloud Drive or Dropbox. Every location only ever holds
+  encrypted files. Settings warns when two locations share a disk, or one shares the vault's disk.
+- **Every copy is verified.** Each copy is read back and fully decrypted after writing. A bad copy is removed and
+  reported, and older backups are only pruned once a good one exists. One location failing does not stop the others.
+- **Restore** on any computer: `python -m backend.security.cli restore "<file>.dvbackup"`.
+  Check a file without restoring it: `python -m backend.security.cli verify "<file>.dvbackup"`.
 
-This is backup, not live replication: you can lose up to one backup interval of changes, and there is no RAID or
-second live copy. Keep at least one backup off the Mac.
+The live vault stays on the computer's own disk (SQLite is not safe on a network share). Backups are not live
+replication: you can lose up to one backup interval of changes, so keep at least one backup on another device.
 
 ## Search quality
 
@@ -187,16 +222,17 @@ Measured on the bundled sample set (13 documents, 32 questions, 8 of them lookup
 | Keyword only (BM25) | 0.938 | 1.000 | 0.969 |
 | **Hybrid (default)** | **1.000** | **1.000** | **1.000** |
 
-Reproduce with `python -m backend.eval.evaluate --show-misses`. The sample set is small and
-synthetic, so read these as a sanity check rather than a benchmark.
+Reproduce with `python -m backend.eval.evaluate --show-misses`. The sample set is small and synthetic, so treat
+these numbers as a sanity check rather than a benchmark.
 
 ## Project layout
 
 | Path | Contents |
 |---|---|
-| `backend/` | FastAPI app, upload pipeline, parsing and OCR, classification, key-fact extraction, hybrid retriever, local LLM client, auth, security, reminders |
+| `backend/` | FastAPI app, upload pipeline, parsing and OCR, classification, key-fact extraction, hybrid retriever, local LLM client, auth, security, backups, reminders |
 | `frontend/` | Next.js web app |
 | `mobile/` | Flutter phone app ([setup](mobile/README.md)) |
+| `packaging/` | The macOS app and DMG, the Windows installer, and their icons |
 | `samples/` | Fictional documents, scans, questions and the generators for them |
 | `tests/` | Test suite |
 | `docs/` | [User guide](docs/USER_GUIDE.md), [how it works](docs/HOW_IT_WORKS.md), [project brief](docs/PROJECT_BRIEF.md) |
@@ -209,21 +245,18 @@ python -m backend.api.app          # API on :8000
 cd frontend && npm run dev         # web app on :3000, forwarding /api to :8000
 ```
 
-## Documentation
-
-- **[User guide](docs/USER_GUIDE.md):** setup, running, sharing, reminders, phone pairing, backups
-- **[How it works](docs/HOW_IT_WORKS.md):** architecture, upload and question pipelines, data model, API
-- **[Project brief](docs/PROJECT_BRIEF.md):** vision, phases and design decisions
+`packaging/` holds interim installers (a DMG launcher and an Inno Setup installer, built by [CI](.github/workflows/ci.yml));
+they are not published while the native apps are being built.
 
 ## Roadmap
 
-Built in 13 phases, from a core RAG engine to a mobile app with family sharing and one-command
-deployment; see the [user guide](docs/USER_GUIDE.md#status). Added since: automatic backups to several places
-(each copy checked), and a one-command installer.
+Built in 13 phases, from a core RAG engine to a mobile app with family sharing; see the
+[user guide](docs/USER_GUIDE.md#status). Since then: automatic verified backups, one-command installers, Windows
+support, and llama.cpp so no separate AI app is needed.
 
-Not planned: a double-click Mac app. Without a paid Apple Developer account (about $99 a year) macOS warns on
-unsigned apps, so installation stays a single Terminal command. Not done: running the live vault directly on
-network storage (backups to a NAS work; SQLite does not belong on a network share).
+Now: native apps, one by one: **macOS** (SwiftUI), then iPhone (SwiftUI), Android (Jetpack Compose) and Windows
+(WinUI). On the desktop the native app runs the vault's engine as a private helper, with no network port; phones
+connect over Wi-Fi or Tailscale.
 
 ## License
 

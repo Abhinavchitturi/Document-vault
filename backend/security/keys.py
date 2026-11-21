@@ -1,8 +1,10 @@
-"""Where the vault key lives: the macOS Keychain, never inside the vault folder.
+"""Where the vault key lives: the macOS Keychain (Windows Credential Manager), never inside the vault folder.
 
 Keeping the key apart from the data is the point: a copy of data/ (a backup disk, a synced
 folder, a stolen laptop's drive image) holds only ciphertext. On the Mac the key sits in the
-login Keychain under "Document Vault" (Keychain Access app → search "Document Vault").
+login Keychain under "Document Vault" (Keychain Access app → search "Document Vault"). On Windows it
+sits in the Credential Manager (Control Panel → Credential Manager → Windows Credentials), also under
+"Document Vault"; both are reached through the `keyring` package.
 
 Where no Keychain is available (Linux, CI, VAULT_KEYCHAIN=off) the key goes in a file under
 ~/.document-vault/keys/ (or VAULT_KEY_DIR), readable only by you, still outside the vault folder.
@@ -16,6 +18,7 @@ from __future__ import annotations
 import base64
 import logging
 import os
+import sys
 from pathlib import Path
 
 logger = logging.getLogger(__name__)
@@ -47,7 +50,10 @@ def _key_dir() -> Path:
 
 def where(vault_id: str) -> str:
     """Said to the person: where this vault's key is kept."""
-    return "the macOS Keychain (\"Document Vault\")" if _keyring() else str(_key_dir() / f"{vault_id}.key")
+    if not _keyring():
+        return str(_key_dir() / f"{vault_id}.key")
+    name = "the Windows Credential Manager" if sys.platform == "win32" else "the macOS Keychain"
+    return f'{name} ("Document Vault")'
 
 
 def load(vault_id: str) -> bytes | None:
