@@ -241,7 +241,7 @@ class Vault:
     def stop(self) -> None:
         running = self.loaded()[0]
         self._bootout()
-        self.say("The vault is stopped. Phones will say the Mac is unreachable until you start it again."
+        self.say("The vault is stopped. Phones will say the computer is unreachable until you start it again."
                  if running else "The vault wasn't running.")
 
     def status(self) -> bool:

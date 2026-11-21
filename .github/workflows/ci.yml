@@ -46,13 +46,18 @@ jobs:
           [System.Management.Automation.Language.Parser]::ParseFile("$PWD\install.ps1", [ref]$null, [ref]$errors) | Out-Null
           if ($errors) { $errors | ForEach-Object { Write-Error $_.Message }; exit 1 }
       - name: Start, check, stop
-        shell: cmd
+        shell: pwsh
         run: |
-          call vault.cmd start || exit /b 1
-          curl --fail --silent http://localhost:8000/api/auth/status || exit /b 1
-          call vault.cmd status
-          call vault.cmd stop || exit /b 1
-          curl --silent --max-time 3 http://localhost:8000/api/auth/status && (echo still running & exit /b 1) || (echo stopped as expected)
+          cmd /c "vault.cmd start"; if ($LASTEXITCODE) { exit 1 }
+          Invoke-WebRequest http://localhost:8000/api/auth/status -UseBasicParsing | Out-Null
+          cmd /c "vault.cmd status"; if ($LASTEXITCODE) { exit 1 }
+          cmd /c "vault.cmd stop"; if ($LASTEXITCODE) { exit 1 }
+          Start-Sleep -Seconds 2
+          $up = $true
+          try { Invoke-WebRequest http://localhost:8000/api/auth/status -UseBasicParsing -TimeoutSec 3 | Out-Null } catch { $up = $false }
+          if ($up) { Write-Error "the vault is still running after vault stop"; exit 1 }
+          "stopped as expected"
+          exit 0
       - name: Log, if it went wrong
         if: failure()
         shell: cmd
