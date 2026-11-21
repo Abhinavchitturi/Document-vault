@@ -17,11 +17,19 @@ struct DocumentsView: View {
     @State private var toDelete: VaultDocument?
 
     private var shown: [VaultDocument] {
-        model.documents
-            .filter { category == nil || $0.category == category }
-            .filter { search.isEmpty || $0.filename.localizedCaseInsensitiveContains(search)
-                || ($0.reference ?? "").localizedCaseInsensitiveContains(search) || ($0.issuer ?? "").localizedCaseInsensitiveContains(search) }
-            .sorted(using: sortOrder)
+        let matching: [VaultDocument] = model.documents.filter(matches)
+        return matching.sorted(using: sortOrder)
+    }
+
+    private func matches(_ document: VaultDocument) -> Bool {
+        if let category, document.category != category { return false }
+        if search.isEmpty { return true }
+        let fields: [String] = [document.filename, document.reference ?? "", document.issuer ?? ""]
+        return fields.contains { $0.localizedCaseInsensitiveContains(search) }
+    }
+
+    private func document(_ id: VaultDocument.ID) -> VaultDocument? {
+        model.documents.first { $0.id == id }
     }
 
     var body: some View {
@@ -44,7 +52,7 @@ struct DocumentsView: View {
                 .width(80)
         }
         .contextMenu(forSelectionType: VaultDocument.ID.self) { ids in
-            if let document = ids.first.flatMap({ id in model.documents.first { $0.id == id } }) {
+            if let id = ids.first, let document = self.document(id) {
                 Button("Open") { openWindow(id: "document", value: document.docId) }
                 if document.mine {
                     Menu("Change Type") {
