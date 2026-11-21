@@ -135,36 +135,21 @@ jobs:
           dotnet test apps/windows/DocumentVault.Core.Tests
       - name: Build the app
         run: dotnet publish apps/windows/DocumentVault.App -c Release -r win-x64 -p:Platform=x64 -o dist/windows-app
-      - name: Open it and take a screenshot
-        shell: pwsh
-        run: |
-          $env:DOCUMENT_VAULT_DIR = "$PWD"
-          $env:DOCUMENT_VAULT_PYTHON = (Get-Command python).Source
-          $app = Start-Process dist/windows-app/DocumentVault.exe -PassThru
-          Start-Sleep -Seconds 90
-          Add-Type -AssemblyName System.Windows.Forms, System.Drawing
-          $bounds = [System.Windows.Forms.Screen]::PrimaryScreen.Bounds
-          $shot = New-Object System.Drawing.Bitmap $bounds.Width, $bounds.Height
-          [System.Drawing.Graphics]::FromImage($shot).CopyFromScreen($bounds.Location, [System.Drawing.Point]::Empty, $bounds.Size)
-          $shot.Save("$PWD/windows-app.png")
-          $crash = Join-Path $env:LOCALAPPDATA "Document Vault\crash.log"
-          if (Test-Path $crash) { Copy-Item $crash "$PWD/windows-app-crash.log"; Get-Content $crash }
-          if ($app.HasExited) {
-            Get-WinEvent -FilterHashtable @{ LogName = 'Application'; ProviderName = '.NET Runtime', 'Application Error' } -MaxEvents 4 -ErrorAction SilentlyContinue |
-              Format-List TimeCreated, ProviderName, Message | Out-String -Width 400
-            Write-Error "The app quit by itself (code $($app.ExitCode))"; exit 1
-          }
-          Stop-Process -Id $app.Id
+      - name: Click through every screen, with screenshots
+        shell: powershell
+        run: powershell -ExecutionPolicy Bypass -File apps/windows/ui-test.ps1 -App dist\windows-app\DocumentVault.exe -Python (Get-Command python).Source -Out screens
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: DocumentVault-Windows-app
+          name: DocumentVault-Windows-screens
           path: |
-            dist/windows-app
-            windows-app.png
-            windows-app-crash.log
+            screens
             data/logs
           if-no-files-found: ignore
+      - uses: actions/upload-artifact@v4
+        with:
+          name: DocumentVault-Windows-app
+          path: dist/windows-app
 
   mac-native:
     # The native Mac app (SwiftUI), built with GitHub's Xcode.

@@ -10,8 +10,8 @@ public sealed class ChatPage : UserControl
 {
     private readonly StackPanel _messages = UI.Stack(18);
     private readonly ScrollViewer _scroller;
-    private readonly TextBox _question = new() { PlaceholderText = "Ask about your documents…", AcceptsReturn = false };
-    private readonly Button _send = new() { Content = UI.Glyph(""), Style = (Style)Application.Current.Resources["AccentButtonStyle"] };
+    private readonly TextBox _question = new TextBox { PlaceholderText = "Ask about your documents…", AcceptsReturn = false }.Id("QuestionBox");
+    private readonly Button _send = new Button { Content = UI.Glyph(""), Style = (Style)Application.Current.Resources["AccentButtonStyle"] }.Id("SendButton");
     private readonly List<ChatTurn> _history = [];
     private CancellationTokenSource? _answering;
 
@@ -116,7 +116,24 @@ public sealed class ChatPage : UserControl
                             sources.Children.Add(chip);
                         }
                         break;
-                    case ChatEvent.Error e: reply.Children.Add(new InfoBar { IsOpen = true, IsClosable = false, Severity = InfoBarSeverity.Warning, Message = e.Message }); break;
+                    case ChatEvent.Error e:
+                        reply.Children.Add(new InfoBar { IsOpen = true, IsClosable = false, Severity = InfoBarSeverity.Warning, Message = e.Message });
+                        foreach (var source in found.Take(3))  // what the search found, without an answer
+                        {
+                            var snippet = source.Text.Length > 220 ? source.Text[..220] + "…" : source.Text;
+                            var card = new HyperlinkButton
+                            {
+                                Content = UI.Stack(2, UI.Caption($"{source.Filename} · p. {source.Page}"), UI.Text(snippet)),
+                                HorizontalAlignment = HorizontalAlignment.Stretch, HorizontalContentAlignment = HorizontalAlignment.Left,
+                            };
+                            card.Click += (_, _) =>
+                            {
+                                var document = AppState.Current.Documents.FirstOrDefault(x => x.DocId == source.DocId);
+                                if (document is not null) new DocumentWindow(document).Activate();
+                            };
+                            reply.Children.Add(card);
+                        }
+                        break;
                 }
                 _scroller.ChangeView(null, _scroller.ScrollableHeight, null);
             }

@@ -34,7 +34,7 @@ public sealed class ShellPage : UserControl
     }
 
     private static NavigationViewItem Item(string label, string glyph, string tag) =>
-        new() { Content = label, Icon = UI.Glyph(glyph), Tag = tag };
+        new NavigationViewItem { Content = label, Icon = UI.Glyph(glyph), Tag = tag }.Id($"Nav-{tag}");
 
     public void Go(string tag)
     {

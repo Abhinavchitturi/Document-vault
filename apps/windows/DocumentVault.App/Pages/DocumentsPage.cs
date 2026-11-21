@@ -11,14 +11,14 @@ public sealed class DocumentsPage : UserControl
 {
     private readonly Category? _category;
     private readonly AutoSuggestBox _search = new() { PlaceholderText = "Search names, policy or reference numbers", QueryIcon = new SymbolIcon(Symbol.Find), Width = 360 };
-    private readonly ListView _list = new() { SelectionMode = ListViewSelectionMode.None, IsItemClickEnabled = true };
+    private readonly ListView _list = new ListView { SelectionMode = ListViewSelectionMode.None, IsItemClickEnabled = true }.Id("DocumentList");
     private readonly TextBlock _count = UI.Caption("");
 
     public DocumentsPage(Category? category)
     {
         _category = category;
         var add = new Button { Content = UI.Row(8, UI.Glyph("", 14), new TextBlock { Text = "Add documents" }),
-                               Style = (Style)Application.Current.Resources["AccentButtonStyle"] };
+                               Style = (Style)Application.Current.Resources["AccentButtonStyle"] }.Id("AddDocumentsButton");
         add.Click += async (_, _) => await PickAsync();
         _search.TextChanged += (_, _) => Fill();
         _list.ItemClick += (_, e) => { if ((e.ClickedItem as FrameworkElement)?.Tag is VaultDocument d) new DocumentWindow(d).Activate(); };

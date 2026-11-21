@@ -60,6 +60,13 @@ public static class UI
         return button;
     }
 
+    /// A stable name for UI Automation (the click-through test, screen readers).
+    public static T Id<T>(this T element, string id) where T : DependencyObject
+    {
+        Microsoft.UI.Xaml.Automation.AutomationProperties.SetAutomationId(element, id);
+        return element;
+    }
+
     public static FontIcon Glyph(string glyph, double size = 16) => new() { Glyph = glyph, FontSize = size };
 
     /// Segoe Fluent Icons for each type of document.

@@ -10,16 +10,16 @@ public sealed class SignInPage : UserControl
     public SignInPage(AuthStatus status)
     {
         var firstTime = status.SetupNeeded;
-        var name = new TextBox { Header = "Name", Text = status.SuggestedName ?? "" };
-        var password = new PasswordBox { Header = firstTime ? "Password (8 or more characters)" : "Password" };
-        var again = new PasswordBox { Header = "Password again", Visibility = firstTime ? Visibility.Visible : Visibility.Collapsed };
+        var name = new TextBox { Header = "Name", Text = status.SuggestedName ?? "" }.Id("NameBox");
+        var password = new PasswordBox { Header = "Password", PlaceholderText = firstTime ? "8 or more characters" : "" }.Id("PasswordBox");
+        var again = new PasswordBox { Header = "Password again", Visibility = firstTime ? Visibility.Visible : Visibility.Collapsed }.Id("PasswordAgainBox");
         var problem = new InfoBar { Severity = InfoBarSeverity.Error, IsClosable = false };
         var submit = new Button
         {
             Content = firstTime ? "Create vault" : "Sign in",
             Style = (Style)Application.Current.Resources["AccentButtonStyle"],
             HorizontalAlignment = HorizontalAlignment.Stretch,
-        };
+        }.Id("SubmitButton");
 
         async void Go()
         {
