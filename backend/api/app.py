@@ -1098,7 +1098,7 @@ def create_app(
     return app
 
 
-def main() -> None:
+def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--index-dir", default="data/index", help="FAISS vectors and original files")
     parser.add_argument("--database-url", default=None,
@@ -1119,8 +1119,13 @@ def main() -> None:
     parser.add_argument("--phone-port", type=int, default=8443)
     parser.add_argument("--phone-address", action="append", default=[],
                         help="extra address phones may use (repeatable), e.g. a Tailscale name")
-    args = parser.parse_args()
+    return parser.parse_args(argv)
 
+
+def start_vault(args: argparse.Namespace):
+    """Open the vault and start what runs beside it (llama.cpp, phone access, reminders, scheduled backups).
+    Returns (app, stop): the web app for this computer, and a function that stops it all. The web server (main)
+    and the native apps' engine (backend/engine) both start the vault this way."""
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
     import uvicorn
 
@@ -1198,15 +1203,27 @@ def main() -> None:
 
     stop_reminders = desktop.start(store, _Reminders(store.engine))  # Mac notifications while running
     stop_autobackup = autobackup.start(store)  # scheduled encrypted backups, if the admin turned them on
-    try:
-        uvicorn.run(app, host="127.0.0.1", port=args.port, access_log=False)  # vault.requests says who, too
-    finally:
+
+    def stop() -> None:
         stop_reminders.set()
         autobackup.stop_and_wake(stop_autobackup)
         if phone_server:
             phone_server.should_exit = True
         if llama_server:
             llama_server.stop()
+
+    return app, stop
+
+
+def main() -> None:
+    args = parse_args()
+    app, stop = start_vault(args)
+    import uvicorn
+
+    try:
+        uvicorn.run(app, host="127.0.0.1", port=args.port, access_log=False)  # vault.requests says who, too
+    finally:
+        stop()
 
 
 if __name__ == "__main__":
