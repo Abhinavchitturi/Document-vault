@@ -5,7 +5,7 @@
 # or, from a copy you already downloaded:  powershell -ExecutionPolicy Bypass -File .\install.ps1 -WithSamples
 #
 # Downloads the vault (into %USERPROFILE%\Document-Vault, or -Dir) when it isn't already here, installs what it
-# needs with winget (Git, Python, Node, Tesseract, Ollama), sets up the Python packages and the web app, pulls the
+# needs with winget (Git, Python, Node, Tesseract), sets up the Python packages and the web app, downloads the
 # local answer model, starts the vault and opens it in your browser. Safe to run again: it skips what is already
 # done and updates the download.
 #   -WithSamples   also load the fictional sample documents, so there is something to try
@@ -75,16 +75,6 @@ function Find-Tesseract {
     $cmd = Get-Command tesseract -ErrorAction SilentlyContinue
     if ($cmd) { return $cmd.Source }
     return $null
-}
-
-function Wait-Ollama($seconds) {
-    for ($i = 0; $i -lt $seconds; $i++) {
-        try {
-            Invoke-WebRequest -Uri "http://localhost:11434/api/tags" -UseBasicParsing -TimeoutSec 2 | Out-Null
-            return $true
-        } catch { Start-Sleep -Seconds 1 }
-    }
-    return $false
 }
 
 if ($PSVersionTable.PSVersion.Major -lt 5) { Stop-Setup "this needs Windows PowerShell 5 or newer (Windows 10 and 11 have it)." }
@@ -174,23 +164,19 @@ if ($tesseract) {
     }
 }
 
-# ---- 4. Ollama (the local AI that writes the answers) ----------------------------------------------------------------
+# ---- 4. the local AI: llama.cpp and the answer model (the vault starts llama.cpp by itself) -----------------------------
+# A computer that already has the same model in Ollama keeps using Ollama instead of downloading it a second time.
 if (-not $SkipModel) {
-    Say "Checking Ollama (the local AI that writes the answers)"
-    if (-not (Test-Command ollama) -and -not (Test-Path "$env:LOCALAPPDATA\Programs\Ollama\ollama.exe")) {
-        Install-Package "Ollama.Ollama" "Ollama"
+    $hasOllamaModel = $false
+    if (Test-Command ollama) {
+        try { $hasOllamaModel = [bool]((& ollama list 2>$null) | Select-String -SimpleMatch $Model) } catch { }
     }
-    $ollama = if (Test-Command ollama) { "ollama" } else { "$env:LOCALAPPDATA\Programs\Ollama\ollama.exe" }
-    if (-not (Wait-Ollama 1)) {
-        $app = "$env:LOCALAPPDATA\Programs\Ollama\ollama app.exe"
-        if (Test-Path $app) { Start-Process $app } else { Start-Process $ollama -ArgumentList "serve" -WindowStyle Hidden }
-        if (-not (Wait-Ollama 40)) { Stop-Setup "Ollama is installed but not running. Open the Ollama app, then run this again." }
-    }
-    $have = & $ollama list
-    if (-not ($have | Select-String -SimpleMatch $Model)) {
-        Say "Downloading the answer model (about 5 GB, once)"
-        & $ollama pull $Model
-        if ($LASTEXITCODE -ne 0) { Stop-Setup "downloading the answer model failed. Run this again to retry." }
+    if ($hasOllamaModel) {
+        Say "Using the answer model you already have in Ollama ($Model)"
+    } else {
+        Say "Downloading the local AI: llama.cpp and the answer model (about 5 GB, once)"
+        & $venvPython -m backend.llm.setup
+        if ($LASTEXITCODE -ne 0) { Stop-Setup "the local AI did not download. Run this again to continue where it stopped." }
     }
 }
 

@@ -38,17 +38,14 @@ if [ -x "$DIR/vault" ] && [ -x "$DIR/venv/bin/python" ] && [ -f "$DIR/frontend/o
   exit 0
 fi
 
-# First time: the two free apps the installer can't fetch by itself.
-if ! command -v brew >/dev/null 2>&1 || { [ ! -d /Applications/Ollama.app ] && ! command -v ollama >/dev/null 2>&1; }; then
-  answer=$(dialog "Document Vault needs two free apps first:\n\n•  Homebrew, which installs the tools it uses\n•  Ollama, which runs the AI on this Mac\n\nInstall both, open Ollama once, then open Document Vault again." "Open download pages")
-  if [ -n "$answer" ]; then
-    open "https://brew.sh"
-    open "https://ollama.com/download"
-  fi
+# First time: Homebrew, which the installer uses for the tools (Python, OCR, Node), is the one thing to install by hand.
+if ! command -v brew >/dev/null 2>&1; then
+  answer=$(dialog "Document Vault needs Homebrew first: a free, widely used installer for Mac tools.\n\nInstall it from brew.sh (one command in Terminal), then open Document Vault again." "Open brew.sh")
+  [ -n "$answer" ] && open "https://brew.sh"
   exit 0
 fi
 
-answer=$(dialog "Document Vault will set itself up in $DIR.\n\nThe first setup downloads about 6 GB (Python packages and the AI model) and takes 10 to 30 minutes. A Terminal window shows the progress; when it is done the vault opens in your browser.\n\nYour documents never leave this Mac." "Set up")
+answer=$(dialog "Document Vault will set itself up in $DIR.\n\nThe first setup downloads about 6 GB (Python packages and the AI models, which then run offline) and takes 10 to 30 minutes. A Terminal window shows the progress; when it is done the vault opens in your browser.\n\nYour documents never leave this Mac." "Set up")
 [ -n "$answer" ] || exit 0
 in_terminal "curl -fsSL \"$INSTALL_URL\" | sh -s --
 echo

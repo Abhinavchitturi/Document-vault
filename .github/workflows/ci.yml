@@ -22,6 +22,11 @@ jobs:
           cache: pip
       - run: python -m pip install -r requirements.txt
       - run: python -m pytest -q
+      - name: The pinned llama.cpp build downloads, checks out and runs here
+        shell: bash
+        run: |
+          python -c "from backend.llm import setup; setup.install_server()"
+          "$(python -c 'from backend.llm import llamacpp; print(llamacpp.server_path())')" --version
 
   windows-vault:
     # Starts the real vault on real Windows through the same commands a person uses, then stops it.

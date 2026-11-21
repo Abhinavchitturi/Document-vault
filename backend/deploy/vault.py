@@ -172,9 +172,7 @@ class Vault:
                      "running" if pg.returncode == 0 else "not running: brew services start postgresql@16",
                      required=not os.environ.get("VAULT_DATABASE_URL", "").startswith("sqlite"))
 
-    def checks(self, fix: bool = True) -> list[Check]:
-        out = [self.database_check(fix)]
-
+    def _ollama_check(self, fix: bool) -> Check:
         ollama = self.http_ok("http://localhost:11434/api/tags")
         if not ollama and fix:
             self.say("Opening Ollama…")
@@ -184,8 +182,19 @@ class Vault:
                 if self.http_ok("http://localhost:11434/api/tags"):
                     ollama = True
                     break
-        out.append(Check("Answers (Ollama)", ollama, "running" if ollama else
-                         "not running: open the Ollama app (search and documents still work without it)"))
+        return Check("Answers (Ollama)", ollama, "running" if ollama else
+                     f"not running: open the Ollama app, or download the local AI with: {self.python} -m backend.llm.setup "
+                     "(search and documents work without it)")
+
+    def checks(self, fix: bool = True) -> list[Check]:
+        out = [self.database_check(fix)]
+
+        from backend.llm import llamacpp
+
+        if llamacpp.installed():  # the vault starts llama.cpp itself: nothing to open
+            out.append(Check("Answers (local AI)", True, f"llama.cpp with {llamacpp.MODEL['label']}, starts with the vault"))
+        else:
+            out.append(self._ollama_check(fix))
 
         address = self.tailscale() or ""
         out.append(Check("Private tunnel (Tailscale)", bool(address), f"connected ({address})" if address else

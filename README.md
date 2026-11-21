@@ -9,7 +9,7 @@
 ![FastAPI](https://img.shields.io/badge/FastAPI-backend-009688?logo=fastapi&logoColor=white)
 ![Next.js](https://img.shields.io/badge/Next.js-web-000000?logo=nextdotjs&logoColor=white)
 ![Flutter](https://img.shields.io/badge/Flutter-mobile-02569B?logo=flutter&logoColor=white)
-![Ollama](https://img.shields.io/badge/LLM-Ollama%20(local)-444444)
+![llama.cpp](https://img.shields.io/badge/LLM-llama.cpp%20(local)-444444)
 ![Encryption](https://img.shields.io/badge/at%20rest-AES--256--GCM-2E7D32)
 ![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)
 
@@ -36,7 +36,7 @@ Nothing is sent to a cloud AI service.
 All releases: [Releases page](https://github.com/Abhinavchitturi/Document-vault/releases).
 
 The desktop downloads are small installers. On first launch they download the vault and set it up: Python
-packages, the web app and a local AI model (about 6 GB in total, 10 to 30 minutes, once). Plan for **8 GB of RAM
+packages, the web app, the AI engine (llama.cpp) and the AI models (about 6 GB in total, 10 to 30 minutes, once). Plan for **8 GB of RAM
 (16 GB recommended)** and **10 GB of free disk space**.
 
 > **About security warnings.** The installers are not code-signed, because signing needs paid Apple and Microsoft
@@ -51,7 +51,7 @@ packages, the web app and a local AI model (about 6 GB in total, 10 to 30 minute
 ## Highlights
 
 - **Ask, don't search.** A chat that answers from your documents and cites the exact page, with the answer highlighted on the original.
-- **Fully local.** Embeddings (Snowflake Arctic Embed), answers (Ollama) and OCR (Tesseract) run on your machine. The LLM client refuses non-local addresses, and the web app loads nothing from the internet.
+- **Fully local.** Embeddings (Snowflake Arctic Embed), answers (Llama 3.1 8B in llama.cpp, started by the vault itself) and OCR (Tesseract) run on your machine. No separate AI app to install. The LLM client refuses non-local addresses, and the web app loads nothing from the internet.
 - **Hybrid retrieval.** Vector search and BM25 keyword search are fused with Reciprocal Rank Fusion, so both *"when does my bike cover end"* and *"find policy KMI/PC/25/0093318"* work.
 - **Reads scans and photos.** Auto-rotation, clean-up, English and Hindi OCR, locked PDFs (e-Aadhaar, e-PAN) and HEIC photos.
 - **Understands what it stores.** Documents are sorted by type, and expiry dates, due dates, amounts and reference numbers are extracted automatically.
@@ -71,7 +71,7 @@ flowchart LR
     E --> S[(Vault<br/>SQL + FAISS +<br/>encrypted files)]
     Q[Your question] --> R[Hybrid retrieval<br/>vector + BM25]
     S --> R
-    R --> L[Local LLM<br/>Ollama]
+    R --> L[Local LLM<br/>llama.cpp]
     L --> A[Answer with<br/>cited sources]
 ```
 
@@ -81,21 +81,26 @@ flowchart LR
 | Web app | Next.js, React, TypeScript (static export served by FastAPI) |
 | Mobile | Flutter |
 | Embeddings and search | Snowflake Arctic Embed, FAISS, BM25 with Reciprocal Rank Fusion |
-| Answers | Ollama (default `llama3.1:8b`) |
+| Answers | llama.cpp (`llama-server`) with Llama 3.1 8B; Ollama also works |
 | OCR | Tesseract (English and Hindi) |
 | Storage | SQLite (default) or PostgreSQL for records, FAISS for vectors, encrypted files on disk |
 | Security | AES-256-GCM, macOS Keychain / Windows Credential Manager, scrypt, passkeys (WebAuthn) |
+
+The answer model is Meta's [Llama 3.1 8B Instruct](https://huggingface.co/meta-llama/Llama-3.1-8B-Instruct) (as a
+[GGUF file](https://huggingface.co/bartowski/Meta-Llama-3.1-8B-Instruct-GGUF), under the Llama 3.1 Community License),
+run by a pinned [llama.cpp](https://github.com/ggml-org/llama.cpp) build. Both are downloaded from their publishers and
+checked against published checksums; neither is redistributed here.
 
 ## Getting started
 
 ### macOS
 
 **With the app:** open the [`.dmg`](https://github.com/Abhinavchitturi/Document-vault/releases/latest/download/DocumentVault-macOS.dmg),
-drag **Document Vault** to Applications and open it. The first time, it checks for [Homebrew](https://brew.sh) and
-[Ollama](https://ollama.com) (both free; it links to them if they are missing), then sets up the vault in
-`~/Document-Vault` in a Terminal window. After that, opening the app starts the vault and opens it in your browser.
+drag **Document Vault** to Applications and open it. The first time, it checks for [Homebrew](https://brew.sh) (free; it
+links to it if it is missing), then sets up the vault in `~/Document-Vault` in a Terminal window, AI models included.
+After that, opening the app starts the vault and opens it in your browser.
 
-**With one command:** install Homebrew and Ollama (open Ollama once), then run:
+**With one command:** install Homebrew, then run:
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/Abhinavchitturi/Document-vault/main/install.sh | sh -s -- --with-samples
@@ -107,7 +112,7 @@ at any time to update.
 ### Windows (beta)
 
 **With the installer:** run [`DocumentVault-Setup.exe`](https://github.com/Abhinavchitturi/Document-vault/releases/latest/download/DocumentVault-Setup.exe).
-It installs Git, Python, Node, Tesseract and Ollama through `winget` (Windows may ask for permission for some of
+It installs Git, Python, Node and Tesseract through `winget`, downloads the AI models (Windows may ask for permission for some of
 them), sets up the vault, and adds **Document Vault** to the Start menu.
 
 **With one command** in PowerShell:
@@ -152,8 +157,8 @@ pip install -r requirements.txt
 # 2. Tesseract (scans and photos) and Node (builds the web pages)
 brew install tesseract tesseract-lang node
 
-# 3. A local answer model (install Ollama from https://ollama.com first)
-ollama pull llama3.1:8b
+# 3. The local AI: llama.cpp and the answer model (about 5 GB, checked against published checksums)
+python -m backend.llm.setup
 
 # 4. Build the web app
 cd frontend && npm install && npm run build && cd ..
@@ -166,7 +171,7 @@ python -m backend.upload.ingest samples/pdfs samples/scans --owner "$USER"
 ./vault start
 ```
 
-**Linux:** install Tesseract and Ollama with your package manager, run steps 1, 3, 4 and 5, then start the server
+**Linux:** install Tesseract with your package manager, run steps 1, 3, 4 and 5, then start the server
 with `python -m backend.api.app --phones`. The key is then kept in `~/.document-vault/keys/`. Not tested.
 
 </details>
@@ -180,14 +185,14 @@ command is `vault` instead of `./vault`).
 | Command | What it does |
 |---|---|
 | `./vault start` / `stop` | Start or stop the vault in the background |
-| `./vault status` | Check the database, Ollama, OCR, web pages and phone tunnel |
+| `./vault status` | Check the database, the local AI, OCR, web pages and phone tunnel |
 | `./vault logs` | Show the log (`-f` to follow) |
 | `./vault update` | Pull changes, rebuild what changed, restart |
 | `./vault autostart on` | Start when you log in |
 
 | Symptom | Fix |
 |---|---|
-| Header says **Assistant offline** | Open the Ollama app, then check that `ollama list` shows `llama3.1:8b` |
+| Header says **Assistant offline** | Run `python -m backend.llm.setup --check`; if anything is missing, `python -m backend.llm.setup` downloads it |
 | Scans or photos fail, or are "hard to read" | Install Tesseract: `brew install tesseract tesseract-lang` (Windows: `winget install UB-Mannheim.TesseractOCR`) |
 | Web pages missing at `localhost:8000` | Build the web app: `cd frontend && npm install && npm run build` |
 | Want a clean start | `./vault stop`, delete the `data/` folder, load the samples again and `./vault start` |

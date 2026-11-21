@@ -25,7 +25,7 @@ The full reference for setting up, running and using the vault. For a short over
 ## Privacy
 - Built for a family, not for the public internet. The repository contains **code and fictional samples only**.
 - Real documents, their text and the search index live in `data/` (git-ignored) on your computer.
-- **Local models only**: embeddings (Snowflake Arctic Embed), answers (a local LLM via Ollama)
+- **Local models only**: embeddings (Snowflake Arctic Embed), answers (a local LLM in llama.cpp, or Ollama)
   and OCR (Tesseract) all run on your machine. No models from Chinese developers are used. The LLM client refuses any non-local address, the
   embedding model runs offline once downloaded, and the web page loads nothing from the internet.
 - Every family member signs in with their own password, and the server only ever shows them their own
@@ -108,10 +108,13 @@ brew install postgresql@16
 brew services start postgresql@16
 createdb vault
 ```
-Ollama for answers: install it from https://ollama.com, open it, then download the model (~5 GB):
+The local AI for answers: llama.cpp and Llama 3.1 8B (~5 GB), downloaded once into `~/.document-vault/llm` and
+checked against their published SHA-256. The vault starts llama.cpp itself; there is no separate app to open:
 ```bash
-ollama pull llama3.1:8b
+python -m backend.llm.setup          # --check reports what is there
 ```
+Already using [Ollama](https://ollama.com)? Then skip this: without llama.cpp, the vault uses Ollama's
+`llama3.1:8b` (`--llm ollama` forces it, `--llm llamacpp` forces llama.cpp).
 For photos and scanned PDFs (includes English and page-orientation detection):
 ```bash
 brew install tesseract
@@ -139,7 +142,7 @@ From the vault folder in Terminal:
 ```bash
 ./vault start
 ```
-It checks the database, Ollama (answers), Tailscale (phones away from home) and the web pages,
+It checks the database, the local AI (answers), Tailscale (phones away from home) and the web pages,
 starts what's missing, runs the vault in the background with phone access on, and opens it in
 the browser. Closing Terminal doesn't stop it; it restarts by itself if it ever crashes.
 Or double-click **Start Vault.command** / **Stop Vault.command** in Finder.
@@ -148,7 +151,7 @@ Or double-click **Start Vault.command** / **Stop Vault.command** in Finder.
 |---|---|
 | `./vault start` | Start (or restart) the vault in the background |
 | `./vault stop` | Stop it; phones show "can't reach the vault" until the next start |
-| `./vault status` | Running or not, and whether PostgreSQL, Ollama, Tailscale, pages and OCR are ready |
+| `./vault status` | Running or not, and whether PostgreSQL, the local AI, Tailscale, pages and OCR are ready |
 | `./vault logs` | The end of `data/logs/vault.log` (`./vault logs -f` to follow): who did what, from which device, and every error |
 | `./vault update` | `git pull`, install new packages / rebuild pages only if they changed, restart; says whether phones need a new app |
 | `./vault autostart on` | Start the vault whenever you log in to the Mac (`off`: only when you start it) |
@@ -182,7 +185,7 @@ Working on the pages: run `python -m backend.api.app` and, in another terminal,
 `cd frontend && npm run dev`, then open http://localhost:3000 (it forwards `/api` to :8000).
 
 - Another local model: choose it in **Settings**, or start with `--llm-model gemma3:12b` (after `ollama pull gemma3:12b`)
-- If Ollama isn't running, the header shows **Assistant offline**, and replies say how to start it and point to the closest line in your documents.
+- If the local AI isn't running (or, with Ollama, Ollama isn't open), the header shows **Assistant offline**, and replies say how to start it and point to the closest line in your documents.
 
 Import a whole folder instead of uploading one by one. Subfolders named `insurance/`,
 `warranty/`, `bill/` or `property/` set the category; anything else is auto-detected:
@@ -446,7 +449,7 @@ Layout:
 | `backend/extract/` | Key facts: readers and checks (`facts.py`), filling in older documents (`run.py`), Needle setup (`needle_setup.py`) |
 | `backend/classify/` | Sorting documents into types (`classifier.py`), re-sorting older ones (`run.py`) |
 | `backend/retriever/` | Question → passages: hybrid fusion (`retriever.py`), keyword search (`bm25.py`) |
-| `backend/llm/` | Local Ollama client and the answer-with-citations prompt |
+| `backend/llm/` | The local AI: llama.cpp (`llamacpp.py`, downloaded by `setup.py`) or Ollama (`ollama.py`), and the answer-with-citations prompt |
 | `backend/viewer/` | Finds the passage and the answer's facts on a page (PDF boxes, Word/text spans) |
 | `backend/api/` | FastAPI app: the API, and serving the built web app |
 | `frontend/` | Next.js web app (React, TypeScript), built to static files in `frontend/out/` |
