@@ -36,7 +36,7 @@ def draw(scale: int) -> Image.Image:
     steps = [
         "Open Document Vault from Applications. If macOS says it can't check the app, click Done.",
         "Open System Settings → Privacy & Security, and scroll all the way down, past the list, to Security.",
-        "Click Open Anyway next to “Document Vault”, then Open Anyway again.",
+        "Under Security, click Open Anyway next to “Document Vault was blocked”, then Open Anyway again.",
     ]
     for i, step in enumerate(steps):
         top = s(314 + i * 34)
