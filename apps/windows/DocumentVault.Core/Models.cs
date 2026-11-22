@@ -31,6 +31,8 @@ public sealed record LlmStatus(bool Ready, string Message, bool CanDownload = fa
 
 /// How far the one-click download of the local AI is: idle, downloading (step, done, total), done or failed.
 public sealed record AIDownloadStatus(string State, string? Step, long Done, long Total, string? Error);
+/// The search model: downloading (Done of Total bytes, the first start only), loading, ready or failed.
+public sealed record SearchStatus(string State, long Done, long Total, string? Error);
 public sealed record Person(int Id, string Name);
 
 public sealed record Info(string Owner, bool IsAdmin, string? Llm, LlmStatus LlmStatus, int NumDocuments, int NumChunks,

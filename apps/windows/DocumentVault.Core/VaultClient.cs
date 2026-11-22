@@ -99,6 +99,10 @@ public sealed class VaultClient(IVaultTransport transport, ISessionStore session
         finally { await lines.DisposeAsync(); }
     }
 
+    // ---- the search model (downloaded and loaded in the background on the first start)
+
+    public Task<SearchStatus> SearchStatusAsync() => GetAsync<SearchStatus>("/api/search/status");
+
     // ---- the local AI
 
     public Task<AIDownloadStatus> AIDownloadStatusAsync() => GetAsync<AIDownloadStatus>("/api/ai/download");

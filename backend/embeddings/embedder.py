@@ -64,13 +64,15 @@ def prefer_offline(model_name: str) -> bool:
 
 
 class Embedder:
-    def __init__(self, model_name: str = DEFAULT_MODEL, device: str | None = None, batch_size: int = 64):
+    def __init__(self, model_name: str = DEFAULT_MODEL, device: str | None = None, batch_size: int = 64,
+                 revision: str | None = None):
         prefer_offline(model_name)
         from sentence_transformers import SentenceTransformer
 
         self.model_name = model_name
         self.batch_size = batch_size
-        self.model = SentenceTransformer(model_name, device=device)  # device=None picks cuda/mps/cpu
+        # device=None picks cuda/mps/cpu; `revision` pins the model's version (the apps' engine)
+        self.model = SentenceTransformer(model_name, device=device, revision=revision)
         self.query_prefix, self.passage_prefix = model_prefixes(model_name)
 
     def _encode(self, texts: list[str], prefix: str) -> np.ndarray:

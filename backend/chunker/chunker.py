@@ -36,14 +36,14 @@ class SpanTokenizer(Protocol):
 class HFTokenizer:
     """Wraps a Hugging Face fast tokenizer to produce character spans."""
 
-    def __init__(self, model_name: str = DEFAULT_TOKENIZER):
+    def __init__(self, model_name: str = DEFAULT_TOKENIZER, revision: str | None = None):
         from backend.embeddings.embedder import prefer_offline
 
         prefer_offline(model_name)
         from transformers import AutoTokenizer
 
         self.name = model_name
-        self._tok = AutoTokenizer.from_pretrained(model_name, use_fast=True)
+        self._tok = AutoTokenizer.from_pretrained(model_name, use_fast=True, revision=revision)
         # We only count tokens here; silence the "sequence longer than 512" warning.
         self._tok.model_max_length = 10**9
 

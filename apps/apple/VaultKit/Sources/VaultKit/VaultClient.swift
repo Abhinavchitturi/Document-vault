@@ -91,6 +91,11 @@ public final class VaultClient: Sendable {
         }
     }
 
+    // MARK: - The search model
+
+    /// Downloaded and loaded in the background on the first start; until it's ready, searches wait.
+    public func searchStatus() async throws -> SearchStatus { try await get("/api/search/status") }
+
     // MARK: - The local AI
 
     /// How far the download of the local AI is.

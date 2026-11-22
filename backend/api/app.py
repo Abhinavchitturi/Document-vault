@@ -963,6 +963,21 @@ def create_app(
             user = {**user, "name": mine.owner}
         return settings_view(user)
 
+    # ---------- the search model: its first download and loading, for the apps' progress bar ----------
+
+    @app.get("/api/search/status")
+    def search_status(user: dict = Depends(current_user)) -> dict:
+        """downloading (done, total bytes), loading, ready or failed (error)."""
+        if getattr(embedder, "ready", True):  # loaded (or an embedder that was ready from the start)
+            return {"state": "ready", "done": 0, "total": 0, "error": None}
+        if failure := getattr(embedder, "failure", None):
+            return {"state": "failed", "done": 0, "total": 0,
+                    "error": f"The search model couldn't be downloaded or loaded ({failure}). "
+                             "Check the internet connection, then quit and open the app again."}
+        from backend.embeddings.download import progress
+
+        return progress.as_dict()
+
     # ---------- the local AI: one-click download ----------
 
     @app.get("/api/ai/download")
@@ -1158,7 +1173,13 @@ def start_vault(args: argparse.Namespace):
     model_name = args.model or DEFAULT_MODEL
     # The vault opens at once; the search model and its tokenizer load beside it (the first search, question or
     # added document waits for them). Re-embedding below, rare, waits too.
-    embedder = InBackground("search model", lambda: Embedder(model_name, device=args.device), model_name=model_name)
+    from backend.embeddings import download
+
+    def make_embedder():  # downloaded first if needed (the apps show its progress: GET /api/search/status)
+        download.ensure(model_name)
+        return Embedder(model_name, device=args.device, revision=download.revision_for(model_name))
+
+    embedder = InBackground("search model", make_embedder, model_name=model_name)
     if store.model and store.model != embedder.model_name:
         logger.info("Vault was embedded with %s; re-embedding with %s", store.model, embedder.model_name)
         store.reembed(lambda chunks: embedder.encode_passages(passage_texts(chunks)), embedder.model_name)
@@ -1187,7 +1208,7 @@ def start_vault(args: argparse.Namespace):
     accounts, devices = Accounts(store.engine), Devices(store.engine)
     def make_tokenizer():  # after the model: transformers can't be imported by two threads at once
         embedder.wait()
-        return HFTokenizer(model_name)
+        return HFTokenizer(model_name, revision=download.revision_for(model_name))
 
     tokenizer = InBackground("tokenizer", make_tokenizer, name=model_name)
     phone_server, phone_link = None, None

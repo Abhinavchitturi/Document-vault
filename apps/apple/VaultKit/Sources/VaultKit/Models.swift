@@ -44,6 +44,14 @@ public struct AIDownloadStatus: Codable, Sendable {
     public let error: String?
 }
 
+/// The search model: downloading (done of total bytes, the first start only), loading, ready or failed.
+public struct SearchStatus: Codable, Sendable {
+    public let state: String
+    public let done: Int
+    public let total: Int
+    public let error: String?
+}
+
 public struct Info: Codable, Sendable {
     public let owner: String
     public let isAdmin: Bool

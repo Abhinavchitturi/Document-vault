@@ -35,6 +35,10 @@ class InBackground:
     def ready(self) -> bool:
         return self._done.is_set() and self._error is None
 
+    @property
+    def failure(self) -> str | None:
+        return str(self._error) if self._done.is_set() and self._error is not None else None
+
     def wait(self) -> Any:
         self._done.wait()
         if self._error is not None:

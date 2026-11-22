@@ -33,7 +33,14 @@ public sealed class ShellPage : UserControl
         // the pages sit on Apple's solid grey (black in dark mode); the pane stays translucent, like a Mac sidebar
         _nav.Resources["NavigationViewContentBackground"] = Application.Current.Resources["VaultBackgroundBrush"];
         _nav.Resources["NavigationViewContentGridBorderBrush"] = new Microsoft.UI.Xaml.Media.SolidColorBrush(Microsoft.UI.Colors.Transparent);
-        Content = _nav;
+        var layout = new Grid();
+        layout.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+        layout.RowDefinitions.Add(new RowDefinition());
+        var bar = new SearchReadyBar();
+        Grid.SetRow(_nav, 1);
+        layout.Children.Add(bar);
+        layout.Children.Add(_nav);
+        Content = layout;
     }
 
     private static NavigationViewItem Item(string label, string glyph, string tag) =>
