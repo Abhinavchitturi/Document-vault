@@ -24,6 +24,7 @@ from sqlalchemy import delete, insert, select
 
 from backend.auth.accounts import AuthError, _public
 from backend.database.schema import devices, users
+from backend.sync import stamps
 
 PAIRING_SECONDS = 10 * 60
 SEEN_EVERY = timedelta(minutes=5)  # how often last_seen_at is written (not on every request)
@@ -74,6 +75,7 @@ class Devices:
                 user_id=entry[0], name=name, token_hash=_hash(token), created_at=_now(), last_seen_at=_now(),
             ).returning(devices.c.id)).scalar_one()
             user = conn.execute(select(users).where(users.c.id == entry[0])).one()
+            stamps.stamp(conn, "device", _hash(token))  # it works with every computer that keeps the vault
         return _public(user), {"id": device_id, "name": name}, token
 
     def user_for_token(self, token: str | None) -> dict | None:
@@ -101,8 +103,14 @@ class Devices:
 
     def revoke(self, user_id: int, device_id: int) -> bool:
         with self.engine.begin() as conn:
+            hashes = conn.execute(select(devices.c.token_hash).where(devices.c.id == device_id,
+                                                                     devices.c.user_id == user_id)).scalars().all()
+            for h in hashes:  # revoked on the other computers too
+                stamps.stamp(conn, "device", h, gone=True)
             return conn.execute(delete(devices).where(devices.c.id == device_id, devices.c.user_id == user_id)).rowcount == 1
 
     def revoke_all(self, user_id: int) -> int:
         with self.engine.begin() as conn:
+            for h in conn.execute(select(devices.c.token_hash).where(devices.c.user_id == user_id)).scalars().all():
+                stamps.stamp(conn, "device", h, gone=True)
             return conn.execute(delete(devices).where(devices.c.user_id == user_id)).rowcount

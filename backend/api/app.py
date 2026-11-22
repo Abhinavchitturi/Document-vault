@@ -195,6 +195,12 @@ class BackupScheduleRequest(BaseModel):
     password: str | None = Field(None, max_length=500)  # only when setting or changing it
 
 
+class JoinRequest(BaseModel):  # 1.0: join the vault kept on another computer
+    address: str
+    code: str
+    fingerprint: str
+
+
 class PasskeyResponse(BaseModel):
     ceremony: str = Field(..., max_length=100)
     credential: dict  # the browser's PublicKeyCredential, as JSON
@@ -213,8 +219,12 @@ class NewMember(BaseModel):
 
 
 SESSION_COOKIE = "vault_session"
-PHONE_PUBLIC_PATHS = {"/api/mobile/hello", "/api/mobile/pair"}  # the only calls a phone makes before pairing
+PHONE_PUBLIC_PATHS = {"/api/mobile/hello", "/api/mobile/pair",  # the only calls a phone makes before pairing
+                      "/api/sync/join"}  # 1.0: another computer joining this vault with a code
+SYNC_PEER_PREFIX = "/api/sync/peer/"  # 1.0: calls from the other computers that keep this vault (their own keys)
+SYNC_LOCAL_PATHS = {"/api/sync/status", "/api/sync/probe", "/api/sync/join-vault"}  # also before the first sign-up
 PUBLIC_PATHS = {"/api/auth/status", "/api/auth/login", "/api/auth/setup", "/api/auth/logout",
+                "/api/sync/joining",  # 1.0: how far copying a joined vault is (the people arrive before the documents)
                 "/api/auth/passkey/options", "/api/auth/passkey"}
 
 
@@ -298,6 +308,7 @@ def create_app(
     devices: Devices | None = None,
     phone_link: dict | None = None,
     local_ai=None,
+    sync=None,
 ) -> FastAPI:
     """`store` is any view of the vault; each request works on the signed-in person's own view.
 
@@ -371,6 +382,13 @@ def create_app(
         if mode == "phone":
             if not path.startswith("/api/"):
                 return JSONResponse({"detail": "Not found"}, status_code=404)  # no web pages on the network
+            if path.startswith(SYNC_PEER_PREFIX):  # another computer that keeps this vault: its own key
+                auth = request.headers.get("authorization", "")
+                peer = await run_in_threadpool(sync.peer_for_token, auth[7:]) if sync and auth.lower().startswith("bearer ") else None
+                if peer is None:
+                    return JSONResponse({"detail": "This computer isn't paired with this vault."}, status_code=401)
+                request.state.peer = peer
+                return await call_next(request)
             if path not in PHONE_PUBLIC_PATHS:
                 auth = request.headers.get("authorization", "")
                 token = auth[7:] if auth.lower().startswith("bearer ") else None
@@ -382,8 +400,13 @@ def create_app(
             return await call_next(request)
         if request.method not in ("GET", "HEAD", "OPTIONS") and not _same_origin(request):
             return JSONResponse({"detail": "Request from another website refused."}, status_code=403)
-        if path in PHONE_PUBLIC_PATHS:
+        if path in PHONE_PUBLIC_PATHS or path.startswith(SYNC_PEER_PREFIX):
             return JSONResponse({"detail": "Not found"}, status_code=404)  # phone-only calls
+        if path in SYNC_LOCAL_PATHS:  # joining a vault happens before anyone signs up here
+            request.state.user = await run_in_threadpool(accounts.user_for_token, request.cookies.get(SESSION_COOKIE))
+            if request.state.user is None and not await run_in_threadpool(accounts.setup_needed):
+                return JSONResponse({"detail": "Please sign in."}, status_code=401)
+            return await call_next(request)
         if path.startswith("/api/") and path not in PUBLIC_PATHS:
             user = await run_in_threadpool(accounts.user_for_token, request.cookies.get(SESSION_COOKIE))
             if user is None:
@@ -963,6 +986,85 @@ def create_app(
             user = {**user, "name": mine.owner}
         return settings_view(user)
 
+    # ---------- 1.0: several computers keep this vault (backend/sync) ----------
+
+    def need_sync():
+        if sync is None:
+            raise HTTPException(409, "Keeping the vault on several computers needs device access on (the apps have it).")
+        return sync
+
+    @app.post("/api/sync/join")
+    def sync_accept(body: dict, request: Request) -> dict:
+        """(on the device port) Another computer joins this vault with a code shown here."""
+        try:
+            answer = need_sync().accept(body)
+        except PermissionError as e:
+            raise HTTPException(403, str(e)) from e
+        except ValueError as e:
+            raise HTTPException(400, str(e)) from e
+        audit("computer_joined", request, None, detail=str(body.get("name", ""))[:100])
+        return answer
+
+    @app.get("/api/sync/peer/manifest")
+    def sync_manifest() -> dict:
+        return need_sync().manifest()
+
+    @app.get("/api/sync/peer/item/{kind}/{key:path}")
+    def sync_item(kind: str, key: str):
+        return need_sync().item(kind, key)
+
+    @app.get("/api/sync/peer/file/{doc_id}/{part}")
+    def sync_file(doc_id: str, part: str) -> Response:
+        data = need_sync().file(doc_id, part)
+        if data is None:
+            raise HTTPException(404, "No such file.")
+        return Response(data, media_type="application/octet-stream")
+
+    @app.post("/api/sync/invite")
+    def sync_invite(request: Request, user: dict = Depends(admin_user)) -> dict:
+        """A code for another computer to also keep this vault."""
+        audit("computer_invited", request, user)
+        try:
+            return need_sync().invite()
+        except Exception as e:
+            raise HTTPException(409, str(e)) from e
+
+    @app.get("/api/sync/joining")
+    def sync_joining() -> dict:
+        """How far copying the vault is, after joining one kept on another computer: copying (done of total
+        documents), done or failed; null when this computer didn't join one."""
+        return {"joining": sync.joining if sync is not None else None}
+
+    @app.get("/api/sync/status")
+    def sync_status() -> dict:
+        return need_sync().status()
+
+    @app.get("/api/sync/probe")
+    def sync_probe(address: str) -> dict:
+        """The certificate of the computer at `address`, to show its security code before joining it."""
+        from backend.sync import transport
+
+        url = address if "://" in address else f"https://{address.strip()}"
+        if url.count(":") < 2:
+            url += ":8443"
+        try:
+            return {"fingerprint": transport.fingerprint_of(url), "address": url}
+        except transport.Unreachable as e:
+            raise HTTPException(502, f"Can't reach {address}. Is that computer on, with Document Vault open, and on the "
+                                     f"same Wi-Fi or Tailscale? ({e})") from e
+
+    @app.post("/api/sync/join-vault")
+    def sync_join(req: JoinRequest, request: Request) -> dict:
+        """This new, empty vault joins the one kept on another computer, and copies it in the background."""
+        from backend.sync.service import SyncError
+
+        try:
+            answer = need_sync().join(req.address, req.code, req.fingerprint)
+        except SyncError as e:
+            raise HTTPException(409, str(e)) from e
+        audit("joined_vault", request, None, detail=answer["with"])
+        return answer
+
     # ---------- the search model: its first download and loading, for the apps' progress bar ----------
 
     @app.get("/api/search/status")
@@ -1213,14 +1315,19 @@ def start_vault(args: argparse.Namespace):
         return HFTokenizer(model_name)
 
     tokenizer = InBackground("tokenizer", make_tokenizer, name=model_name)
-    phone_server, phone_link = None, None
+    phone_server, phone_link, sync = None, None, None
     if args.phones:
         from backend.api.lan import ensure_certificate, keep_awake, phone_urls
 
         cert, key, fp = ensure_certificate(Path(args.index_dir).parent / "tls")
         phone_link = {"urls": lambda: phone_urls(args.phone_port, args.phone_address), "fingerprint": fp}
+        from backend.sync.service import Sync
+
+        # 1.0: other computers that keep this vault reach this one on the same port, with their own keys
+        sync = Sync(store, embed=lambda chunks: embedder.encode_passages(passage_texts(chunks)),
+                    addresses=phone_link["urls"], fingerprint=fp)
         phone_app = create_app(store, embedder, tokenizer, llm, search_method=args.search, accounts=accounts,
-                               mode="phone", devices=devices, phone_link=phone_link)
+                               mode="phone", devices=devices, phone_link=phone_link, sync=sync)
         phone_server = uvicorn.Server(uvicorn.Config(phone_app, host="0.0.0.0", port=args.phone_port,
                                                      ssl_certfile=str(cert), ssl_keyfile=str(key), log_level="warning"))
         import threading
@@ -1234,7 +1341,9 @@ def start_vault(args: argparse.Namespace):
             logger.info("Tailscale isn't running: phones can reach the vault on this Wi-Fi only. "
                         "For anywhere access see README -> Phone app -> From anywhere.")
     app = create_app(store, embedder, tokenizer, llm, database_label=db_label, search_method=args.search,
-                     accounts=accounts, devices=devices, phone_link=phone_link, local_ai=local_ai)
+                     accounts=accounts, devices=devices, phone_link=phone_link, local_ai=local_ai, sync=sync)
+    if sync is not None:
+        sync.start()  # catches up with the other computers that keep this vault, every few seconds
     if accounts.setup_needed():
         logger.info("First start with sign-in: open http://localhost:%d and choose your password.", args.port)
     else:
@@ -1250,6 +1359,8 @@ def start_vault(args: argparse.Namespace):
         lock.close()  # the next copy may open the vault now
         stop_reminders.set()
         autobackup.stop_and_wake(stop_autobackup)
+        if sync is not None:
+            sync.stop()
         if phone_server:
             phone_server.should_exit = True
         if llama_server:

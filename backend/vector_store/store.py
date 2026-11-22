@@ -49,6 +49,7 @@ from backend.database.schema import document_chunks, document_shares, documents,
 from backend.parser.ocr import OcrPage, ocr_sidecar
 from backend.security import keys
 from backend.security.crypto import Cipher, DecryptError, is_sealed, new_key
+from backend.sync import stamps
 
 
 logger = logging.getLogger(__name__)
@@ -253,8 +254,12 @@ class DocumentStore:
             taken = conn.execute(select(users.c.id).where(users.c.name == new_name, users.c.id != self.owner_id)).scalar()
             if taken is not None:
                 raise ValueError(f"{new_name!r} is already another person in this vault")
+            old = conn.execute(select(users.c.name).where(users.c.id == self.owner_id)).scalar()
             conn.execute(users.update().where(users.c.id == self.owner_id).values(name=new_name))
             self._set_meta(conn, "owner_named_by", "person")  # from now on, keep this name
+            if old and old != new_name:  # the other computers rename the same person
+                self._set_meta(conn, f"renamed:{new_name}"[:64], old)
+                stamps.stamp(conn, "user", new_name)
         self.owner = new_name
         for doc in self.documents.values():
             if doc["mine"]:
@@ -375,6 +380,8 @@ class DocumentStore:
         and those shared with them (off)."""
         with self._lock:
             self._vault._put_meta("visibility", "family" if on else "private")
+            with self.engine.begin() as conn:
+                stamps.stamp(conn, "meta", "visibility")
             self._vault.family_mode = on
             for view in list(self._vault.views.values()):
                 view._load()
@@ -386,6 +393,7 @@ class DocumentStore:
             doc = self._own(doc_id)
             with self.engine.begin() as conn:
                 conn.execute(documents.update().where(documents.c.id == doc_id).values(private=private))
+                stamps.stamp(conn, "doc", doc_id)
             doc["private"] = private
             for view in list(self._vault.views.values()):
                 if view is not self:
@@ -408,6 +416,7 @@ class DocumentStore:
                 now = datetime.now(timezone.utc)
                 for uid in wanted - before:
                     conn.execute(insert(document_shares).values(document_id=doc_id, user_id=uid, shared_at=now))
+                stamps.stamp(conn, "doc", doc_id)
                 names = conn.execute(select(users.c.id, users.c.name).where(users.c.id.in_(wanted))
                                      .order_by(users.c.name)).all() if wanted else []
             doc["shared_with"] = [{"id": r.id, "name": r.name} for r in names]
@@ -425,6 +434,7 @@ class DocumentStore:
             with self.engine.begin() as conn:
                 conn.execute(delete(document_shares).where(document_shares.c.document_id == doc_id,
                                                            document_shares.c.user_id == self.owner_id))
+                stamps.stamp(conn, "doc", doc_id)
             self._load()
             owner_view = self._vault.views.get(doc["owner_id"])
             if owner_view is not None:
@@ -602,6 +612,7 @@ class DocumentStore:
             conn.execute(insert(documents).values(**self._doc_row(document, self.owner_id)))
             if chunks:
                 conn.execute(insert(document_chunks), [self._chunk_row(c, i) for i, c in enumerate(chunks)])
+            stamps.stamp(conn, "doc", document["doc_id"])
             if not stored_model:
                 self._set_meta(conn, "embedding_model", model)
             if chunks:
@@ -630,6 +641,7 @@ class DocumentStore:
             with self.engine.begin() as conn:
                 conn.execute(documents.update().where(documents.c.id == doc_id).values(
                     doc_type=category, category_source=source, category_confidence=confidence))
+                stamps.stamp(conn, "doc", doc_id)
                 chunks = self.chunks_of(doc_id)
                 if vectors is not None and chunks and self.index is not None:
                     vids = np.array([c["vid"] for c in chunks], dtype=np.int64)
@@ -653,6 +665,7 @@ class DocumentStore:
             with self.engine.begin() as conn:
                 conn.execute(documents.update().where(documents.c.id == doc_id)
                              .values(**_fact_columns(values, self.cipher, fields=values.keys())))
+                stamps.stamp(conn, "doc", doc_id)
             doc.update(values)
             self._refresh_others(doc_id=doc_id)
             return doc
@@ -672,6 +685,7 @@ class DocumentStore:
                 conn.execute(delete(document_shares).where(document_shares.c.document_id == doc_id))
                 conn.execute(delete(document_chunks).where(document_chunks.c.document_id == doc_id))
                 conn.execute(delete(documents).where(documents.c.id == doc_id))
+                stamps.stamp(conn, "doc", doc_id, gone=True)  # stays deleted on the other computers too
             # Vectors go after the rows: a leftover vector with no row is ignored by search.
             if removed and self.index is not None:
                 self.index.remove_ids(np.array(removed, dtype=np.int64))
@@ -706,6 +720,25 @@ class DocumentStore:
             with self.engine.begin() as conn:
                 self._set_meta(conn, "embedding_model", model)
             self.model = model
+
+    # ---------- joining a vault kept on another computer (1.0, backend/sync) ----------
+
+    def adopt_vault(self, vault_id: str, key: bytes) -> None:
+        """This new, empty vault becomes a copy of another computer's: the same vault id and encryption key, so the
+        files both keep (sealed with that key) are the same bytes on both."""
+        with self._lock:
+            with self.engine.connect() as conn:
+                if conn.execute(select(func.count()).select_from(documents)).scalar():
+                    raise ValueError("only an empty vault can join another one")
+            keys.save(vault_id, key)
+            cipher = Cipher(key)
+            self._vault._put_meta("vault_id", vault_id)
+            self._vault._put_meta("key_check", cipher.seal_text(KEY_CHECK))
+            self._vault.cipher, self._vault.vault_id, self._vault.key_is_new = cipher, vault_id, False
+            for view in list(self._vault.views.values()):
+                view.cipher = cipher
+            self.index = None
+            (self.root / "vectors.faiss").unlink(missing_ok=True)
 
     # ---------- encryption of a vault made before Phase 11 ----------
 

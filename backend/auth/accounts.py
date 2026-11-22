@@ -29,6 +29,7 @@ from sqlalchemy import delete, func, insert, select
 
 from backend.auth.passwords import check_strength, hash_password, verify_password
 from backend.database.schema import sessions, users, vault_meta
+from backend.sync import stamps
 
 SESSION_DAYS = 14
 MAX_FAILURES = 5
@@ -113,7 +114,9 @@ class Accounts:
                          .values(password_hash=hash_password(password), is_admin=True))
             conn.execute(delete(vault_meta).where(vault_meta.c.key == "owner_named_by"))
             conn.execute(insert(vault_meta).values(key="owner_named_by", value="person"))
-            return _public(conn.execute(select(users).where(users.c.id == user_id)).one())
+            done = conn.execute(select(users).where(users.c.id == user_id)).one()
+            stamps.stamp(conn, "user", done.name)  # the other computers that keep this vault get the same person
+            return _public(done)
 
     # ---------- signing in and out ----------
 
@@ -207,6 +210,7 @@ class Accounts:
             if conn.execute(users.update().where(users.c.id == user_id)
                             .values(password_hash=hash_password(new))).rowcount != 1:
                 raise AuthError("No such family member.")
+            stamps.stamp(conn, "user", conn.execute(select(users.c.name).where(users.c.id == user_id)).scalar_one())
             _ensure_an_admin(conn, user_id)
             ended = delete(sessions).where(sessions.c.user_id == user_id)
             if keep_token:
@@ -228,7 +232,9 @@ class Accounts:
                 user_id = row.id
                 conn.execute(users.update().where(users.c.id == user_id).values(**values))
             _ensure_an_admin(conn, user_id)
-            return _public(conn.execute(select(users).where(users.c.id == user_id)).one())
+            done = conn.execute(select(users).where(users.c.id == user_id)).one()
+            stamps.stamp(conn, "user", done.name)
+            return _public(done)
 
     def find_user(self, name: str) -> dict | None:
         with self.engine.connect() as conn:

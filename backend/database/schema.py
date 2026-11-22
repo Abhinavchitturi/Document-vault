@@ -10,6 +10,9 @@
     document_chunks  the searchable pieces of each document; `id` is also the
                      chunk's id in the FAISS vector index
     vault_meta       small key/value settings, e.g. which embedding model built the vectors
+    sync_stamps      1.0: when each document, person, device or setting last changed (or was deleted), and on
+                     which computer, so computers that keep the same vault copy each other's newer changes
+    sync_peers       1.0: the other computers that keep this vault, and the keys to reach each other
 
 Written with SQLAlchemy Core so the same code runs on PostgreSQL (the real vault)
 and SQLite (the test suite, and anyone who wants a single-file setup).
@@ -19,6 +22,7 @@ from __future__ import annotations
 
 from sqlalchemy import (
     BigInteger,
+    Float,
     Boolean,
     Column,
     Date,
@@ -204,4 +208,29 @@ vault_meta = Table(
     metadata,
     Column("key", String(64), primary_key=True),
     Column("value", Text, nullable=False),
+)
+
+
+sync_stamps = Table(  # 1.0, backend/sync: the newest change wins, a deletion stays deleted
+    "sync_stamps",
+    metadata,
+    Column("kind", String(16), primary_key=True),  # doc / user / device / meta
+    Column("key", String(128), primary_key=True),  # document id, person's name, device key hash, setting name
+    Column("changed_at", Float(precision=53), nullable=False),  # seconds since 1970, UTC
+    Column("changed_by", String(64), nullable=False),  # the computer (its centre id) where it changed
+    Column("gone", Boolean, nullable=False, default=False),  # deleted (kept so it isn't brought back)
+)
+
+sync_peers = Table(  # 1.0: another computer that keeps this vault
+    "sync_peers",
+    metadata,
+    Column("centre_id", String(64), primary_key=True),
+    Column("name", String(100), nullable=False),  # its computer name, shown in Settings
+    Column("urls", Text, nullable=False),  # JSON list: its addresses (Wi-Fi, Tailscale)
+    Column("fingerprint", String(64), nullable=False),  # SHA-256 of its certificate: only that computer is trusted
+    Column("token_out", Text, nullable=False),  # the key this computer uses to reach it (sealed with the vault key)
+    Column("token_in_hash", String(64), nullable=False, unique=True),  # SHA-256 of the key it uses to reach us
+    Column("added_at", DateTime(timezone=True), nullable=False),
+    Column("synced_at", DateTime(timezone=True)),  # last time it was reached and caught up
+    Column("problem", Text),  # why the last try didn't work, shown in Settings
 )
