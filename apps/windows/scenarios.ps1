@@ -54,7 +54,13 @@ try {
         Find-Like $box "Choose how this PC*" 10 | Out-Null
         Shot "installer-must-choose"
         Press (Find-Button $box "OK")
-        Press (Find-Like $win "Use the vault on another computer*" 10 "RadioButton")
+        try { Press (Find-Like $win "Use the vault on another computer*" 10 "RadioButton") }
+        catch {  # the options drawn as one list: the second line of it
+            $list = Find-Like $win "*" 5 "CheckListBox"
+            $r = $list.Current.BoundingRectangle
+            [Win32.Mouse]::SetCursorPos([int]($r.X + 24), [int]($r.Y + 32)) | Out-Null
+            [Win32.Mouse]::mouse_event(0x02, 0, 0, 0, [System.UIntPtr]::Zero); [Win32.Mouse]::mouse_event(0x04, 0, 0, 0, [System.UIntPtr]::Zero)
+        }
         Start-Sleep -Seconds 1
         Shot "installer-chose-connect"
         Press (Find-Button $win "Next*")

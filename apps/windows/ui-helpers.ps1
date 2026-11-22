@@ -95,13 +95,24 @@ function Find-Like($within, [string]$pattern, [int]$seconds = 60, [string]$type 
     while ((Get-Date) -lt $deadline) {
         $all = $within.FindAll($Scope::Descendants, [System.Windows.Automation.Condition]::TrueCondition)
         foreach ($e in $all) {
-            if ($e.Current.Name -like $pattern -and (-not $type -or $e.Current.ControlType.ProgrammaticName -eq "ControlType.$type") -and
-                -not $e.Current.IsOffscreen) { return $e }
+            $kind = $e.Current.ControlType.ProgrammaticName
+            $isType = -not $type -or $kind -eq "ControlType.$type" -or $e.Current.ClassName -like "*$type*"  # TNewButton...
+            if ($e.Current.Name -like $pattern -and $isType -and -not $e.Current.IsOffscreen) { return $e }
         }
         Start-Sleep -Milliseconds 500
     }
     Shot "not-found-$($pattern -replace '[^A-Za-z0-9]', '')"
+    Show-Controls $within
     throw "Couldn't find '$pattern' within $seconds s"
+}
+
+function Show-Controls($within) {
+    # what UI Automation sees, to write the next lookup against
+    Write-Host "--- the controls here (type | class | name | automation id):"
+    foreach ($e in $within.FindAll($Scope::Descendants, [System.Windows.Automation.Condition]::TrueCondition)) {
+        $c = $e.Current
+        Write-Host ("  {0} | {1} | {2} | {3}" -f $c.ControlType.ProgrammaticName, $c.ClassName, $c.Name, $c.AutomationId)
+    }
 }
 
 function Top-Window([string]$titlePattern, [int]$seconds = 90) {
