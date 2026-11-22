@@ -147,9 +147,11 @@ jobs:
             data/logs
           if-no-files-found: ignore
       - uses: actions/upload-artifact@v4
+        if: always()  # the app is worth having even when a screen in the click-through fails
         with:
           name: DocumentVault-Windows-app
           path: dist/windows-app
+          if-no-files-found: ignore
 
   mac-native:
     # The native Mac app (SwiftUI), built with GitHub's Xcode.

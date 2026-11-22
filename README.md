@@ -25,15 +25,23 @@ Nothing is sent to a cloud AI service.
 > **Vault:** Your bike insurance expires on **14 March 2027** [1].<br>
 > *[1] Bike Insurance 2026.pdf, page 1 (click to open the page with the answer highlighted)*
 
-## Status: native apps on the way
+## ⬇️ Download
 
-Native apps for **macOS (SwiftUI), Windows (WinUI), iPhone (SwiftUI) and Android (Jetpack Compose)** are being built,
-one at a time. Downloadable installers will appear on the [Releases page](https://github.com/Abhinavchitturi/Document-vault/releases)
-as each one is ready. Until then, install with one command (below); the vault then runs on your computer and you use it
-in your browser at `http://localhost:8000`.
+| Device | Download | Requires |
+|:---:|:---:|:---:|
+| 💻 **Mac** | [**DocumentVault-macOS.dmg**](https://github.com/Abhinavchitturi/Document-vault/releases/download/v0.9.0-beta/DocumentVault-macOS.dmg) | macOS 14 or later, Apple Silicon |
+| 🪟 **Windows** | [**DocumentVault-Windows.zip**](https://github.com/Abhinavchitturi/Document-vault/releases/download/v0.9.0-beta/DocumentVault-Windows.zip) | Windows 10 or 11, 64-bit |
+| 📱 **Android phone** | [**DocumentVault-Android.apk**](https://github.com/Abhinavchitturi/Document-vault/releases/download/v0.9.0-beta/DocumentVault-Android.apk) | Android 7 or later |
 
-Plan for **8 GB of RAM (16 GB recommended)** and **10 GB of free disk space**: setup downloads the Python packages,
-the AI engine (llama.cpp) and the AI models (about 6 GB, once). After that everything works offline.
+**Beta.** Native apps: SwiftUI on the Mac, WinUI on Windows, both following Apple's design. They keep the vault on your
+computer and talk to it over a private pipe, with no network port. The phone app pairs with the vault on your computer.
+
+**First time on a computer:** the app needs the vault's engine and AI models (about 6 GB, downloaded once). Run the
+one-command setup for your system under [Getting started](#getting-started) (add `--no-start` on a Mac or `-NoStart` on
+Windows), then open the app. The apps aren't code-signed yet: on a Mac, allow it once under *System Settings → Privacy &
+Security → Open Anyway*; on Windows, choose *More info → Run anyway*.
+
+All versions: [Releases page](https://github.com/Abhinavchitturi/Document-vault/releases).
 
 ## Highlights
 
