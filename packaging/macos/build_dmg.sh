@@ -24,6 +24,6 @@ mkdir -p "$STAGE"
 cp -R "$APP" "$STAGE/"
 ln -s /Applications "$STAGE/Applications"
 rm -f "$OUT/DocumentVault-macOS.dmg"
-hdiutil create -quiet -volname "Document Vault" -srcfolder "$STAGE" -ov -format UDZO "$OUT/DocumentVault-macOS.dmg"
+hdiutil create -quiet -volname "Document Vault" -srcfolder "$STAGE" -ov -format ULMO "$OUT/DocumentVault-macOS.dmg"  # LZMA: about half the size of the usual zlib (UDZO)
 rm -rf "$OUT/build"
 echo "Built $OUT/DocumentVault-macOS.dmg"
