@@ -5,6 +5,11 @@ on:
     branches: [main]
   pull_request:
   workflow_dispatch:
+    inputs:
+      release:
+        description: "Put the tested installers on this release (for example v0.9.0-beta); empty: don't"
+        required: false
+        default: ""
 
 jobs:
   tests:
@@ -96,9 +101,9 @@ jobs:
         with:
           name: DocumentVault-macOS
           path: dist/DocumentVault-macOS.dmg
-      - name: Attach to the release
-        if: startsWith(github.ref, 'refs/tags/v')
-        run: gh release upload "$GITHUB_REF_NAME" dist/DocumentVault-macOS.dmg --clobber
+      - name: Attach to the release (only after the DMG passed its test above)
+        if: startsWith(github.ref, 'refs/tags/v') || inputs.release != ''
+        run: gh release upload "${{ inputs.release || github.ref_name }}" dist/DocumentVault-macOS.dmg --clobber
         env:
           GH_TOKEN: ${{ github.token }}
 
@@ -139,12 +144,6 @@ jobs:
         with:
           name: DocumentVault-Setup
           path: dist/DocumentVault-Setup.exe
-      - name: Attach the installer to the release
-        if: startsWith(github.ref, 'refs/tags/v')
-        shell: pwsh
-        run: gh release upload "$env:GITHUB_REF_NAME" dist/DocumentVault-Setup.exe --clobber
-        env:
-          GH_TOKEN: ${{ github.token }}
       - name: Install it, like a person would (no Python, Git or Node from this machine is used)
         shell: pwsh
         run: |
@@ -156,6 +155,12 @@ jobs:
       - name: Click through every screen of the installed app, with screenshots
         shell: powershell
         run: powershell -ExecutionPolicy Bypass -File apps/windows/ui-test.ps1 -AppPath "$env:LOCALAPPDATA\Programs\Document Vault\App\DocumentVault.exe" -Out screens
+      - name: Attach the installer to the release (only after it installed and every screen passed)
+        if: startsWith(github.ref, 'refs/tags/v') || inputs.release != ''
+        shell: pwsh
+        run: gh release upload "${{ inputs.release || github.ref_name }}" dist/DocumentVault-Setup.exe --clobber
+        env:
+          GH_TOKEN: ${{ github.token }}
       - name: Collect the installed app's logs
         if: always()
         shell: pwsh
