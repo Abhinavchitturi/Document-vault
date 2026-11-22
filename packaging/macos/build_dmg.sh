@@ -1,23 +1,24 @@
 #!/bin/sh
-# Build dist/DocumentVault-macOS.dmg: the native app (SwiftUI, apps/apple/macOS) with its engine inside it
-# (packaging/macos/build_engine.sh: its own Python, the vault's code, Tesseract), and a link to Applications to drag
-# it onto. Nothing else needs installing. Run on a Mac with Xcode:  sh packaging/macos/build_dmg.sh [version]
+# Build dist/DocumentVault-macOS.dmg: just the native app (SwiftUI, apps/apple/macOS) and a link to Applications to
+# drag it onto. The vault's engine (packaging/macos/build_engine.sh) is a separate release file that the app downloads
+# only when the Mac keeps the vault; the app carries engine.json (where, and its SHA-256). Run on a Mac with Xcode:
+#   sh packaging/macos/build_dmg.sh [version tag, e.g. v0.9.1]
 #
 # The app is signed ad hoc, not with an Apple Developer ID, so the first time it is opened macOS asks the
 # person to allow it (System Settings → Privacy & Security → Open Anyway).
 set -eu
 cd "$(dirname "$0")/../.."
-VERSION="${1:-1.0.0}"
+TAG="${1:-v0.0.0-dev}"
 OUT="dist"
 ENGINE="$OUT/engine-mac"
 APP="$OUT/build/Document Vault.app"
 
-[ -x "$ENGINE/python/bin/python3" ] || sh packaging/macos/build_engine.sh "$ENGINE"
-sh apps/apple/macOS/build_app.sh "$VERSION"
+[ -f "$OUT/engine.json" ] || sh packaging/macos/build_engine.sh "$ENGINE" "$TAG"
+sh apps/apple/macOS/build_app.sh "${TAG#v}"
 rm -rf "$OUT/build" && mkdir -p "$OUT/build"
 ditto "apps/apple/macOS/build/Document Vault.app" "$APP"
-ditto "$ENGINE" "$APP/Contents/Resources/Engine"
-codesign --force --sign - "$APP"  # seals the engine in with the app
+cp "$OUT/engine.json" "$APP/Contents/Resources/engine.json"
+codesign --force --sign - "$APP"
 codesign --verify "$APP"
 STAGE="$OUT/build/dmg"
 mkdir -p "$STAGE"

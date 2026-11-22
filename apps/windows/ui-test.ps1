@@ -90,10 +90,24 @@ if ($Python) {
     $env:DOCUMENT_VAULT_DIR = $samples
     $env:DOCUMENT_VAULT_PYTHON = $Python
 } else {
-    # the installed app: its engine, in its vault folder
-    $engine = [System.IO.Path]::GetFullPath((Join-Path (Split-Path $AppPath) "..\Engine"))
+    # the installed app downloads its engine when this PC keeps the vault (here from the build itself:
+    # $env:DOCUMENT_VAULT_ENGINE_ARCHIVE), then the samples are added with that engine while the app is closed
+    $first = Start-Process $AppPath -PassThru
+    $window = Window-Of $first.Id "Document Vault"
+    $window.GetCurrentPattern([System.Windows.Automation.WindowPattern]::Pattern).SetWindowVisualState(
+        [System.Windows.Automation.WindowVisualState]::Maximized)
+    $here = Find $window "ChooseHere" 60
+    Shot "choice"
+    Press $here
+    Find $window "EngineSetupStatus" 60 | Out-Null
+    Start-Sleep -Seconds 2
+    Shot "engine-setup"
+    Find $window "SubmitButton" 900 | Out-Null  # downloaded, checked, unpacked and started: the first sign-up screen
+    $window.GetCurrentPattern([System.Windows.Automation.WindowPattern]::Pattern).Close()  # stops the engine too
+    if (-not $first.WaitForExit(30000)) { Stop-Process -Id $first.Id -Force }
+    $engine = Join-Path $env:LOCALAPPDATA "Document Vault\Engine"
+    Get-Process python -ErrorAction SilentlyContinue | Where-Object { $_.Path -like "$engine*" } | Stop-Process -Force
     $vaultHome = Join-Path $env:LOCALAPPDATA "Document Vault\Vault"
-    New-Item -ItemType Directory -Force -Path $vaultHome | Out-Null
     $env:PYTHONPATH = $engine
     Push-Location $vaultHome
     & (Join-Path $engine "python\python.exe") -m backend.upload.ingest "$samples\samples\pdfs" "$samples\samples\scans" --owner abhinav
@@ -108,10 +122,11 @@ try {
     $window = Window-Of $app.Id "Document Vault"
     $window.GetCurrentPattern([System.Windows.Automation.WindowPattern]::Pattern).SetWindowVisualState(
         [System.Windows.Automation.WindowVisualState]::Maximized)  # the whole app in every screenshot
-    # 0. first start: this PC as the centre, or connect to another computer
-    $here = Find $window "ChooseHere" 60
-    Shot "choice"
-    Press $here
+    if ($Python) {  # 0. first start: this PC as the centre, or connect to another computer (installed: chosen above)
+        $here = Find $window "ChooseHere" 60
+        Shot "choice"
+        Press $here
+    }
     $submit = Find $window "SubmitButton" 180
     Shot "setup"
     $password = "ci-only-" + [guid]::NewGuid().ToString("N").Substring(0, 12)  # a throwaway vault's password

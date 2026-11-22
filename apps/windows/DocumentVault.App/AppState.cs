@@ -9,9 +9,22 @@ public sealed class AppState
 {
     public static AppState Current { get; } = new();
 
-    /// The engine shipped with the app by the installer (Engine\ next to App\: its own Python, code and Tesseract), or
-    /// null when the app runs from a development checkout.
-    public static readonly string? BundledEngine = FindBundledEngine();
+    /// The engine this app version needs (engine.json, written when the installer is built), or null when the app runs
+    /// from a development checkout. It is downloaded only when this computer keeps the vault.
+    public static readonly EngineRelease? Release = EngineInstaller.Load(Path.Combine(AppContext.BaseDirectory, "engine.json"));
+
+    /// Where the downloaded engine lives (its own Python, code and Tesseract): %LOCALAPPDATA%\Document Vault\Engine,
+    /// or null in development.
+    public static readonly string? BundledEngine = Release is null ? null
+        : Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Document Vault", "Engine");
+
+    /// The engine is here and is the one this app version needs (always, in development).
+    public bool EngineReady => Release is null || EngineInstaller.IsInstalled(BundledEngine!, Release);
+
+    /// Download and unpack the engine (%DOCUMENT_VAULT_ENGINE_ARCHIVE%: a local copy instead, for CI).
+    public Task InstallEngineAsync(IProgress<EngineProgress> progress) =>
+        EngineInstaller.InstallAsync(Release!, BundledEngine!, progress,
+            archive: Environment.GetEnvironmentVariable("DOCUMENT_VAULT_ENGINE_ARCHIVE") is { Length: > 0 } a ? a : null);
 
     /// The engine's folder: the bundled one, else a development checkout (%DOCUMENT_VAULT_DIR%, the recorded one).
     public string Folder { get; } = BundledEngine ?? VaultFolder();
@@ -30,12 +43,6 @@ public sealed class AppState
         : Path.Combine(Folder, "venv", "Scripts", "python.exe");
 
     public bool Installed => File.Exists(Python);
-
-    private static string? FindBundledEngine()
-    {
-        var engine = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..", "Engine"));
-        return File.Exists(Path.Combine(engine, "python", "python.exe")) ? engine : null;
-    }
 
     public EnginePipe? Engine { get; private set; }
     public RemoteVault? Remote { get; private set; }

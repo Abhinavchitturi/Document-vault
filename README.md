@@ -36,13 +36,17 @@ Nothing is sent to a cloud AI service.
 **Beta.** Native apps: SwiftUI on the Mac, WinUI on Windows, both following Apple's design. They keep the vault on your
 computer and talk to it over a private pipe, with no network port. The phone app pairs with the vault on your computer.
 
-**Windows:** run the installer, like any Windows app. Everything it needs is inside it (its own private Python and
-the scan reader), so it installs nothing else: no Git, Node, Python or command prompt, and no administrator rights.
-The installer first asks whether this PC keeps the vault (the centre) or only connects to the vault on another computer. If it keeps the vault, the app offers the local AI as a one-click download (about 5 GB, once). Your documents are kept in
-`%LOCALAPPDATA%\Document Vault\Vault`, apart from the program, so updating or uninstalling never touches them.
+**Installing:** run `DocumentVault-Setup.exe` on Windows, or open the DMG and drag Document Vault to Applications on a
+Mac. Both are just the app: nothing else is installed (no Git, Node, Python, Homebrew or Terminal) and no
+administrator rights are needed. The first question is how this computer uses the vault:
 
-**Mac:** the app needs the vault's engine and AI models first (about 6 GB, once): run the one-command setup under
-[Getting started](#getting-started) with `--no-start`, then open the app.
+- **Keep the vault on this computer** (the centre): the app downloads the vault's engine once, with a progress bar (its
+  own private Python and the scan reader, checked against a fingerprint built into the app). Then it offers the local
+  AI as a one-click download (about 5 GB, once).
+- **Use the vault on another computer**: nothing else is downloaded and nothing is stored on this computer.
+
+Your documents are kept apart from the program (`%LOCALAPPDATA%\Document Vault\Vault` on Windows,
+`~/Library/Application Support/Document Vault/Vault` on a Mac), so updating or uninstalling never touches them.
 
 The apps aren't code-signed yet. On a Mac, allow it once under *System Settings → Privacy & Security → Open Anyway*;
 on Windows, choose *More info → Run anyway*.

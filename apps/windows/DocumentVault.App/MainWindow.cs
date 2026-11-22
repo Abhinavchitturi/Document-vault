@@ -62,6 +62,11 @@ public sealed class MainWindow : Window
             }
             return;
         }
+        if (!state.EngineReady)  // this computer keeps the vault: download its engine first (once, or after an update)
+        {
+            Show(new EngineSetupPage());
+            return;
+        }
         if (!state.Installed)
         {
             Show(new StatusPage("Document Vault isn't set up on this PC yet",

@@ -48,6 +48,8 @@ struct RootView: View {
                 ConnectView()
             case .starting:
                 StatusScreen(title: "Opening your vault…", detail: "The first time after installing takes a little longer.", busy: true)
+            case .settingUpEngine:
+                EngineSetupView()
             case .notInstalled(let folder):
                 StatusScreen(title: "Document Vault isn't set up on this Mac yet",
                              detail: "Download DocumentVault-macOS.dmg from github.com/Abhinavchitturi/Document-vault/releases and drag the app to Applications again. Looked for the engine in \(folder).",

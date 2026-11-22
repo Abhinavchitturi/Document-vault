@@ -1,9 +1,10 @@
 #!/bin/sh
-# Build the vault's engine as one folder that goes inside "Document Vault.app", so a person installs nothing else
-# (no Homebrew, Git, Node, Python or Terminal): a private Python with the vault's packages, the engine's code, and
-# Tesseract (the scan reader) with English, page-orientation and Hindi. Apple silicon Macs. Run on a Mac (CI does):
+# Build the vault's engine: a private Python with the vault's packages, the engine's code, and Tesseract (the scan
+# reader) with English, page-orientation and Hindi, so a person installs nothing else (no Homebrew, Git, Node, Python
+# or Terminal). Apple silicon Macs. It is packed as DocumentVault-Engine-macOS.tar.xz, a release file the app
+# downloads only when the Mac keeps the vault; engine.json (where to download it, its SHA-256) goes into the app.
 #
-#   sh packaging/macos/build_engine.sh [dist/engine-mac]
+#   sh packaging/macos/build_engine.sh [dist/engine-mac] [v0.9.1]
 #
 # The Python and the Hindi data are pinned and checked against their SHA-256. Tesseract is Homebrew's build, copied
 # with its libraries (dylibbundler) so it runs on a Mac without Homebrew. The AI model isn't included: the app
@@ -11,6 +12,7 @@
 set -eu
 cd "$(dirname "$0")/../.."
 OUT="${1:-dist/engine-mac}"
+TAG="${2:-v0.0.0-dev}"
 PYTHON_URL="https://github.com/astral-sh/python-build-standalone/releases/download/20261026/cpython-3.11.18%2B20261026-aarch64-apple-darwin-install_only.tar.gz"
 PYTHON_SHA="cba3455e18516fbe8668cff2820c9b6a53447c552d612443c2b2fb60d390a908"
 HINDI_URL="https://raw.githubusercontent.com/tesseract-ocr/tessdata_fast/87416418657359cb625c412a48b6e1d6d41c29bd/hin.traineddata"
@@ -30,6 +32,7 @@ fetch "$PYTHON_URL" "$WORK/python.tar.gz" "$PYTHON_SHA"
 tar -xzf "$WORK/python.tar.gz" -C "$OUT"  # -> $OUT/python/bin/python3
 PY="$OUT/python/bin/python3"
 "$PY" -m pip install --quiet --no-warn-script-location --no-cache-dir -r requirements.txt
+"$PY" -m pip uninstall --quiet -y pytest  # for the project's tests, not the app
 # torch and faiss each bring their own copy of OpenMP (libomp), and two copies in one process crash it as soon as
 # both are used (adding documents). faiss uses torch's copy instead.
 SITE=$("$PY" -c "import sysconfig; print(sysconfig.get_paths()['purelib'])")
@@ -67,4 +70,22 @@ index = faiss.IndexFlatIP(768); index.add(x); index.search(x, 2)
 print('torch and faiss work together')"
 TESSDATA_PREFIX="$OUT/tesseract/tessdata" "$OUT/tesseract/tesseract" --list-langs
 PYTHONPATH="$OUT" "$PY" -c "from backend.parser import ocr; print('bundled tesseract:', ocr.tesseract_path())"
+echo "5. Leave out what only building software needs (C++ headers, static libraries, test suites, Tk)"
+rm -rf "$SITE/torch/include" "$SITE/torch/share" "$SITE/torch/test" "$OUT/python/lib/tcl"* "$OUT/python/lib/tk"* \
+       "$OUT/python/lib/python3.11/tkinter" "$OUT/python/lib/python3.11/idlelib" "$OUT/python/lib/python3.11/test" \
+       "$OUT/python/lib/python3.11/turtledemo"
+find "$OUT" -name "*.a" -type f -delete
+PYTHONPATH="$OUT" "$PY" -c "import backend.api.app, backend.engine.bridge, torch, faiss; print('still imports ok')"
 echo "Engine ready in $OUT: $(du -sh "$OUT" | cut -f1)"
+
+echo "6. Pack it for the release, and describe it for the app"
+ARCHIVE="$(dirname "$OUT")/DocumentVault-Engine-macOS.tar.xz"
+rm -f "$ARCHIVE"
+tar --options xz:compression-level=6,xz:threads=0 -cJf "$ARCHIVE" -C "$OUT" .
+SHA=$(shasum -a 256 "$ARCHIVE" | cut -d' ' -f1)
+BYTES=$(stat -f %z "$ARCHIVE")
+cat > "$(dirname "$OUT")/engine.json" <<JSON
+{"version": "${TAG#v}", "sha256": "$SHA", "size": $BYTES,
+ "url": "https://github.com/Abhinavchitturi/Document-vault/releases/download/$TAG/DocumentVault-Engine-macOS.tar.xz"}
+JSON
+echo "$ARCHIVE: $((BYTES / 1000000)) MB, sha256 $SHA"

@@ -3,12 +3,12 @@
 ;   dotnet publish apps\windows\DocumentVault.App ... -o dist\windows-app
 ;   ISCC.exe /DVersion=1.0.0 packaging\windows\DocumentVault.iss
 ;
-; Self-contained, like any Windows app: the native app (WinUI) and its engine (a private Python with the vault's
-; packages, and Tesseract) go into %LOCALAPPDATA%\Programs\Document Vault, without administrator rights. Nothing
-; else is installed (no Git, Node, Python or winget) and nothing is downloaded during setup; the app offers the
-; local AI as a one-click download. Your documents live in %LOCALAPPDATA%\Document Vault\Vault: uninstalling or
-; updating removes the program files only, never that folder. Its first page asks whether this PC keeps the vault or
-; only connects to the vault on another computer.
+; Just the native app (WinUI), like any Windows app: no administrator rights, and nothing else installed (no Git,
+; Node, Python or winget). Its first page asks whether this PC keeps the vault or only connects to the vault on
+; another computer. Only a PC that keeps the vault downloads the vault's engine, from the app, with a progress bar
+; (DocumentVault-Engine-Windows.zip, checked against the SHA-256 in the app's engine.json), into
+; %LOCALAPPDATA%\Document Vault\Engine. Your documents live in %LOCALAPPDATA%\Document Vault\Vault: uninstalling
+; or updating removes the program and its engine, never that folder.
 #ifndef Version
   #define Version "0.0.0-dev"
 #endif
@@ -38,7 +38,6 @@ Name: "desktopicon"; Description: "Put a Document Vault shortcut on the desktop"
 
 [Files]
 Source: "..\..\dist\windows-app\*"; DestDir: "{app}\App"; Flags: ignoreversion recursesubdirs createallsubdirs
-Source: "..\..\dist\engine\*"; DestDir: "{app}\Engine"; Flags: ignoreversion recursesubdirs createallsubdirs
 Source: "DocumentVault.ico"; DestDir: "{app}"; Flags: ignoreversion
 
 [Icons]
@@ -50,11 +49,12 @@ Filename: "{app}\App\DocumentVault.exe"; Description: "Open Document Vault"; Wor
   Flags: postinstall nowait skipifsilent
 
 [InstallDelete]
-; an update replaces the engine whole, so no file of an older version is left behind
+; the engine used to be installed next to the app; the app now downloads it when the PC keeps the vault
 Type: filesandordirs; Name: "{app}\Engine"
 
 [UninstallDelete]
-; compiled files the engine wrote next to its code
+; the engine the app downloaded (never the vault: %LOCALAPPDATA%\Document Vault\Vault)
+Type: filesandordirs; Name: "{localappdata}\Document Vault\Engine"
 Type: filesandordirs; Name: "{app}\Engine"
 
 [Code]
@@ -77,8 +77,9 @@ begin
     'How will this PC use Document Vault?',
     'You can change this later in the app''s Settings.',
     'Keep the vault on this PC if your documents and the private AI should live here; other laptops and ' +
-    'phones in the family can then connect to it. Choose the other option if this PC should only use the ' +
-    'family''s vault on another computer (the centre): nothing is stored here and no AI download is needed.',
+    'phones in the family can then connect to it. The app then downloads the vault''s engine (about 300 MB, ' +
+    'once). Choose the other option if this PC should only use the family''s vault on another computer (the ' +
+    'centre): nothing else is downloaded and nothing is stored here.',
     True, False);
   RolePage.Add('Keep the vault on this PC (this PC is the centre)');
   RolePage.Add('Use the vault on another computer (just connect to it)');
