@@ -46,6 +46,7 @@ if ($LASTEXITCODE -ne 0) { throw "pip install failed" }
 Write-Host "2. The engine's code"
 Copy-Item -Recurse backend (Join-Path $Out "backend")
 Get-ChildItem $Out -Recurse -Directory -Filter "__pycache__" | Remove-Item -Recurse -Force
+& $python -m compileall -q (Join-Path $Out "backend")  # compiled now, so the first start doesn't have to
 
 Write-Host "3. Tesseract, the scan reader"
 Fetch $Pins.Tesseract "$work\tesseract-setup.exe"

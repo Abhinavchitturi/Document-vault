@@ -1153,7 +1153,12 @@ def start_vault(args: argparse.Namespace):
         store = DocumentStore(args.index_dir, database_url(args.database_url), owner=default_owner(args.owner))
     except (DatabaseUnavailableError, KeyMissingError) as e:
         raise SystemExit(str(e)) from e
-    embedder = Embedder(args.model or DEFAULT_MODEL, device=args.device)
+    from backend.embeddings.background import InBackground
+
+    model_name = args.model or DEFAULT_MODEL
+    # The vault opens at once; the search model and its tokenizer load beside it (the first search, question or
+    # added document waits for them). Re-embedding below, rare, waits too.
+    embedder = InBackground("search model", lambda: Embedder(model_name, device=args.device), model_name=model_name)
     if store.model and store.model != embedder.model_name:
         logger.info("Vault was embedded with %s; re-embedding with %s", store.model, embedder.model_name)
         store.reembed(lambda chunks: embedder.encode_passages(passage_texts(chunks)), embedder.model_name)
@@ -1180,7 +1185,11 @@ def start_vault(args: argparse.Namespace):
 
     db_label = make_url(database_url(args.database_url)).render_as_string(hide_password=True)
     accounts, devices = Accounts(store.engine), Devices(store.engine)
-    tokenizer = HFTokenizer(embedder.model_name)
+    def make_tokenizer():  # after the model: transformers can't be imported by two threads at once
+        embedder.wait()
+        return HFTokenizer(model_name)
+
+    tokenizer = InBackground("tokenizer", make_tokenizer, name=model_name)
     phone_server, phone_link = None, None
     if args.phones:
         from backend.api.lan import ensure_certificate, keep_awake, phone_urls

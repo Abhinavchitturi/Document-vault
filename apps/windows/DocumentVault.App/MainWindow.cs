@@ -69,7 +69,7 @@ public sealed class MainWindow : Window
                 busy: false));
             return;
         }
-        Show(new StatusPage("Opening your vault…", null, busy: true));
+        Show(new StatusPage("Opening your vault…", "The first time after installing takes a little longer.", busy: true));
         try
         {
             await state.StartAsync();

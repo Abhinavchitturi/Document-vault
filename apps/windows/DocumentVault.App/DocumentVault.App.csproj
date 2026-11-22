@@ -15,6 +15,8 @@
     <EnableMsixTooling>true</EnableMsixTooling>
     <WindowsAppSDKSelfContained>true</WindowsAppSDKSelfContained>
     <SelfContained>true</SelfContained>
+    <!-- Compiled ahead of time, so the first screens and clicks respond at once instead of waiting for .NET's JIT. -->
+    <PublishReadyToRun>true</PublishReadyToRun>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <ApplicationIcon>..\..\..\packaging\windows\DocumentVault.ico</ApplicationIcon>
