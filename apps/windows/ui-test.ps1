@@ -1,11 +1,11 @@
 # Click through the Windows app like a person would, with a screenshot of every screen (run by CI on Windows).
 #
-#   powershell -File apps/windows/ui-test.ps1 -App dist\windows-app\DocumentVault.exe -Python C:\...\python.exe -Out screens
+#   powershell -File apps/windows/ui-test.ps1 -AppPath dist\windows-app\DocumentVault.exe -Python C:\...\python.exe -Out screens
 #
 # The vault is a throwaway one in this checkout's data\ folder, preloaded with the fictional samples. Uses Windows'
 # UI Automation (what screen readers use) and the automation ids the app sets on its controls.
 param(
-    [Parameter(Mandatory = $true)][string]$App,
+    [Parameter(Mandatory = $true)][string]$AppPath,
     [Parameter(Mandatory = $true)][string]$Python,
     [string]$Out = "screens"
 )
@@ -84,7 +84,7 @@ $env:VAULT_DATABASE_URL = "sqlite:///data/index/vault.db"
 & $Python -m backend.upload.ingest samples/pdfs samples/scans --owner abhinav
 $env:DOCUMENT_VAULT_DIR = (Get-Location).Path
 $env:DOCUMENT_VAULT_PYTHON = $Python
-$app = Start-Process $App -PassThru
+$app = Start-Process $AppPath -PassThru  # (PowerShell names ignore case: the path must not be called $app)
 try {
     # 1. first start: choose the admin's password
     $window = Window-Of $app.Id "Document Vault"

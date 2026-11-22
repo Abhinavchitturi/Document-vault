@@ -137,7 +137,7 @@ jobs:
         run: dotnet publish apps/windows/DocumentVault.App -c Release -r win-x64 -p:Platform=x64 -o dist/windows-app
       - name: Click through every screen, with screenshots
         shell: powershell
-        run: powershell -ExecutionPolicy Bypass -File apps/windows/ui-test.ps1 -App dist\windows-app\DocumentVault.exe -Python (Get-Command python).Source -Out screens
+        run: powershell -ExecutionPolicy Bypass -File apps/windows/ui-test.ps1 -AppPath dist\windows-app\DocumentVault.exe -Python (Get-Command python).Source -Out screens
       - uses: actions/upload-artifact@v4
         if: always()
         with:
