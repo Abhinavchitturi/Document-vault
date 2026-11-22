@@ -30,6 +30,13 @@ fetch "$PYTHON_URL" "$WORK/python.tar.gz" "$PYTHON_SHA"
 tar -xzf "$WORK/python.tar.gz" -C "$OUT"  # -> $OUT/python/bin/python3
 PY="$OUT/python/bin/python3"
 "$PY" -m pip install --quiet --no-warn-script-location --no-cache-dir -r requirements.txt
+# torch and faiss each bring their own copy of OpenMP (libomp), and two copies in one process crash it as soon as
+# both are used (adding documents). faiss uses torch's copy instead.
+SITE=$("$PY" -c "import sysconfig; print(sysconfig.get_paths()['purelib'])")
+if [ -f "$SITE/faiss/.dylibs/libomp.dylib" ] && [ -f "$SITE/torch/lib/libomp.dylib" ]; then
+  rm "$SITE/faiss/.dylibs/libomp.dylib"
+  ln -s ../../torch/lib/libomp.dylib "$SITE/faiss/.dylibs/libomp.dylib"
+fi
 
 echo "2. The engine's code, compiled (the app doesn't write into itself)"
 cp -R backend "$OUT/backend"
@@ -53,6 +60,11 @@ fi
 
 echo "4. Check that it all runs"
 PYTHONPATH="$OUT" "$PY" -c "import backend.api.app, backend.engine.bridge, torch, faiss; print('engine imports ok')"
+"$PY" -c "
+import torch, faiss
+x = torch.randn(1000, 768).numpy()
+index = faiss.IndexFlatIP(768); index.add(x); index.search(x, 2)
+print('torch and faiss work together')"
 TESSDATA_PREFIX="$OUT/tesseract/tessdata" "$OUT/tesseract/tesseract" --list-langs
 PYTHONPATH="$OUT" "$PY" -c "from backend.parser import ocr; print('bundled tesseract:', ocr.tesseract_path())"
 echo "Engine ready in $OUT: $(du -sh "$OUT" | cut -f1)"

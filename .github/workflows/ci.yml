@@ -156,6 +156,10 @@ jobs:
       - name: Click through every screen of the installed app, with screenshots
         shell: powershell
         run: powershell -ExecutionPolicy Bypass -File apps/windows/ui-test.ps1 -AppPath "$env:LOCALAPPDATA\Programs\Document Vault\App\DocumentVault.exe" -Out screens
+      - name: Collect the installed app's logs
+        if: always()
+        shell: pwsh
+        run: Copy-Item -Recurse "$env:LOCALAPPDATA\Document Vault\Vault\data\logs" app-logs -ErrorAction SilentlyContinue
       - uses: actions/upload-artifact@v4
         if: always()
         with:
@@ -163,7 +167,7 @@ jobs:
           path: |
             screens
             setup.log
-            ~/AppData/Local/Document Vault/Vault/data/logs
+            app-logs
           if-no-files-found: ignore
       - uses: actions/upload-artifact@v4
         if: always()  # the app is worth having even when a screen in the click-through fails
