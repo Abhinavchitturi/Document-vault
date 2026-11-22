@@ -78,7 +78,12 @@ private final class Steps: @unchecked Sendable {
     server.standardOutput = FileHandle.nullDevice
     try server.run()
     defer { server.terminate() }
-    try await Task.sleep(for: .seconds(1.5))
+    var up = false  // wait until it answers (slow on a busy build machine)
+    for _ in 0..<60 where !up {
+        try await Task.sleep(for: .milliseconds(500))
+        up = (try? await URLSession.shared.data(from: URL(string: "http://127.0.0.1:\(port)/")!)) != nil
+    }
+    #expect(up)
     let release = EngineRelease(version: "1.0", url: "http://127.0.0.1:\(port)/\(archive.lastPathComponent)", sha256: sha, size: size)
     let folder = dir.appending(path: "Engine")
     let steps = Steps()
