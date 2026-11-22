@@ -90,6 +90,10 @@ try {
     $window = Window-Of $app.Id "Document Vault"
     $window.GetCurrentPattern([System.Windows.Automation.WindowPattern]::Pattern).SetWindowVisualState(
         [System.Windows.Automation.WindowVisualState]::Maximized)  # the whole app in every screenshot
+    # 0. first start: this PC as the centre, or connect to another computer
+    $here = Find $window "ChooseHere" 60
+    Shot "choice"
+    Press $here
     $submit = Find $window "SubmitButton" 180
     Shot "setup"
     $password = "ci-only-" + [guid]::NewGuid().ToString("N").Substring(0, 12)  # a throwaway vault's password
