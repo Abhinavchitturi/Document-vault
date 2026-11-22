@@ -55,16 +55,20 @@ Type: filesandordirs; Name: "{app}\Engine"
 [UninstallDelete]
 ; the engine the app downloaded (never the vault: %LOCALAPPDATA%\Document Vault\Vault)
 Type: filesandordirs; Name: "{localappdata}\Document Vault\Engine"
+; this PC's answer to "keep the vault here, or connect?" and its pairing with another computer: asked again next time
+Type: files; Name: "{localappdata}\Document Vault\mode.txt"
+Type: files; Name: "{localappdata}\Document Vault\connection.bin"
 Type: filesandordirs; Name: "{app}\Engine"
 
 [Code]
 // First question of the setup: is this PC the centre (the vault and its documents live here), or does it only use
 // the vault on another computer? Saved as the app's own first-start choice (%LOCALAPPDATA%\Document Vault\mode.txt),
-// so the app opens straight to the right screen; it can be changed later in the app's Settings. An update keeps the
-// earlier choice and doesn't ask again. A silent install asks nothing (the app asks on its first start), unless it
-// is given /MODE=here or /MODE=remote.
+// so the app opens straight to the right screen; it can be changed later in the app's Settings. It is asked on every
+// install, with the earlier answer chosen already. A silent install asks nothing (the app asks on its first start),
+// unless it is given /MODE=here or /MODE=remote. Uninstalling forgets the answer (never the documents).
 var
   RolePage: TInputOptionWizardPage;
+  Earlier: AnsiString;
 
 function ModeFile(): String;
 begin
@@ -77,18 +81,15 @@ begin
     'How will this PC use Document Vault?',
     'You can change this later in the app''s Settings.',
     'Keep the vault on this PC if your documents and the private AI should live here; other laptops and ' +
-    'phones in the family can then connect to it. The app then downloads the vault''s engine (about 300 MB, ' +
+    'phones in the family can then connect to it. The app then downloads the vault''s engine (about 370 MB, ' +
     'once). Choose the other option if this PC should only use the family''s vault on another computer (the ' +
     'centre): nothing else is downloaded and nothing is stored here.',
     True, False);
   RolePage.Add('Keep the vault on this PC (this PC is the centre)');
   RolePage.Add('Use the vault on another computer (just connect to it)');
   RolePage.Values[0] := True;
-end;
-
-function ShouldSkipPage(PageID: Integer): Boolean;
-begin
-  Result := (PageID = RolePage.ID) and FileExists(ModeFile());
+  if LoadStringFromFile(ModeFile(), Earlier) and (Pos('remote', String(Earlier)) > 0) then
+    RolePage.Values[1] := True;
 end;
 
 procedure CurStepChanged(CurStep: TSetupStep);
@@ -97,7 +98,7 @@ var
 begin
   if CurStep <> ssPostInstall then Exit;
   Mode := ExpandConstant('{param:MODE|}');
-  if (Mode = '') and not WizardSilent() and not FileExists(ModeFile()) then
+  if (Mode = '') and not WizardSilent() then
   begin
     if RolePage.Values[1] then Mode := 'remote' else Mode := 'here';
   end;
