@@ -195,6 +195,15 @@ public struct Reminder: Codable, Identifiable, Hashable, Sendable {
     public let body: String
 }
 
+/// What the centre computer shows to connect another device: a one-time code, its addresses, its certificate.
+public struct Pairing: Codable, Sendable {
+    public let code: String
+    public let expiresIn: Int
+    public let url: String
+    public let urls: [String]
+    public let fingerprint: String
+}
+
 /// The vault's JSON uses snake_case; Swift uses camelCase.
 public enum VaultJSON {
     public static let decoder: JSONDecoder = {

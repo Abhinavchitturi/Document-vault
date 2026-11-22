@@ -42,6 +42,26 @@ public sealed class MainWindow : Window
     public async Task StartAsync()
     {
         var state = AppState.Current;
+        if (state.Mode is null)  // first start: this computer as the centre, or connect to another one
+        {
+            Show(new ChoicePage());
+            return;
+        }
+        if (state.Mode == "remote")
+        {
+            if (state.SavedConnection is not { } connection) { Show(new ConnectPage()); return; }
+            Show(new StatusPage($"Connecting to {connection.Name}…", null, busy: true));
+            try
+            {
+                state.StartRemote(connection);
+                await CheckSignInAsync();
+            }
+            catch (Exception e)
+            {
+                Show(new StatusPage("Couldn't reach the vault", e.Message, busy: false, retry: true));
+            }
+            return;
+        }
         if (!state.Installed)
         {
             Show(new StatusPage("Document Vault isn't set up on this PC yet",

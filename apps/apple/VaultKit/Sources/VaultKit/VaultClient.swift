@@ -91,6 +91,13 @@ public final class VaultClient: Sendable {
         }
     }
 
+    // MARK: - Other devices
+
+    /// A one-time code for another computer (`typed`: short, to type) or a phone (for a QR code), for 10 minutes.
+    public func startPairing(typed: Bool) async throws -> Pairing {
+        try decode(try await send(VaultRequest("POST", "/api/mobile/pairing?typed=\(typed)")))
+    }
+
     // MARK: - Plumbing
 
     private struct SignedIn: Decodable { let user: User }

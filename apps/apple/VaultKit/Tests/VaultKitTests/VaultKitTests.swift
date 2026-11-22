@@ -69,3 +69,51 @@ func theMacAppTalksToTheRealEngineOverThePipe() async throws {
     #expect(session.load() == nil)
     await #expect(throws: VaultError.signedOut) { try await vault.documents() }
 }
+
+@Test func typedAddressesBecomeTheVaultsAddress() {
+    #expect(RemoteVault.address("192.168.1.20") == "https://192.168.1.20:8443")
+    #expect(RemoteVault.address(" my-mac.tail1234.ts.net ") == "https://my-mac.tail1234.ts.net:8443")
+    #expect(RemoteVault.address("https://10.0.0.5:9000/") == "https://10.0.0.5:9000")
+    #expect(RemoteVault.securityCode("ab12cd34ef567890aaaabbbbccccdddd") == "AB12 CD34 EF56 7890")
+}
+
+@Test(.enabled(if: FileManager.default.isExecutableFile(atPath: repo.appendingPathComponent("venv/bin/python").path),
+               "needs the project's Python (venv) with its packages"),
+      .timeLimit(.minutes(3)))
+func aMacPairsWithTheCentreComputerAndUsesItsVault() async throws {
+    let tmp = FileManager.default.temporaryDirectory.appendingPathComponent("vaultkit-centre-\(UUID().uuidString)")
+    try FileManager.default.createDirectory(at: tmp, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: tmp) }
+    let centre = try EnginePipe(  // the centre computer, with device access on a test port
+        python: repo.appendingPathComponent("venv/bin/python"), folder: repo,
+        arguments: ["--index-dir", tmp.appendingPathComponent("index").path,
+                    "--database-url", "sqlite:///\(tmp.appendingPathComponent("vault.db").path)",
+                    "--no-llm", "--phone-port", "8473", "--phone-address", "127.0.0.1", "--owner", "abhinav"],
+        environment: ["VAULT_KEYCHAIN": "off", "VAULT_KEY_DIR": tmp.appendingPathComponent("keys").path,
+                      "VAULT_LLM_DIR": tmp.appendingPathComponent("llm").path, "VAULT_FACTS_READER": "rules"],
+        log: tmp.appendingPathComponent("centre.log"))
+    defer { centre.stop() }
+    try await centre.waitUntilReady()
+    let host = VaultClient(transport: centre, session: MemorySessionStore())
+    _ = try await host.setUp(name: "abhinav", password: "a long test password")
+    let shown = try await host.startPairing(typed: true)
+    try await Task.sleep(for: .seconds(1.5))  // the HTTPS listener starts just after the vault opens
+
+    let seen = try await RemoteVault.probe("127.0.0.1:8473")
+    #expect(seen == shown.fingerprint)
+    let connection = try await RemoteVault.pair("127.0.0.1:8473", code: shown.code.lowercased(), fingerprint: seen, deviceName: "Test Mac")
+    let laptop = VaultClient(transport: RemoteVault(connection), session: MemorySessionStore())
+    #expect(try await laptop.authStatus().user?.name == "abhinav")
+    let file = tmp.appendingPathComponent("Bike Insurance 2026.txt")
+    try "Two-wheeler policy TW-778812. Period: 15 March 2026 to 14 March 2027.".write(to: file, atomically: true, encoding: .utf8)
+    #expect(try await laptop.upload([file]).first?.status == "added")
+    let docs = try await laptop.documents()
+    #expect(docs.map(\.filename) == ["Bike Insurance 2026.txt"])
+    #expect(try await laptop.original(docs[0].docId) == (try Data(contentsOf: file)))
+    #expect(try await host.documents().count == 1)  // the same vault: the centre sees it too
+
+    let impostor = VaultClient(transport: RemoteVault(Connection(urls: connection.urls, fingerprint: String(repeating: "0", count: 64),
+                                                                  token: connection.token, name: "impostor")),
+                               session: MemorySessionStore())
+    await #expect(throws: VaultError.self) { try await impostor.info() }
+}

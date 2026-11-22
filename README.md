@@ -120,6 +120,20 @@ real-world use. Not on Windows yet: desktop pop-up reminders (phone reminders an
 1. On the computer, open **Settings → Phones → Pair a phone**: it shows a QR code.
 2. On the phone, open the Document Vault app ([build it](mobile/README.md) for now) and tap **Scan pairing code**.
 
+### One computer as the centre, others connected
+
+Keep the vault on one computer (the centre) and use it from your other laptops, like phones do:
+
+1. On the centre, open Document Vault → **Settings → Connect another computer or phone → Show a code**. It shows a
+   one-time code (for example `K7QF-2M9X`, valid for 10 minutes), the computer's address and a security code.
+2. On the other laptop, install the app and choose **Connect to the vault on another computer** on its first start (the
+   Windows installer has an option to skip the 6 GB setup for this). Type the address and the code.
+3. Check that the security code it shows matches the centre's screen, then confirm.
+
+The laptop then works with the centre's documents over your Wi-Fi, or from anywhere with Tailscale (below). Nothing is
+stored on the laptop, and the connection only trusts the centre's own certificate. The centre has to be on, with
+Document Vault open. Either computer can switch roles later in Settings.
+
 ### Use it from anywhere with Tailscale
 
 At home, the phone reaches the vault over your Wi-Fi. To use it anywhere else (on mobile data, at work, travelling),

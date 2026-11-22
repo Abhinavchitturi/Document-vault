@@ -6,6 +6,8 @@ import VaultKit
 @MainActor @Observable
 final class AppModel {
     enum Phase {
+        case choosing  // first start: this Mac as the centre, or connect to another computer
+        case connecting  // the connect form
         case starting
         case notInstalled(folder: String)  // no vault on this Mac yet
         case failed(String)  // the vault couldn't open; says why
@@ -20,6 +22,14 @@ final class AppModel {
     var problem: String?  // shown as an alert
     private(set) var client: VaultClient?
     private var engine: EnginePipe?
+    private(set) var remote: RemoteVault?
+    let connections = ConnectionStore()
+
+    /// "here" (this Mac is the centre: the engine runs here) or "remote" (it uses the vault on another computer).
+    var mode: String? {
+        get { UserDefaults.standard.string(forKey: "mode") }
+        set { UserDefaults.standard.set(newValue, forKey: "mode") }
+    }
     let folder: URL
 
     init() {
@@ -50,6 +60,21 @@ final class AppModel {
     // MARK: - Starting and stopping
 
     func start() async {
+        switch mode {
+        case nil:
+            phase = .choosing
+            return
+        case "remote":
+            guard let connection = connections.load() else { phase = .connecting; return }
+            phase = .starting
+            let remote = RemoteVault(connection)
+            self.remote = remote
+            client = VaultClient(transport: remote, session: MemorySessionStore())  // a paired device signs in with its key
+            await checkSignIn()
+            return
+        default:
+            break
+        }
         let python = folder.appending(path: "venv/bin/python")
         guard FileManager.default.isExecutableFile(atPath: python.path) else {
             phase = .notInstalled(folder: folder.path)
@@ -70,6 +95,33 @@ final class AppModel {
 
     func stop() {
         engine?.stop()
+        engine = nil
+        remote = nil
+        client = nil
+    }
+
+    /// Pair with the centre computer (after the person confirmed its security code) and use its vault from now on.
+    func connect(address: String, code: String, fingerprint: String) async throws {
+        let name = Host.current().localizedName ?? "Mac"
+        let connection = try await RemoteVault.pair(address, code: code, fingerprint: fingerprint, deviceName: name)
+        connections.save(connection)
+        mode = "remote"
+        await start()
+    }
+
+    /// Forget the centre computer (its vault stays there) and choose again.
+    func disconnect() async {
+        stop()
+        connections.save(nil)
+        mode = nil
+        await start()
+    }
+
+    /// Stop being the centre and connect to another computer instead (this Mac's own vault stays in its folder).
+    func useAnotherComputer() {
+        stop()
+        mode = "remote"
+        phase = .connecting
     }
 
     // MARK: - Signing in

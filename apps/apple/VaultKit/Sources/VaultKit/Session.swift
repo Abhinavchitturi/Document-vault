@@ -40,6 +40,20 @@ public struct KeychainSessionStore: SessionStore {
     }
 }
 
+/// The connection to the centre computer (its addresses, certificate and this device's key), in the Keychain.
+public struct ConnectionStore: Sendable {
+    let store = KeychainSessionStore(service: "Document Vault app", account: "connection")
+    public init() {}
+
+    public func load() -> Connection? {
+        store.load().flatMap { try? JSONDecoder().decode(Connection.self, from: Data($0.utf8)) }
+    }
+
+    public func save(_ connection: Connection?) {
+        store.save(connection.flatMap { try? JSONEncoder().encode($0) }.flatMap { String(data: $0, encoding: .utf8) })
+    }
+}
+
 /// For tests and previews.
 public final class MemorySessionStore: SessionStore, @unchecked Sendable {
     private let lock = NSLock()

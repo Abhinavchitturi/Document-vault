@@ -38,9 +38,18 @@ struct VaultSettings: View {
                 LabeledContent("Answer model", value: settings?.llmModel ?? "–")
                 LabeledContent("Search", value: settings.map { "\($0.searchMethod.capitalized), \($0.embeddingModel)" } ?? "–")
             }
+            if let remote = model.remote {
+                Section("This Mac") {
+                    Text("Connected to the vault on \(remote.connection.name). The documents and the AI stay on that computer; it has to be on, with Document Vault open.")
+                        .font(.callout)
+                    Button("Disconnect") { Task { await model.disconnect() } }
+                }
+            } else {
+                ConnectAnotherDevice()
+            }
             Section("Privacy") {
                 LabeledContent("Encryption key", value: settings?.keyKeptIn ?? "–")
-                LabeledContent("Vault folder", value: model.folder.path)
+                LabeledContent("Vault folder", value: model.remote == nil ? model.folder.path : "On the other computer")
                 Text("Everything stays on this Mac. Nothing listens on the network for this app; phones connect only if you pair them.")
                     .font(.caption).foregroundStyle(.secondary)
             }

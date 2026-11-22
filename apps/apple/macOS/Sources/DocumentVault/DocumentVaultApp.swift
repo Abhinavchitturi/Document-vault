@@ -42,6 +42,10 @@ struct RootView: View {
     var body: some View {
         Group {
             switch model.phase {
+            case .choosing:
+                ChoiceView()
+            case .connecting:
+                ConnectView()
             case .starting:
                 StatusScreen(title: "Opening your vault…", detail: nil, busy: true)
             case .notInstalled(let folder):

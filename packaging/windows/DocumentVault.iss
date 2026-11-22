@@ -30,6 +30,7 @@ UninstallDisplayName=Document Vault
 ArchitecturesInstallIn64BitMode=x64
 
 [Tasks]
+Name: "remote"; Description: "This PC will connect to the vault on another computer (skips the 6 GB setup)"; Flags: unchecked
 Name: "samples"; Description: "Add the fictional sample documents, so there is something to try"; Flags: unchecked
 Name: "desktopicon"; Description: "Put a Document Vault shortcut on the desktop"; Flags: unchecked
 
@@ -45,9 +46,9 @@ Name: "{autodesktop}\Document Vault"; Filename: "{app}\App\DocumentVault.exe"; W
 [Run]
 ; The first install downloads several gigabytes (Python packages, the AI models): the window shows progress.
 Filename: "powershell.exe"; Parameters: "-NoProfile -ExecutionPolicy Bypass -File ""{app}\install.ps1"" -Dir ""{app}\Document-Vault"" -NoStart -Pause -WithSamples"; \
-  StatusMsg: "Setting up Document Vault (this takes a while the first time)..."; Flags: waituntilterminated; Tasks: samples
+  StatusMsg: "Setting up Document Vault (this takes a while the first time)..."; Flags: waituntilterminated; Tasks: samples and not remote
 Filename: "powershell.exe"; Parameters: "-NoProfile -ExecutionPolicy Bypass -File ""{app}\install.ps1"" -Dir ""{app}\Document-Vault"" -NoStart -Pause"; \
-  StatusMsg: "Setting up Document Vault (this takes a while the first time)..."; Flags: waituntilterminated; Tasks: not samples
+  StatusMsg: "Setting up Document Vault (this takes a while the first time)..."; Flags: waituntilterminated; Tasks: not samples and not remote
 Filename: "{app}\App\DocumentVault.exe"; Description: "Open Document Vault"; WorkingDir: "{app}\App"; \
   Flags: postinstall nowait skipifsilent
 

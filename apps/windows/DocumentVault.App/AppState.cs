@@ -17,7 +17,17 @@ public sealed class AppState
     public bool Installed => File.Exists(Python);
 
     public EnginePipe? Engine { get; private set; }
+    public RemoteVault? Remote { get; private set; }
     public VaultClient? Client { get; private set; }
+
+    /// How this computer uses the vault: "here" (it is the centre, the engine runs here) or "remote" (it connects to
+    /// the vault on another computer). Null until the person chooses, on the first start.
+    public string? Mode { get => Saved.Load("mode"); set => Saved.Save("mode", value); }
+    public Connection? SavedConnection
+    {
+        get => Saved.LoadProtected("connection") is { } json ? System.Text.Json.JsonSerializer.Deserialize<Connection>(json) : null;
+        set => Saved.SaveProtected("connection", value is null ? null : System.Text.Json.JsonSerializer.Serialize(value));
+    }
     public User? User { get; set; }
     public Info? Info { get; private set; }
     public List<VaultDocument> Documents { get; private set; } = [];
@@ -44,9 +54,20 @@ public sealed class AppState
         Client = new VaultClient(Engine, new ProtectedSessionStore());
     }
 
+    /// Use the vault on another computer: nothing runs here but the app.
+    public void StartRemote(Connection connection)
+    {
+        Remote = new RemoteVault(connection);
+        Client = new VaultClient(Remote, new MemorySessionStore());  // a paired device signs in with its key, not a cookie
+    }
+
     public async Task StopAsync()
     {
         if (Engine is not null) await Engine.DisposeAsync();  // the engine (and llama.cpp with it) stops with the app
+        Remote?.Dispose();
+        Engine = null;
+        Remote = null;
+        Client = null;
     }
 
     public async Task ReloadAsync()
@@ -59,6 +80,44 @@ public sealed class AppState
         Documents = await documents;
         Upcoming = await upcoming;
         Changed?.Invoke();
+    }
+}
+
+/// Small things the app remembers, in %LOCALAPPDATA%\Document Vault: plain ones, and secret ones encrypted with DPAPI.
+public static class Saved
+{
+    private static readonly string Folder = Path.Combine(
+        Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Document Vault");
+    private static readonly byte[] Entropy = Encoding.UTF8.GetBytes("Document Vault settings");
+
+    public static string? Load(string name) =>
+        File.Exists(Path.Combine(Folder, name + ".txt")) ? File.ReadAllText(Path.Combine(Folder, name + ".txt")).Trim() : null;
+
+    public static void Save(string name, string? value)
+    {
+        Directory.CreateDirectory(Folder);
+        if (value is null) File.Delete(Path.Combine(Folder, name + ".txt"));
+        else File.WriteAllText(Path.Combine(Folder, name + ".txt"), value);
+    }
+
+    public static string? LoadProtected(string name)
+    {
+        var file = Path.Combine(Folder, name + ".bin");
+        try
+        {
+            return File.Exists(file)
+                ? Encoding.UTF8.GetString(ProtectedData.Unprotect(File.ReadAllBytes(file), Entropy, DataProtectionScope.CurrentUser))
+                : null;
+        }
+        catch (CryptographicException) { return null; }
+    }
+
+    public static void SaveProtected(string name, string? value)
+    {
+        var file = Path.Combine(Folder, name + ".bin");
+        if (value is null) { File.Delete(file); return; }
+        Directory.CreateDirectory(Folder);
+        File.WriteAllBytes(file, ProtectedData.Protect(Encoding.UTF8.GetBytes(value), Entropy, DataProtectionScope.CurrentUser));
     }
 }
 
