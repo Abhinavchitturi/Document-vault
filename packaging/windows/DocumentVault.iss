@@ -101,7 +101,8 @@ end;
 function NextButtonClick(CurPageID: Integer): Boolean;
 begin
   Result := True;
-  if (CurPageID = RolePage.ID) and not RolePage.Values[0] and not RolePage.Values[1] then
+  // (Setup calls this for every page when it runs silently too: there is no one to ask then, and nothing is chosen)
+  if (CurPageID = RolePage.ID) and not WizardSilent() and not RolePage.Values[0] and not RolePage.Values[1] then
   begin
     MsgBox('Choose how this PC will use Document Vault.', mbInformation, MB_OK);
     Result := False;
