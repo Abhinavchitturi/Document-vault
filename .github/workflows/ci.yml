@@ -11,10 +11,17 @@ on:
         required: false
         default: ""
 
+# A newer push makes the check run of an older one pointless: it stops by itself. Release builds (started by hand
+# with a release name) are never cut short.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}-${{ github.event_name == 'workflow_dispatch' && github.run_id || 'checks' }}
+  cancel-in-progress: true
+
 jobs:
   tests:
     name: Tests (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 25  # usually 2-8; a hang fails fast
     strategy:
       fail-fast: false
       matrix:
@@ -25,8 +32,12 @@ jobs:
         with:
           python-version: "3.11"
           cache: pip
-      - run: python -m pip install -r requirements.txt
-      - run: python -m pytest -q
+      - name: "Install the packages (on Linux, torch without the graphics-card part: a few GB less)"
+        shell: bash
+        run: |
+          if [ "$RUNNER_OS" = "Linux" ]; then python -m pip install torch --index-url https://download.pytorch.org/whl/cpu; fi
+          python -m pip install -r requirements.txt
+      - run: python -m pytest -q --durations=15  # lists the slowest tests, to speed them up
       - name: The pinned llama.cpp build downloads, checks out and runs here
         shell: bash
         run: |
@@ -37,6 +48,7 @@ jobs:
     # Starts the real vault on real Windows through the same commands a person uses, then stops it.
     name: Windows start / stop
     runs-on: windows-latest
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -76,6 +88,7 @@ jobs:
   mac-app:
     name: Mac app (.dmg)
     runs-on: macos-latest
+    timeout-minutes: 40  # 3 minutes with an unchanged engine, ~12 when it is built again
     permissions:
       contents: write
     steps:
@@ -119,7 +132,7 @@ jobs:
     # The native Windows app (WinUI 3): its core against the real engine, a build, and a screenshot of it running.
     name: Windows app (WinUI)
     runs-on: windows-latest
-    timeout-minutes: 90  # a hang fails the build instead of holding it for 6 hours
+    timeout-minutes: 30  # usually ~8 (~10 when the engine is built again): a hang fails fast
     permissions:
       contents: write  # to attach the installer to a release
     steps:
@@ -204,6 +217,7 @@ jobs:
     # The native Mac app (SwiftUI), built with GitHub's Xcode.
     name: Mac app (SwiftUI)
     runs-on: macos-latest
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
       - name: VaultKit tests
