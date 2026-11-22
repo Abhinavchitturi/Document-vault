@@ -33,6 +33,16 @@ Nothing is sent to a cloud AI service.
 | 🪟 **Windows** | [**DocumentVault-Setup.exe**](https://github.com/Abhinavchitturi/Document-vault/releases/latest/download/DocumentVault-Setup.exe) | Windows 10 or 11, 64-bit |
 | 📱 **Android phone** | [**DocumentVault-Android.apk**](https://github.com/Abhinavchitturi/Document-vault/releases/download/v0.9.0-beta/DocumentVault-Android.apk) | Android 7 or later |
 
+> **Opening it the first time** (only once: the apps aren't signed with a paid Apple or Microsoft certificate yet)
+>
+> **Mac:** open Document Vault from Applications. If macOS says it can't check the app, click **Done**, then open
+> **System Settings → Privacy & Security**, scroll down to *Security* and click **Open Anyway** next to "Document Vault",
+> then **Open Anyway** again. (The DMG window shows these steps too.)
+>
+> **Windows:** if *"Windows protected your PC"* appears, click **More info → Run anyway**.
+>
+> After that it opens normally, and updates install from inside the app.
+
 **Beta.** Native apps: SwiftUI on the Mac, WinUI on Windows, both following Apple's design. They keep the vault on your
 computer and talk to it over a private pipe, with no network port. The phone app pairs with the vault on your computer.
 
@@ -51,9 +61,6 @@ changed, which is rare: the vault's own code travels with the app.
 
 Your documents are kept apart from the program (`%LOCALAPPDATA%\Document Vault\Vault` on Windows,
 `~/Library/Application Support/Document Vault/Vault` on a Mac), so updating or uninstalling never touches them.
-
-The apps aren't code-signed yet. On a Mac, allow it once under *System Settings → Privacy & Security → Open Anyway*;
-on Windows, choose *More info → Run anyway*.
 
 All versions: [Releases page](https://github.com/Abhinavchitturi/Document-vault/releases).
 

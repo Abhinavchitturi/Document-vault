@@ -30,8 +30,20 @@ codesign --verify "$APP"
 STAGE="$OUT/build/dmg"
 mkdir -p "$STAGE"
 cp -R "$APP" "$STAGE/"
-ln -s /Applications "$STAGE/Applications"
 rm -f "$OUT/DocumentVault-macOS.dmg"
-hdiutil create -quiet -volname "Document Vault" -srcfolder "$STAGE" -ov -format ULMO "$OUT/DocumentVault-macOS.dmg"  # LZMA: about half the size of the usual zlib (UDZO)
+# The window people see: the app, an arrow to Applications, and how to open it the first time (it isn't signed with
+# an Apple Developer ID, so macOS asks once). packaging/macos/make_dmg_background.py draws the picture.
+tiffutil -cathidpicheck packaging/macos/dmg-background.png packaging/macos/dmg-background@2x.png -out "$OUT/build/background.tiff"
+command -v create-dmg >/dev/null 2>&1 || brew install create-dmg >/dev/null 2>&1 || true
+if ! command -v create-dmg >/dev/null 2>&1 || ! create-dmg --volname "Document Vault" --background "$OUT/build/background.tiff" \
+     --window-pos 200 120 --window-size 660 480 --icon-size 96 --text-size 13 \
+     --icon "Document Vault.app" 165 150 --hide-extension "Document Vault.app" --app-drop-link 495 150 \
+     --format ULMO --no-internet-enable "$OUT/DocumentVault-macOS.dmg" "$STAGE"; then
+  echo "Laying out the window didn't work here; building a plain DMG instead" >&2
+  rm -f "$OUT/DocumentVault-macOS.dmg"
+  cp packaging/macos/dmg-background@2x.png "$STAGE/How to open the first time.png"
+  ln -s /Applications "$STAGE/Applications"
+  hdiutil create -quiet -volname "Document Vault" -srcfolder "$STAGE" -ov -format ULMO "$OUT/DocumentVault-macOS.dmg"  # LZMA: half the size of zlib
+fi
 rm -rf "$OUT/build"
 echo "Built $OUT/DocumentVault-macOS.dmg"
