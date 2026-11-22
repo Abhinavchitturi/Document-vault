@@ -95,21 +95,31 @@ public sealed class RemoteVault : IVaultTransport, IDisposable
     public async Task<VaultResponse> SendAsync(VaultRequest request, CancellationToken cancel = default)
     {
         Exception? last = null;
+        // uploads may wait while the centre reads big scans (or, just after it opened, loads its search model)
+        var limit = request.Files is { Count: > 0 } ? TimeSpan.FromMinutes(30) : TimeSpan.FromMinutes(5);
         foreach (var url in _connection.Urls)  // the address that answers: home Wi-Fi, else Tailscale
         {
+            using var timer = CancellationTokenSource.CreateLinkedTokenSource(cancel);
+            timer.CancelAfter(limit);
             try
             {
                 using var message = Build(url, request);
-                using var answer = await _http.SendAsync(message, cancel);
+                using var answer = await _http.SendAsync(message, timer.Token);
                 var headers = answer.Headers.Concat(answer.Content.Headers)
                     .ToDictionary(h => h.Key.ToLowerInvariant(), h => string.Join(", ", h.Value));
-                var body = await answer.Content.ReadAsByteArrayAsync(cancel);
+                var body = await answer.Content.ReadAsByteArrayAsync(timer.Token);
                 if (url != _connection.Urls[0]) _connection = _connection with { Urls = [url, .. _connection.Urls.Where(u => u != url)] };
                 return new VaultResponse((int)answer.StatusCode, headers, body);
             }
             catch (HttpRequestException e) { last = e; }
             catch (UriFormatException e) { last = e; }  // an address that can't be used: try the next one
-            catch (TaskCanceledException e) when (!cancel.IsCancellationRequested) { last = e; }
+            catch (OperationCanceledException) when (!cancel.IsCancellationRequested)
+            {
+                // it reached the centre but no answer came in time: never send it again to another address (an
+                // upload would be added twice)
+                throw VaultException.Engine($"The vault on {_connection.Name} didn't answer in time. It may still be busy; " +
+                                            "check in a minute whether it was done.");
+            }
         }
         throw VaultException.Engine($"Can't reach the vault on {_connection.Name}. Is that computer on, with Document Vault " +
                                     $"open, and on the same Wi-Fi or Tailscale? ({last?.Message})");
@@ -163,6 +173,6 @@ public sealed class RemoteVault : IVaultTransport, IDisposable
             },
             ConnectTimeout = TimeSpan.FromSeconds(6),
         };
-        return new HttpClient(handler) { Timeout = TimeSpan.FromMinutes(5) };
+        return new HttpClient(handler) { Timeout = Timeout.InfiniteTimeSpan };  // each request has its own limit
     }
 }

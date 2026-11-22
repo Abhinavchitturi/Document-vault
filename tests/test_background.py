@@ -74,3 +74,22 @@ def test_the_apps_see_downloading_then_ready(tmp_path):
     embedder.wait()
     assert client.get("/api/search/status").json()["state"] == "ready"
     download.progress.state = "loading"
+
+
+def test_the_same_file_added_twice_at_once_counts_once(tmp_path, monkeypatch):
+    """Two uploads of one file racing (a retried request): the second finds the first, no error."""
+    from backend.chunker.chunker import RegexTokenizer
+    from backend.upload import ingest
+    from backend.vector_store.store import DocumentStore
+    from tests.fakes import FakeEmbedder
+
+    store = DocumentStore(tmp_path / "index")
+    doc = tmp_path / "Bike Insurance 2026.txt"
+    doc.write_text("Two-wheeler policy TW-778812. Period: 15 March 2026 to 14 March 2027.")
+    first = ingest.ingest_file(doc, store, FakeEmbedder(), RegexTokenizer(), "auto")
+    assert first.created
+    # the other upload checked before the first was saved: it gets past the check and clashes on saving
+    monkeypatch.setattr(store, "find_by_sha256", lambda sha, real=store.find_by_sha256, seen=[]: seen.append(1) or (None if len(seen) == 1 else real(sha)))
+    second = ingest.ingest_file(doc, store, FakeEmbedder(), RegexTokenizer(), "auto")
+    assert not second.created and second.document["doc_id"] == first.document["doc_id"]
+    assert len(store.list_documents()) == 1

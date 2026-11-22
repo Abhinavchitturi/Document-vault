@@ -163,7 +163,15 @@ def ingest_file(
         "added_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
     }
     embeddings = embedder.encode_passages(passage_texts(chunks))
-    store.add(document, chunks, embeddings, embedder.model_name)
+    from sqlalchemy.exc import IntegrityError
+
+    try:
+        store.add(document, chunks, embeddings, embedder.model_name)
+    except IntegrityError:  # the same file, added at the same moment by another upload: that one counts
+        existing = store.find_by_sha256(sha256)
+        if existing is None:
+            raise
+        return IngestResult(existing, created=False)
     return IngestResult(document, created=True)
 
 

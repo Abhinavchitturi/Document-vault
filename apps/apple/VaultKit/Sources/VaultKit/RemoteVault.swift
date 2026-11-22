@@ -98,6 +98,11 @@ public final class RemoteVault: VaultTransport, @unchecked Sendable {
                 http?.allHeaderFields.forEach { if let k = $0.key as? String, let v = $0.value as? String { headers[k.lowercased()] = v } }
                 remember(url)
                 return VaultResponse(status: http?.statusCode ?? 0, headers: headers, body: data)
+            } catch let error as URLError where error.code == .timedOut {
+                // it reached the centre but no answer came in time: never send it again to another address (an
+                // upload would be added twice)
+                throw VaultError.engine("The vault on \(connection.name) didn't answer in time. It may still be busy; "
+                                        + "check in a minute whether it was done.")
             } catch let error as URLError {
                 last = error
             }
@@ -139,7 +144,8 @@ public final class RemoteVault: VaultTransport, @unchecked Sendable {
         guard let url = URL(string: base + request.path) else { throw URLError(.badURL) }
         var http = URLRequest(url: url)
         http.httpMethod = request.method
-        http.timeoutInterval = 300
+        // uploads may wait while the centre reads big scans (or, just after it opened, loads its search model)
+        http.timeoutInterval = request.files.isEmpty ? 300 : 1800
         for (key, value) in request.headers where key.lowercased() != "cookie" { http.setValue(value, forHTTPHeaderField: key) }
         http.setValue("Bearer \(connection.token)", forHTTPHeaderField: "Authorization")
         if !request.files.isEmpty {
