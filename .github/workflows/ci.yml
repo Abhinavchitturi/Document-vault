@@ -132,7 +132,7 @@ jobs:
     # The native Windows app (WinUI 3): its core against the real engine, a build, and a screenshot of it running.
     name: Windows app (WinUI)
     runs-on: windows-latest
-    timeout-minutes: 30  # usually ~8 (~10 when the engine is built again): a hang fails fast
+    timeout-minutes: 45  # usually ~15 with the scenarios: a hang fails fast
     permissions:
       contents: write  # to attach the installer to a release
     steps:
@@ -184,7 +184,15 @@ jobs:
         run: |
           $env:DOCUMENT_VAULT_ENGINE_ARCHIVE = (Resolve-Path dist\DocumentVault-Engine-Windows-*.zip).Path
           powershell -ExecutionPolicy Bypass -File apps/windows/ui-test.ps1 -AppPath "$env:LOCALAPPDATA\Programs\Document Vault\App\DocumentVault.exe" -Out screens
-      - name: Attach the installer to the release (only after it installed and every screen passed)
+      - name: "Scenarios: the installer's question, connecting to a centre computer, updating from inside the app"
+        shell: pwsh
+        run: |
+          # a pretend newer version (99.0.0) for the app to update to
+          & "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe" "/DVersion=99.0.0" "/Odist\update" packaging\windows\DocumentVault.iss | Out-Null
+          if ($LASTEXITCODE -ne 0) { exit 1 }
+          powershell -ExecutionPolicy Bypass -File apps/windows/scenarios.ps1 -Setup dist\DocumentVault-Setup.exe `
+            -Newer dist\update\DocumentVault-Setup.exe -Python (Get-Command python).Source -Out screens-scenarios
+      - name: Attach the installer to the release (only after it installed and every screen and scenario passed)
         if: startsWith(github.ref, 'refs/tags/v') || inputs.release != ''
         shell: pwsh
         run: |
@@ -203,6 +211,7 @@ jobs:
           name: DocumentVault-Windows-screens
           path: |
             screens
+            screens-scenarios
             setup.log
             app-logs
           if-no-files-found: ignore

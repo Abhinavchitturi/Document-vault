@@ -69,6 +69,8 @@ $python = Join-Path $Out "python\python.exe"
 & $python -m pip install --quiet --no-warn-script-location --no-cache-dir -r requirements.txt
 if ($LASTEXITCODE -ne 0) { throw "pip install failed" }
 & $python -m pip uninstall --quiet -y pytest  # for the project's tests, not the app
+# Python's compiled copies (~270 MB): left out of the download, Python makes them again on this PC as it runs
+Get-ChildItem $Out -Recurse -Directory -Filter "__pycache__" | Remove-Item -Recurse -Force
 
 Write-Host "2. Tesseract, the scan reader"
 Fetch $Pins.Tesseract "$work\tesseract-setup.exe"
