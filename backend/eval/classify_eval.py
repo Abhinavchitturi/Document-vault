@@ -1,7 +1,7 @@
 """How well does the vault sort documents into types? (Phase 8)
 
     python -m backend.eval.classify_eval             # keywords, meaning, and both (no assistant)
-    python -m backend.eval.classify_eval --with-llm  # also the full sorter, asking Ollama when unsure
+    python -m backend.eval.classify_eval --with-llm  # also the full sorter, asking the local answer model when unsure
 
 Uses the fictional samples (samples/documents/<type>/*.md: the folder is the right answer).
 File names are hidden by default ("document.pdf"), because real uploads are often called
@@ -68,10 +68,16 @@ def main() -> None:
 
     llm = None
     if args.with_llm:
-        from backend.llm.ollama import DEFAULT_MODEL as DEFAULT_LLM
-        from backend.llm.ollama import OllamaLLM
+        import atexit
+        from contextlib import ExitStack
 
-        llm = OllamaLLM(DEFAULT_LLM)
+        from backend.llm import llamacpp
+
+        stack = ExitStack()
+        atexit.register(stack.close)  # llama-server stops when the evaluation ends
+        llm = stack.enter_context(llamacpp.running())
+        if llm is None:
+            print("The local AI isn't downloaded (python -m backend.llm.setup): sorting without it.")
     samples = load_samples(args.docs)
     results = evaluate(samples, Embedder(DEFAULT_MODEL), llm, hide_names=not args.show_names)
     args.results_dir.mkdir(parents=True, exist_ok=True)

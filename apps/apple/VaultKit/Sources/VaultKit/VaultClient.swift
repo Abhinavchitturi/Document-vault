@@ -91,6 +91,14 @@ public final class VaultClient: Sendable {
         }
     }
 
+    // MARK: - The local AI
+
+    /// How far the download of the local AI is.
+    public func aiDownloadStatus() async throws -> AIDownloadStatus { try await get("/api/ai/download") }
+
+    /// Download llama.cpp and the answer model (about 5 GB, once), then start it. Admins only.
+    public func startAIDownload() async throws -> AIDownloadStatus { try await post("/api/ai/download", [:]) }
+
     // MARK: - Other devices
 
     /// A one-time code for another computer (`typed`: short, to type) or a phone (for a QR code), for 10 minutes.

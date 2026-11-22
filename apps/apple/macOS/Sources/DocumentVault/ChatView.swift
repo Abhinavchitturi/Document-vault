@@ -63,6 +63,7 @@ struct ChatView: View {
             if model.info?.llmStatus.ready == false {
                 Label(model.info?.llmStatus.message ?? "", systemImage: "exclamationmark.triangle")
                     .font(.callout).foregroundStyle(.orange).padding(.top, 4)
+                AIDownloadView().frame(maxWidth: 460)
             }
             LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 10) {
                 ForEach(suggestions, id: \.self) { suggestion in

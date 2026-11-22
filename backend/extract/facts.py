@@ -11,7 +11,7 @@ Readers, best first, picked automatically:
     needle   Needle 3 (Cactus Compute, Apache-2.0): a 35 MB extraction model that runs on this
              computer. `pip install cactus-needle`; its files are downloaded once, then it runs
              with the internet off. Its anonymous usage counts are switched off here.
-    ollama   the local answer model, asked for the same fields as JSON
+    llm      the local answer model (llama.cpp), asked for the same fields as JSON
     rules    plain text patterns ("Due date: 18 September 2026"), always available
 
 Whatever reads them, every value is checked against the document: a date or number that
@@ -44,7 +44,7 @@ DESCRIPTIONS = {
               "Digits only, like 2486 or 1355.82.",
 }
 
-SCHEMA = {  # one record, used as Needle's only "tool" and as Ollama's JSON format
+SCHEMA = {  # one record, used as Needle's only "tool" and as the answer model's JSON format
     "name": "record_document_facts",
     "description": "Record the key facts stated in a family document (bill, insurance policy, warranty, property paper).",
     "parameters": {
@@ -189,8 +189,10 @@ class RulesReader:
         return facts
 
 
-class OllamaReader:
-    name = "ollama"
+class LLMReader:
+    """Asks the local answer model (llama.cpp) for the same fields, as JSON."""
+
+    name = "llm"
 
     def __init__(self, llm):
         self.llm = llm
@@ -248,7 +250,7 @@ class FactsReader:
     """Tries the best available reader, falls back to the next one, and grounds the result."""
 
     def __init__(self, llm=None, prefer: str | None = None):
-        prefer = prefer or os.environ.get("VAULT_FACTS_READER", "auto")  # auto | needle | ollama | rules
+        prefer = prefer or os.environ.get("VAULT_FACTS_READER", "auto")  # auto | needle | llm | rules
         self.readers = []
         if prefer in ("auto", "needle"):
             try:
@@ -258,8 +260,8 @@ class FactsReader:
                     raise
                 logger.info("Needle 3 isn't installed (pip install cactus-needle); reading facts with %s",
                             "the local answer model" if llm is not None else "text patterns")
-        if prefer in ("auto", "ollama") and llm is not None and hasattr(llm, "generate_json"):
-            self.readers.append(OllamaReader(llm))
+        if prefer in ("auto", "llm") and llm is not None and hasattr(llm, "generate_json"):
+            self.readers.append(LLMReader(llm))
         self.readers.append(RulesReader())
 
     @property

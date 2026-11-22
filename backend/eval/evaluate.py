@@ -95,8 +95,7 @@ def main() -> None:
     parser.add_argument("--show-misses", action="store_true")
     parser.add_argument("--method", default="all", choices=["all", *METHODS],
                         help="search method to score (default: compare all three)")
-    parser.add_argument("--with-llm", action="store_true", help="also answer with the local Ollama model")
-    parser.add_argument("--llm-model", default=None, help="Ollama model (default: llama3.1:8b)")
+    parser.add_argument("--with-llm", action="store_true", help="also answer with the local answer model (llama.cpp)")
     args = parser.parse_args()
 
     logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
@@ -105,10 +104,16 @@ def main() -> None:
 
     llm = None
     if args.with_llm:
-        from backend.llm.ollama import DEFAULT_MODEL as DEFAULT_LLM
-        from backend.llm.ollama import OllamaLLM
+        import atexit
+        from contextlib import ExitStack
 
-        llm = OllamaLLM(args.llm_model or DEFAULT_LLM)
+        from backend.llm import llamacpp
+
+        stack = ExitStack()
+        atexit.register(stack.close)  # llama-server stops when the evaluation ends
+        llm = stack.enter_context(llamacpp.running())
+        if llm is None:
+            raise SystemExit("The local AI isn't downloaded yet: python -m backend.llm.setup")
     methods = list(METHODS) if args.method == "all" else [args.method]
     if llm and args.method == "all":
         methods = ["hybrid"]  # answering every question three times isn't worth the wait

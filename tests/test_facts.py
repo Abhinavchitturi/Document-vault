@@ -52,9 +52,9 @@ class _Reader:
 
 def test_the_next_reader_takes_over_and_gaps_are_filled_by_patterns():
     reader = FactsReader(prefer="rules")
-    reader.readers = [_Reader(error=RuntimeError("engine missing")), _Reader(Facts(due_on="2026-09-18", method="ollama"), name="ollama")]
+    reader.readers = [_Reader(error=RuntimeError("engine missing")), _Reader(Facts(due_on="2026-09-18", method="llm"), name="llm")]
     got = reader.read(BILL)
-    assert got.method == "ollama" and got.due_on == "2026-09-18"
+    assert got.method == "llm" and got.due_on == "2026-09-18"
     assert got.amount == "2486" and got.reference == "170024559812"  # topped up from the patterns
 
 

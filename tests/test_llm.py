@@ -1,13 +1,7 @@
-import json
-import threading
 from datetime import date
-from http.server import BaseHTTPRequestHandler, HTTPServer
-
-import pytest
 
 from backend.embeddings.embedder import prefer_offline
 from backend.llm.answer import NOT_FOUND, answer_question, build_prompt
-from backend.llm.ollama import LLMUnavailableError, OllamaLLM
 from tests.fakes import FakeLLM
 
 PASSAGES = [
@@ -39,61 +33,6 @@ def test_not_found_is_reported_and_no_passages_skips_the_llm():
     assert not answer.found and llm.calls == 0
 
 
-def test_ollama_only_talks_to_this_computer():
-    for host in ("http://192.168.1.20:11434", "https://api.example.com"):
-        with pytest.raises(ValueError, match="this computer"):
-            OllamaLLM(host=host)
-    OllamaLLM(host="http://localhost:11434")
-
-
-class _FakeOllama(BaseHTTPRequestHandler):
-    def do_GET(self):
-        self.send_response(200); self.end_headers()
-        self.wfile.write(json.dumps({"models": [{"name": "llama3.1:8b"}, {"name": "gemma3:latest"}]}).encode())
-
-    def do_POST(self):
-        body = json.loads(self.rfile.read(int(self.headers["Content-Length"])))
-        self.server.requests.append(body)
-        if body["model"] == "missing":
-            self.send_response(404); self.end_headers()
-            self.wfile.write(b'{"error":"model \\"missing\\" not found, try pulling it first"}')
-            return
-        self.send_response(200); self.end_headers()
-        if body.get("stream"):
-            for piece in ["It expires", " on 14 March", " 2027 [2]."]:
-                self.wfile.write((json.dumps({"message": {"content": piece}, "done": False}) + "\n").encode())
-            self.wfile.write((json.dumps({"message": {"content": ""}, "done": True}) + "\n").encode())
-            return
-        self.wfile.write(json.dumps({"message": {"role": "assistant", "content": " It expires on 14 March 2027 [2]. "}}).encode())
-
-    def log_message(self, *args):
-        pass
-
-
-@pytest.fixture
-def fake_ollama():
-    server = HTTPServer(("127.0.0.1", 0), _FakeOllama)
-    server.requests = []
-    threading.Thread(target=server.serve_forever, daemon=True).start()
-    yield server
-    server.shutdown()
-
-
-def test_ollama_request_and_errors(fake_ollama):
-    host = f"http://127.0.0.1:{fake_ollama.server_port}"
-    assert OllamaLLM("llama3.1:8b", host=host).generate("sys", "prompt") == "It expires on 14 March 2027 [2]."
-    sent = fake_ollama.requests[0]
-    assert sent["stream"] is False and sent["options"]["temperature"] == 0
-    assert [m["role"] for m in sent["messages"]] == ["system", "user"]
-    with pytest.raises(LLMUnavailableError, match="ollama pull missing"):
-        OllamaLLM("missing", host=host).generate("sys", "prompt")
-
-
-def test_ollama_not_running_explains_how_to_start_it():
-    with pytest.raises(LLMUnavailableError, match="Ollama"):
-        OllamaLLM(host="http://127.0.0.1:9").generate("sys", "prompt")  # nothing listens on port 9
-
-
 def test_prefer_offline_only_when_model_is_cached(tmp_path, monkeypatch):
     monkeypatch.setenv("HF_HUB_CACHE", str(tmp_path))
     monkeypatch.delenv("HF_HUB_OFFLINE", raising=False)
@@ -109,27 +48,6 @@ def test_reasoning_models_thinking_is_removed():
     assert answer_question("Q?", PASSAGES, llm).text == "It expires on 14 March 2027 [2]."
 
 
-def test_compare_ranks_models_and_skips_missing_ones():
-    from backend.eval.compare_llms import compare
-
-    class Named(FakeLLM):
-        def __init__(self, name, reply=None, error=None):
-            super().__init__(reply, error)
-            self.name = name
-
-    questions = [{"question": "When does it expire?", "answer": "14 March 2027"},
-                 {"question": "Policy number?", "answer": "SGI/TW/2026/448812"}]
-    contexts = [PASSAGES, PASSAGES]
-    rows = compare(questions, contexts, [
-        Named("weak", "I couldn't find that in your documents."),
-        Named("strong", "It expires on 14 March 2027 [2], policy SGI/TW/2026/448812 [2]."),
-        Named("missing", error=LLMUnavailableError("The model missing isn't downloaded yet. Run: ollama pull missing")),
-    ])
-    assert [r["model"] for r in rows] == ["strong", "weak", "missing"]
-    assert rows[0]["accuracy"] == 1.0 and rows[0]["cited_a_source"] == 2
-    assert rows[1]["accuracy"] == 0.0 and not rows[2]["available"] and "ollama pull" in rows[2]["error"]
-
-
 def test_embedding_prefixes():
     from backend.embeddings.embedder import DEFAULT_MODEL, model_prefixes
 
@@ -139,16 +57,6 @@ def test_embedding_prefixes():
     assert model_prefixes("some/other-model") == ("", "")
 
 
-def test_ollama_status(fake_ollama):
-    host = f"http://127.0.0.1:{fake_ollama.server_port}"
-    assert OllamaLLM("llama3.1:8b", host=host).status()[0]
-    assert OllamaLLM("gemma3", host=host).status()[0]  # bare name means ":latest"
-    ready, message = OllamaLLM("gemma3:12b", host=host).status()
-    assert not ready and "ollama pull gemma3:12b" in message
-    ready, message = OllamaLLM(host="http://127.0.0.1:9").status()
-    assert not ready and "isn't running" in message
-
-
 def test_streaming_hides_thinking_and_keeps_normal_text():
     from backend.llm.answer import strip_thinking
 
@@ -156,17 +64,3 @@ def test_streaming_hides_thinking_and_keeps_normal_text():
     assert "".join(strip_thinking(pieces)) == "It expires on 14 March 2027 [2]."
     assert "".join(strip_thinking(["Your ", "bill is ", "Rs. 2,486."])) == "Your bill is Rs. 2,486."
     assert "".join(strip_thinking(["<b>"])) == "<b>"
-
-
-def test_ollama_streams_pieces(fake_ollama):
-    host = f"http://127.0.0.1:{fake_ollama.server_port}"
-    pieces = list(OllamaLLM("llama3.1:8b", host=host).stream("sys", "prompt", [{"role": "user", "content": "hi"}]))
-    assert "".join(pieces) == "It expires on 14 March 2027 [2]." and len(pieces) > 1
-    sent = fake_ollama.requests[-1]
-    assert sent["stream"] is True and [m["role"] for m in sent["messages"]] == ["system", "user", "user"]
-
-
-def test_ollama_lists_downloaded_models(fake_ollama):
-    host = f"http://127.0.0.1:{fake_ollama.server_port}"
-    assert OllamaLLM(host=host).list_models() == ["gemma3:latest", "llama3.1:8b"]
-    assert OllamaLLM(host="http://127.0.0.1:9").list_models() == []

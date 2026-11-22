@@ -35,6 +35,7 @@ struct VaultSettings: View {
             Section("Assistant") {
                 LabeledContent("Status", value: model.info?.llmStatus.ready == true ? "Ready" : "Offline")
                 if let message = model.info?.llmStatus.message { Text(message).font(.caption).foregroundStyle(.secondary) }
+                AIDownloadView()
                 LabeledContent("Answer model", value: settings?.llmModel ?? "–")
                 LabeledContent("Search", value: settings.map { "\($0.searchMethod.capitalized), \($0.embeddingModel)" } ?? "–")
             }

@@ -44,7 +44,7 @@ class FakeWindows:
         return 1
 
     def http_ok(self, url, timeout=2):
-        return self.web_up if ":8000" in url else True  # Ollama answers
+        return self.web_up if ":8000" in url else True  # other local services answer
 
 
 def windows_vault(tmp_path, win, built=True):

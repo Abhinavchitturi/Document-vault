@@ -15,7 +15,7 @@ import json
 import time
 from pathlib import Path
 
-from backend.extract.facts import FIELDS, NeedleReader, OllamaReader, RulesReader, grounded
+from backend.extract.facts import FIELDS, LLMReader, NeedleReader, RulesReader, grounded
 
 HERE = Path(__file__).resolve().parents[2] / "samples"
 
@@ -71,13 +71,18 @@ def main() -> None:
         readers["needle"] = NeedleReader()
     except ImportError:
         print("Needle 3 isn't installed (pip install cactus-needle): skipping it.")
-    from backend.llm.ollama import DEFAULT_MODEL, OllamaLLM
+    import atexit
+    from contextlib import ExitStack
 
-    llm = OllamaLLM(DEFAULT_MODEL)
-    if llm.status()[0]:
-        readers["ollama"] = OllamaReader(llm)
+    from backend.llm import llamacpp
+
+    stack = ExitStack()
+    atexit.register(stack.close)  # llama-server stops when the evaluation ends
+    llm = stack.enter_context(llamacpp.running())
+    if llm is not None and llm.status()[0]:
+        readers["llm"] = LLMReader(llm)
     else:
-        print("Ollama isn't running: skipping the answer model.")
+        print("The local AI isn't downloaded (python -m backend.llm.setup): skipping the answer model.")
 
     cases = load_cases(args.pdfs)
     results = {}

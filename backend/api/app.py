@@ -11,7 +11,7 @@ Endpoints:
     GET    /api/reminders/schedule        future reminders for the phone to schedule
     GET    /api/reminders/calendar.ics    the same as a calendar file
     GET    /api/settings                  owner, models, where data lives
-    POST   /api/settings                  switch the answer model (one already downloaded in Ollama)
+    POST   /api/settings                  change the owner's name, family mode
     POST   /api/documents                 upload one or more files (form fields: files, category)
     GET    /api/documents/{id}/file       open the original file
     GET    /api/documents/{id}/pages/{n}/image       one page as an image (scans and photos straightened)
@@ -23,11 +23,10 @@ Endpoints:
 
 Usage:
     python -m backend.api.app                 # then open http://localhost:8000 (passkeys need "localhost")
-    python -m backend.api.app --llm-model gemma2:9b
 
 Answers come from a local model in llama.cpp, started by the vault itself once `python -m backend.llm.setup`
-has downloaded it (backend/llm/llamacpp.py); `--llm ollama` uses Ollama instead (backend/llm/ollama.py). Until
-the model is downloaded, search still works and the page says how to download it.
+has downloaded it (backend/llm/llamacpp.py). Until the model is downloaded, search still works and the apps offer
+to download it.
 
 Sign-in (Phase 6, backend/auth/): every /api call needs a signed-in family member, and
 each person only sees their own documents. The first visit sets up the admin's password.
@@ -75,7 +74,7 @@ from backend.security import autobackup
 from backend.security.backup import BackupError, make_backup
 from backend.auth.passkeys import Passkeys
 from backend.llm.answer import LLM, answer_question, finalize, stream_answer
-from backend.llm.ollama import LLMUnavailableError
+from backend.llm.llamacpp import LLMUnavailableError
 from backend.retriever.retriever import METHODS, Retriever
 from backend.viewer.highlight import highlights_for, page_image
 
@@ -148,7 +147,6 @@ class DocumentUpdate(BaseModel):
 
 
 class SettingsUpdate(BaseModel):
-    llm_model: str | None = Field(None, min_length=1, max_length=200)
     owner_name: str | None = Field(None, min_length=1, max_length=60)
     family_mode: bool | None = None  # Phase 12: everyone sees every (non-private) document
 
@@ -274,12 +272,16 @@ def _passage(chunk: dict, score: float, rank: int) -> dict:
     }
 
 
-def _llm_status(llm) -> dict:
+def _llm_status(llm, local_ai=None) -> dict:
+    """Whether answers work; `can_download`: the apps show a "Download the AI" button instead of the reason."""
     if llm is None:
-        return {"ready": False, "message": "Answers are turned off (the app was started with --no-llm)."}
+        return {"ready": False, "message": "Answers are turned off (the app was started with --no-llm).", "can_download": False}
     check = getattr(llm, "status", None)
     ready, message = check() if check else (True, f"Answers ready ({llm.name})")
-    return {"ready": ready, "message": message}
+    can_download = bool(local_ai) and not ready and local_ai.downloadable()
+    if can_download:
+        message = "The local AI isn't downloaded yet (about 5 GB, once)."
+    return {"ready": ready, "message": message, "can_download": can_download}
 
 
 def create_app(
@@ -295,6 +297,7 @@ def create_app(
     mode: Literal["web", "phone"] = "web",
     devices: Devices | None = None,
     phone_link: dict | None = None,
+    local_ai=None,
 ) -> FastAPI:
     """`store` is any view of the vault; each request works on the signed-in person's own view.
 
@@ -670,7 +673,7 @@ def create_app(
             "owner": mine.owner,
             "is_admin": user["is_admin"],
             "llm": llm.name if llm else None,
-            "llm_status": _llm_status(llm),
+            "llm_status": _llm_status(llm, local_ai),
             "num_documents": len(mine.documents),
             "num_chunks": len(mine.chunks),
             "categories": {c: counts.get(c, 0) for c in CATEGORIES},
@@ -926,7 +929,7 @@ def create_app(
             "is_admin": user["is_admin"],
             "llm_model": getattr(llm, "model", None) if llm else None,
             "llm_models": list_models() if list_models else [],
-            "llm_status": _llm_status(llm),
+            "llm_status": _llm_status(llm, local_ai),
             "embedding_model": embedder.model_name,
             "database": database_label or "SQLite file in the vault folder",
             "index_dir": str(store.root),
@@ -958,18 +961,24 @@ def create_app(
                 raise HTTPException(400, str(e)) from e
             logger.info("%s is now called %s", old, mine.owner)
             user = {**user, "name": mine.owner}
-        if req.llm_model is None:
-            return settings_view(user)
-        if not user["is_admin"]:  # one model serves the whole family
-            raise HTTPException(403, "Only an admin can change the answer model.")
-        if llm is None or not hasattr(llm, "model"):
-            raise HTTPException(400, "Answers are turned off; start the app without --no-llm to choose a model.")
-        installed = llm.list_models() if hasattr(llm, "list_models") else []
-        if req.llm_model not in installed:
-            raise HTTPException(400, f"{req.llm_model} isn't downloaded. Run: ollama pull {req.llm_model}")
-        llm.model = req.llm_model
-        logger.info("Answer model switched to %s by %s", req.llm_model, user["name"])
         return settings_view(user)
+
+    # ---------- the local AI: one-click download ----------
+
+    @app.get("/api/ai/download")
+    def ai_download_status(user: dict = Depends(current_user)) -> dict:
+        """How far the download of the local AI is: idle, downloading (step, done, total), done or failed."""
+        if local_ai is None:
+            raise HTTPException(404, "There is nothing to download here.")
+        return local_ai.status()
+
+    @app.post("/api/ai/download")
+    def ai_download(request: Request, user: dict = Depends(admin_user)) -> dict:
+        """Download llama.cpp and the answer model (about 5 GB, once), then start it. Admins only: one model for everyone."""
+        if local_ai is None or not local_ai.downloadable():
+            raise HTTPException(409, "The local AI is already here, or there is no build of it for this computer.")
+        audit("ai_download_started", request, user)
+        return local_ai.start_download()
 
     @app.delete("/api/documents/{doc_id}")
     def delete(doc_id: str, request: Request, user: dict = Depends(current_user)) -> dict:
@@ -1046,7 +1055,7 @@ def create_app(
                     text += piece
                     yield json.dumps({"type": "token", "text": piece}) + "\n"
             except LLMUnavailableError as e:
-                # Plain words for the family; the technical reason ("open the Ollama app") as detail.
+                # Plain words for the family; the technical reason ("the local AI isn't downloaded") as detail.
                 logger.warning("No answer for %s: %s", user["name"], e)
                 yield json.dumps({"type": "error", "message": ASSISTANT_OFF, "detail": str(e)}) + "\n"
                 return
@@ -1108,9 +1117,6 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
                         help="before sign-in is set up: whose documents the setup screen adopts (default: your user name)")
     parser.add_argument("--model", default=None, help="embedding model (default: snowflake-arctic-embed-m-v1.5)")
     parser.add_argument("--device", default=None, help="cuda / mps / cpu; default picks automatically")
-    parser.add_argument("--llm", default=os.environ.get("VAULT_LLM", "auto"), choices=["auto", "llamacpp", "ollama"],
-                        help="who runs the answer model: llama.cpp (auto, the default), or Ollama if asked for")
-    parser.add_argument("--llm-model", default=None, help="local Ollama model (default: llama3.1:8b); implies --llm ollama")
     parser.add_argument("--no-llm", action="store_true", help="search only, no answers")
     parser.add_argument("--search", default="hybrid", choices=METHODS,
                         help="hybrid (meaning + exact words, default), vector (meaning only) or keyword (BM25 only)")
@@ -1132,8 +1138,6 @@ def start_vault(args: argparse.Namespace):
 
     from backend.chunker.chunker import HFTokenizer
     from backend.embeddings.embedder import DEFAULT_MODEL, Embedder
-    from backend.llm.ollama import DEFAULT_MODEL as DEFAULT_LLM
-    from backend.llm.ollama import OllamaLLM
     from backend.upload.ingest import passage_texts
 
     from backend.database.db import DatabaseUnavailableError, database_url, default_owner
@@ -1163,16 +1167,15 @@ def start_vault(args: argparse.Namespace):
     if not args.no_llm:
         from backend.llm import llamacpp
 
-        use_llamacpp = args.llm != "ollama" and not args.llm_model  # Ollama only when asked for (--llm ollama)
-        if use_llamacpp:
-            llama_server = llamacpp.LlamaServer(log=Path(args.index_dir).parent / "logs" / "llama-server.log")
-            try:
-                llama_server.start()
-            except (OSError, LLMUnavailableError) as e:  # not downloaded, or it won't start: the page says why
-                logger.warning("llama.cpp didn't start: %s", e)
-            llm = llamacpp.LlamaCppLLM(server=llama_server)
-        else:
-            llm = OllamaLLM(args.llm_model or DEFAULT_LLM)
+        llama_server = llamacpp.LlamaServer(log=Path(args.index_dir).parent / "logs" / "llama-server.log")
+        try:
+            llama_server.start()
+        except (OSError, LLMUnavailableError) as e:  # not downloaded yet, or it won't start: the apps say why
+            logger.warning("llama.cpp didn't start: %s", e)
+        llm = llamacpp.LlamaCppLLM(server=llama_server)
+    from backend.llm.local_ai import LocalAI
+
+    local_ai = LocalAI(llama_server) if llama_server else None
     from sqlalchemy.engine import make_url
 
     db_label = make_url(database_url(args.database_url)).render_as_string(hide_password=True)
@@ -1199,7 +1202,7 @@ def start_vault(args: argparse.Namespace):
             logger.info("Tailscale isn't running: phones can reach the vault on this Wi-Fi only. "
                         "For anywhere access see README -> Phone app -> From anywhere.")
     app = create_app(store, embedder, tokenizer, llm, database_label=db_label, search_method=args.search,
-                     accounts=accounts, devices=devices, phone_link=phone_link)
+                     accounts=accounts, devices=devices, phone_link=phone_link, local_ai=local_ai)
     if accounts.setup_needed():
         logger.info("First start with sign-in: open http://localhost:%d and choose your password.", args.port)
     else:

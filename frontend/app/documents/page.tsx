@@ -314,7 +314,7 @@ function DetailsForm({ d, onSave, onCancel }: { d: VaultDocument; onSave: (c: Do
       <label>Expires / warranty until<input className="input" type="date" value={f.expires_on} onChange={set("expires_on")} /></label>
       <label>Payment due<input className="input" type="date" value={f.due_on} onChange={set("due_on")} /></label>
       <p className="faint wide" style={{ margin: 0, fontSize: 12.5 }}>
-        {d.facts_method === "person" ? "Corrected by you." : d.facts_method ? `Read automatically (${d.facts_method === "needle" ? "Needle 3" : d.facts_method === "ollama" ? "answer model" : "text patterns"}). Fix anything that's wrong; the vault won't overwrite your changes.` : ""}
+        {d.facts_method === "person" ? "Corrected by you." : d.facts_method ? `Read automatically (${d.facts_method === "needle" ? "Needle 3" : d.facts_method === "llm" ? "answer model" : "text patterns"}). Fix anything that's wrong; the vault won't overwrite your changes.` : ""}
       </p>
       <div className="wide" style={{ display: "flex", gap: 8 }}>
         <button className="btn primary" type="submit">Save</button>

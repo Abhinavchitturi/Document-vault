@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
+import AIDownload from "@/components/AIDownload";
 import AppShell, { useVault } from "@/components/AppShell";
 import { displayName, FileIcon } from "@/components/DocBits";
 import Icon from "@/components/Icon";
@@ -124,7 +125,8 @@ function Dashboard() {
             <div className="item">
               <span className="dotc" style={{ background: info?.llm_status.ready ? "var(--good)" : "var(--warn)" }} />
               <div><strong>{info?.llm_status.ready ? "Assistant ready" : "Assistant offline"}</strong>
-                <div className="muted" style={{ fontSize: 13 }}>{info?.llm_status.message ?? "Checking…"}</div></div>
+                <div className="muted" style={{ fontSize: 13 }}>{info?.llm_status.message ?? "Checking…"}</div>
+                <AIDownload compact /></div>
             </div>
             <div className="item">
               <span className="dotc" style={{ background: info?.ocr_available ? "var(--good)" : "var(--faint)" }} />

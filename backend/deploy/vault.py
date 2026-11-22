@@ -1,6 +1,6 @@
 """Run the vault on the Mac or on Windows (Phase 13): start, stop, status, logs, update, start at login.
 
-    ./vault start          checks PostgreSQL / Ollama / Tailscale, starts the vault in the background
+    ./vault start          checks the database, the local AI and Tailscale, starts the vault in the background
     ./vault stop
     ./vault status         is it running, can phones reach it, is the assistant ready
     ./vault logs           the last lines of the log (add -f to follow)
@@ -147,9 +147,6 @@ class Vault:
     def open_url(self, url: str) -> None:
         self.run(["open", url])
 
-    def _open_ollama(self) -> None:
-        self.run(["open", "-a", "Ollama"])
-
     def _tesseract_ok(self) -> bool:
         return self.run(["tesseract", "--version"]).returncode == 0
 
@@ -172,26 +169,12 @@ class Vault:
                      "running" if pg.returncode == 0 else "not running: brew services start postgresql@16",
                      required=not os.environ.get("VAULT_DATABASE_URL", "").startswith("sqlite"))
 
-    def _ollama_check(self, fix: bool) -> Check:
-        ollama = self.http_ok("http://localhost:11434/api/tags")
-        if not ollama and fix:
-            self.say("Opening Ollama…")
-            self._open_ollama()
-            for _ in range(20):
-                self.sleep(1)
-                if self.http_ok("http://localhost:11434/api/tags"):
-                    ollama = True
-                    break
-        return Check("Answers (Ollama)", ollama, "running" if ollama else "not running: open the Ollama app")
-
     def checks(self, fix: bool = True) -> list[Check]:
         out = [self.database_check(fix)]
 
         from backend.llm import llamacpp
 
-        if os.environ.get("VAULT_LLM") == "ollama":  # asked for by name
-            out.append(self._ollama_check(fix))
-        elif llamacpp.installed():  # the vault starts llama.cpp itself: nothing to open
+        if llamacpp.installed():  # the vault starts llama.cpp itself: nothing to open
             out.append(Check("Answers (local AI)", True, f"llama.cpp with {llamacpp.MODEL['label']}, starts with the vault"))
         else:
             out.append(Check("Answers (local AI)", False,
@@ -412,17 +395,6 @@ class WindowsVault(Vault):
         ready = self.run(["pg_isready", "-q"]).returncode == 0
         return Check("Database (PostgreSQL)", ready, "running" if ready else "not running: start the PostgreSQL service",
                      required=True)
-
-    def _open_ollama(self) -> None:
-        app = Path(os.environ.get("LOCALAPPDATA", "")) / "Programs" / "Ollama" / "ollama app.exe"
-        env = dict(os.environ)
-        try:
-            if app.exists():
-                self.spawn([str(app)], cwd=self.root, env=env, log=self.log)
-            elif shutil.which("ollama"):
-                self.spawn(["ollama", "serve"], cwd=self.root, env=env, log=self.log)
-        except OSError:
-            pass  # the check that follows reports that Ollama isn't running
 
     def _tesseract_ok(self) -> bool:
         from backend.parser.ocr import tesseract_path

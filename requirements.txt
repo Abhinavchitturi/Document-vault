@@ -14,8 +14,8 @@ torch
 numpy
 faiss-cpu
 
-# Answers come from a local model served by Ollama (https://ollama.com), a separate
-# app, not a Python package: install it, then `ollama pull llama3.1:8b`.
+# Answers come from a local model run by llama.cpp, which isn't a Python package: the installers (or
+# `python -m backend.llm.setup`, or the apps' Download button) download a pinned build and the model.
 
 # Document records (Phase 2): PostgreSQL on this computer, or SQLite
 sqlalchemy>=2

@@ -32,6 +32,16 @@ public struct AuthStatus: Codable, Sendable {
 public struct LlmStatus: Codable, Sendable {
     public let ready: Bool
     public let message: String
+    public let canDownload: Bool?  // the local AI isn't downloaded yet: offer the one-click download
+}
+
+/// How far the one-click download of the local AI is.
+public struct AIDownloadStatus: Codable, Sendable {
+    public let state: String  // idle, downloading, done, failed
+    public let step: String?  // "llama.cpp" or "model"
+    public let done: Int
+    public let total: Int
+    public let error: String?
 }
 
 public struct Info: Codable, Sendable {

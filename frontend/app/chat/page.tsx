@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import AIDownload from "@/components/AIDownload";
 import AppShell, { useVault } from "@/components/AppShell";
 import Answer, { citationOrder } from "@/components/Answer";
 import { catStyle } from "@/components/DocBits";
@@ -171,7 +172,10 @@ function ChatView() {
                   ? "Your vault is empty. Upload policies, warranty cards, bills or property papers, then ask me anything about them."
                   : `Ask me anything about your ${info ? `${info.num_documents} ` : ""}documents: expiry dates, amounts, policy numbers, warranties.`}</p>
                 {info && !info.llm_status.ready && (
-                  <div className="notice"><Icon name="warn" /><span>{sentence(info.llm_status.message)} Until then I can only point you to the closest line in your documents.</span></div>
+                  <div className="notice" style={{ flexDirection: "column", alignItems: "stretch" }}>
+                    <span style={{ display: "flex", gap: 10 }}><Icon name="warn" /><span>{sentence(info.llm_status.message)} Until then I can only point you to the closest line in your documents.</span></span>
+                    <AIDownload compact />
+                  </div>
                 )}
                 <div className="suggestions">
                   {SUGGESTIONS.map(([cat, q]) => (

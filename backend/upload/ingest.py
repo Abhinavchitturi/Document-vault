@@ -200,31 +200,31 @@ def main() -> None:
         raise SystemExit(str(e)) from e
     embedder = Embedder(args.model or DEFAULT_MODEL)
     tokenizer = HFTokenizer(embedder.model_name)
-    from backend.llm.ollama import DEFAULT_MODEL as DEFAULT_LLM
-    from backend.llm.ollama import OllamaLLM
+    from backend.llm import llamacpp
 
-    classifier = Classifier(embedder, OllamaLLM(DEFAULT_LLM))  # asks Ollama only when unsure; fine if it's off
+    with llamacpp.running() as llm:  # the answer model, asked only when unsure; fine if it isn't downloaded
+        classifier = Classifier(embedder, llm)
 
-    added = skipped = failed = 0
-    for path in iter_files(args.paths):
-        category = args.category
-        if category == "auto" and path.parent.name.lower() in CATEGORIES:
-            category = path.parent.name.lower()
-        try:
-            result = ingest_file(path, store, embedder, tokenizer, category, classifier=classifier)
-        except Exception as e:  # keep importing the rest of the folder
-            failed += 1
-            logger.error("%s: %s", path, e)
-            continue
-        doc = result.document
-        if result.created:
-            added += 1
-            logger.info("Added %s [%s] %d pages, %d chunks", doc["filename"], doc["category"], doc["pages"], doc["num_chunks"])
-        else:
-            skipped += 1
-            logger.info("Already in library: %s", path.name)
-    logger.info("Done: %d added, %d already present, %d failed. Vault for %s: %d documents",
-                added, skipped, failed, store.owner, len(store.documents))
+        added = skipped = failed = 0
+        for path in iter_files(args.paths):
+            category = args.category
+            if category == "auto" and path.parent.name.lower() in CATEGORIES:
+                category = path.parent.name.lower()
+            try:
+                result = ingest_file(path, store, embedder, tokenizer, category, classifier=classifier)
+            except Exception as e:  # keep importing the rest of the folder
+                failed += 1
+                logger.error("%s: %s", path, e)
+                continue
+            doc = result.document
+            if result.created:
+                added += 1
+                logger.info("Added %s [%s] %d pages, %d chunks", doc["filename"], doc["category"], doc["pages"], doc["num_chunks"])
+            else:
+                skipped += 1
+                logger.info("Already in library: %s", path.name)
+        logger.info("Done: %d added, %d already present, %d failed. Vault for %s: %d documents",
+                    added, skipped, failed, store.owner, len(store.documents))
 
 
 if __name__ == "__main__":

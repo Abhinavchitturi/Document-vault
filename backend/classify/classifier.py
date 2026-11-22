@@ -5,7 +5,7 @@ Uses only the models already on this computer, no extra downloads:
     1. Keywords   "premium", "sum insured", "due date", "serial number"... (and the file name)
     2. Meaning    the search model compares the document's opening with a short description
                   of each type, so a policy that never says "insurance" still lands right
-    3. Assistant  only when 1 and 2 disagree or are unsure: the local answer model (Ollama)
+    3. Assistant  only when 1 and 2 disagree or are unsure: the local answer model (llama.cpp)
                   reads the start of the document and picks a type, as structured JSON
 
 Clear-cut documents (most bills and policies) are settled by 1 + 2 in milliseconds; the
@@ -117,7 +117,7 @@ class Classifier:
         prompt = f"File name: {filename}\n\nStart of the document:\n{text[:3000]}"
         try:
             answer = self.llm.generate_json(system, prompt, ASSISTANT_SCHEMA)
-        except Exception as e:  # Ollama off, model missing, bad JSON: fall back quietly
+        except Exception as e:  # model not downloaded or not ready, bad JSON: fall back quietly
             logger.info("Assistant couldn't sort %s (%s); using keywords and meaning", filename, e)
             return None
         category = answer.get("category")

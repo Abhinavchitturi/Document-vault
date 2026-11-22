@@ -122,7 +122,7 @@ PostgreSQL     Qdrant         File store
                  |
    Snowflake Arctic Embed M v1.5
                  |
-          Local LLM (Ollama)
+          Local LLM (llama.cpp)
      chosen by measurement, on-device
 ```
 
@@ -135,7 +135,7 @@ Documents are in **English**, so English models and English OCR are enough.
 | Job | Phase | Model | Size | Notes |
 |---|---|---|---|---|
 | Embeddings | 1 | Snowflake Arctic Embed M v1.5 (Snowflake, US), Apache 2.0 | ~440 MB | Strong English retrieval, no custom code needed |
-| Answers | 1 | **Chosen by measurement**, see below | 5–9 GB | Served by Ollama |
+| Answers | 1 | **Chosen by measurement**, see below | ~5 GB | Run by llama.cpp, started by the vault |
 | OCR | 4 | Tesseract (English) | small | Local program |
 | Reranker | 5 | mxbai-rerank-base v1 (Mixedbread, Germany), Apache 2.0; or the ms-marco MiniLM cross-encoder | ~0.1–0.8 GB | Reorders the top results; picked by measurement |
 | Classification, expiry dates | 8, 9 | the same answer LLM | – | No extra model |
@@ -143,8 +143,7 @@ Documents are in **English**, so English models and English OCR are enough.
 ### Choosing the answer LLM
 "Most accurate" is measured on our own question set, not taken from leaderboards: what
 matters is copying exact dates, amounts and policy numbers from the family's documents.
-`python -m backend.eval.compare_llms` gives every candidate the same retrieved passages and
-ranks them by accuracy, then speed. Shortlist: one bigger, one smaller model that fit a 16 GB Mac:
+Every candidate got the same retrieved passages and was ranked by accuracy, then speed. Shortlist: one bigger, one smaller model that fit a 16 GB Mac:
 
 | Candidate | By | Download | |
 |---|---|---|---|
@@ -169,7 +168,7 @@ the default is `llama3.1:8b`. With only 24 questions, a difference of one or two
 a tie; prefer the faster model then.
 
 Guard rails in the code:
-- The LLM client refuses any Ollama address that isn't this machine.
+- The LLM client refuses any address that isn't this machine.
 - Once the embedding model is downloaded, the Hugging Face libraries are switched to offline mode.
 - The web page loads nothing from the internet (no web fonts, no CDNs).
 - Reasoning models' private "thinking" is stripped before an answer is shown.

@@ -51,7 +51,10 @@ public sealed class ChatPage : UserControl
         var welcome = UI.Stack(12, UI.Title("What would you like to know?"),
             UI.Text($"Ask about your {state.Documents.Count} documents: expiry dates, amounts, policy numbers, warranties.", secondary: true));
         if (state.Info?.LlmStatus is { Ready: false } offline)
+        {
             welcome.Children.Add(new InfoBar { IsOpen = true, IsClosable = false, Severity = InfoBarSeverity.Warning, Message = offline.Message });
+            welcome.Children.Add(new AIDownloadPanel());
+        }
         var grid = new VariableSizedWrapGrid { Orientation = Orientation.Horizontal, ItemWidth = 380 };
         foreach (var suggestion in Suggestions)
         {

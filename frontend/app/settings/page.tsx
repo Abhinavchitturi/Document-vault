@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import AIDownload from "@/components/AIDownload";
 import AppShell, { useVault } from "@/components/AppShell";
 import Icon from "@/components/Icon";
 import { useTheme, type Theme } from "@/components/ThemeToggle";
@@ -17,29 +18,13 @@ function SettingsView() {
   const { refresh } = useVault();
   const [theme, setTheme] = useTheme();
   const [s, setS] = useState<Settings | null>(null);
-  const [model, setModel] = useState("");
   const [name, setName] = useState("");
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState<{ ok: boolean; text: string } | null>(null);
 
-  const load = () => api.settings().then((r) => { setS(r); setModel(r.llm_model ?? ""); setName(r.owner); })
+  const load = () => api.settings().then((r) => { setS(r); setName(r.owner); })
     .catch((e) => setMessage({ ok: false, text: e.message }));
   useEffect(() => { load(); }, []);
-
-  const save = async () => {
-    setSaving(true);
-    setMessage(null);
-    try {
-      const r = await api.saveSettings({ llm_model: model });
-      setS(r);
-      setMessage({ ok: true, text: `Answers now come from ${model}.` });
-      refresh();
-    } catch (e) {
-      setMessage({ ok: false, text: (e as Error).message });
-    } finally {
-      setSaving(false);
-    }
-  };
 
   const saveName = async () => {
     setSaving(true);
@@ -98,22 +83,11 @@ function SettingsView() {
           <div className="setting-row">
             <div className="label">
               <strong>Answer model</strong>
-              <span>Runs on this computer with Ollama. Download more with <code>ollama pull &lt;name&gt;</code>.</span>
+              <span>Llama 3.1 8B, run by llama.cpp on this computer. Your documents and questions never leave it.</span>
             </div>
-            {s && s.is_admin && s.llm_models.length > 0 ? (
-              <div style={{ display: "flex", gap: 8 }}>
-                <select className="input" value={model} onChange={(e) => setModel(e.target.value)} aria-label="Answer model">
-                  {!s.llm_models.includes(model) && model && <option value={model}>{model} (not downloaded)</option>}
-                  {s.llm_models.map((m) => <option key={m} value={m}>{m}</option>)}
-                </select>
-                <button className="btn primary" type="button" onClick={save} disabled={saving || model === s.llm_model}>
-                  {saving ? "Saving…" : "Use"}
-                </button>
-              </div>
-            ) : (
-              <span className="muted">{s ? s.llm_model ?? "Off" : "…"}</span>
-            )}
+            <span className="muted">{s ? s.llm_model ?? "Off" : "…"}</span>
           </div>
+          <AIDownload />
           <div className="setting-row">
             <div className="label"><strong>Status</strong><span>{s?.llm_status.message ?? "Checking…"}</span></div>
             <span className={`pill ${s?.llm_status.ready ? "ready" : "not-ready"}`}><span className="dot" />{s?.llm_status.ready ? "Ready" : "Offline"}</span>
@@ -142,7 +116,7 @@ function SettingsView() {
               <dt>Search</dt><dd>{SEARCH_LABEL[s.search_method] ?? s.search_method}</dd>
               <dt>Search model</dt><dd>{s.embedding_model}</dd>
               <dt>Reading dates and amounts</dt>
-              <dd>{s.facts_reader === "needle" ? "Needle 3 (on this computer)" : s.facts_reader === "ollama"
+              <dd>{s.facts_reader === "needle" ? "Needle 3 (on this computer)" : s.facts_reader === "llm"
                 ? <>The answer model. For Needle 3: <code>pip install cactus-needle</code>, then <code>python -m backend.extract.needle_setup</code></>
                 : <>Text patterns. For Needle 3: <code>pip install cactus-needle</code>, then <code>python -m backend.extract.needle_setup</code></>}</dd>
               <dt>Document records</dt><dd><code>{s.database}</code></dd>

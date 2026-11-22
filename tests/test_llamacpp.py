@@ -16,7 +16,7 @@ import pytest
 
 from backend.llm import llamacpp, setup
 from backend.llm.llamacpp import LlamaCppLLM
-from backend.llm.ollama import LLMUnavailableError
+from backend.llm.llamacpp import LLMUnavailableError
 
 
 class Pretend(BaseHTTPRequestHandler):
@@ -168,7 +168,7 @@ def test_a_download_that_does_not_match_its_checksum_is_thrown_away(tmp_path, mo
     assert llamacpp.server_path() is None
 
 
-def test_the_vault_reports_llamacpp_instead_of_opening_ollama(tmp_path, monkeypatch, pretend):
+def test_the_vault_reports_the_local_ai_when_it_is_downloaded(tmp_path, monkeypatch, pretend):
     from tests.test_deploy import FakeMac, vault
 
     _with_files(tmp_path, monkeypatch, pretend)
@@ -177,10 +177,59 @@ def test_the_vault_reports_llamacpp_instead_of_opening_ollama(tmp_path, monkeypa
     mac = FakeMac()
     v, _ = vault(tmp_path, mac)
     answers = [c for c in v.checks(fix=True) if c.name.startswith("Answers")][0]
-    assert answers.ok and "llama.cpp" in answers.message and not mac.ran("open", "-a", "Ollama")
+    assert answers.ok and "llama.cpp" in answers.message
 
 
 def test_every_supported_computer_has_a_pinned_build():
     for (system, machine), (name, digest) in llamacpp.BINARIES.items():
         assert llamacpp.BUILD in name and len(digest) == 64
     assert len(llamacpp.MODEL["sha256"]) == 64 and llamacpp.MODEL["url"].startswith("https://huggingface.co/")
+
+
+def test_one_click_download_from_the_app(tmp_path, monkeypatch, pretend):
+    import time
+
+    from backend.api.app import create_app
+    from backend.chunker.chunker import RegexTokenizer
+    from backend.llm.local_ai import LocalAI
+    from backend.vector_store.store import DocumentStore
+    from tests.fakes import FakeEmbedder, signed_in
+
+    _with_files(tmp_path, monkeypatch, pretend)
+
+    class Server:  # stands in for llama-server: records that the vault started it
+        server = model = None
+        started = False
+
+        def start(self):
+            self.started = True
+
+    class NotYet:  # the answer model, before it is downloaded
+        name = "llama.cpp/test"
+
+        def status(self):
+            return (llamacpp.installed(), "The local AI isn't downloaded yet.")
+
+    server = Server()
+    app = create_app(DocumentStore(tmp_path / "index"), FakeEmbedder(), RegexTokenizer(), NotYet(),
+                     frontend_dir=None, local_ai=LocalAI(server))
+    admin = signed_in(app, "abhinav")
+    status = admin.get("/api/info").json()["llm_status"]
+    assert not status["ready"] and status["can_download"] and "5 GB" in status["message"]
+    assert admin.get("/api/ai/download").json()["state"] == "idle"
+
+    assert admin.post("/api/ai/download").json()["state"] == "downloading"
+    deadline = time.monotonic() + 20
+    while admin.get("/api/ai/download").json()["state"] == "downloading" and time.monotonic() < deadline:
+        time.sleep(0.1)
+    done = admin.get("/api/ai/download").json()
+    assert done["state"] == "done" and done["error"] is None
+    assert llamacpp.installed() and server.started and server.model == llamacpp.model_path()  # started, no restart
+    after = admin.get("/api/info").json()["llm_status"]
+    assert after["ready"] and not after["can_download"]
+    assert admin.post("/api/ai/download").status_code == 409  # nothing left to download
+
+    admin.post("/api/users", json={"name": "sunita", "password": "another long password"})
+    admin.post("/api/auth/logout")
+    admin.post("/api/auth/login", json={"name": "sunita", "password": "another long password"})
+    assert admin.post("/api/ai/download").status_code == 403  # only an admin downloads it

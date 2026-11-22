@@ -15,6 +15,15 @@ export const CATEGORY_LABEL: Record<Category, string> = {
 export interface LlmStatus {
   ready: boolean;
   message: string;
+  can_download: boolean; // the local AI isn't downloaded yet: offer the one-click download
+}
+
+export interface AIDownloadStatus {
+  state: "idle" | "downloading" | "done" | "failed";
+  step: "llama.cpp" | "model" | null;
+  done: number;
+  total: number;
+  error: string | null;
 }
 
 export interface User {
@@ -148,7 +157,7 @@ export interface VaultDocument {
   amount: string | null; // digits, e.g. "2486"
   reference: string | null;
   issuer: string | null;
-  facts_method: "needle" | "ollama" | "rules" | "person" | null;
+  facts_method: "needle" | "llm" | "rules" | "person" | null;
   num_chunks: number;
   size_bytes: number;
   added_at: string;
@@ -184,7 +193,7 @@ export interface Settings {
   index_dir: string;
   ocr_available: boolean;
   search_method: "hybrid" | "vector" | "keyword";
-  facts_reader: "needle" | "ollama" | "rules";
+  facts_reader: "needle" | "llm" | "rules";
   key_kept_in: string;
   family_mode: boolean; // everyone sees every document not marked private (Phase 12)
 }
@@ -319,7 +328,9 @@ export const api = {
     return fetch("/api/documents", { method: "POST", body: form }).then((r) => json<UploadResult[]>(r));
   },
   settings: () => fetch("/api/settings").then((r) => json<Settings>(r)),
-  saveSettings: (changes: { llm_model?: string; owner_name?: string; family_mode?: boolean }) =>
+  aiDownloadStatus: () => fetch("/api/ai/download").then((r) => json<AIDownloadStatus>(r)),
+  aiDownload: () => postJson("/api/ai/download", {}).then((r) => json<AIDownloadStatus>(r)),
+  saveSettings: (changes: { owner_name?: string; family_mode?: boolean }) =>
     fetch("/api/settings", {
       method: "POST",
       headers: { "Content-Type": "application/json" },

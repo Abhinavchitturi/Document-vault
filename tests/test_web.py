@@ -11,15 +11,15 @@ from tests.pdf_helper import make_pdf
 
 
 class ModelLLM(FakeLLM):
-    """Like the Ollama client: has a model name and a list of downloaded models."""
+    """Like the llama.cpp client: one pinned model."""
 
     def __init__(self):
         super().__init__()
         self.model = "llama3.1:8b"
-        self.name = "ollama/llama3.1:8b"
+        self.name = "llama.cpp/llama3.1:8b"
 
     def list_models(self):
-        return ["gemma3:12b", "llama3.1:8b"]
+        return ["llama3.1:8b"]
 
 
 @pytest.fixture
@@ -75,15 +75,11 @@ def test_documents_can_be_refiled(web):
     assert client.patch("/api/documents/nope", json={"category": "bill"}).status_code == 404
 
 
-def test_settings_show_setup_and_switch_the_answer_model(web):
+def test_settings_show_the_setup(web):
     client, llm = web
     s = client.get("/api/settings").json()
-    assert s["llm_model"] == "llama3.1:8b" and s["llm_models"] == ["gemma3:12b", "llama3.1:8b"]
+    assert s["llm_model"] == "llama3.1:8b" and s["llm_models"] == ["llama3.1:8b"]
     assert s["database"] == "postgresql+psycopg://localhost/vault" and s["owner"] == "family"
-    assert client.post("/api/settings", json={"llm_model": "gemma3:12b"}).json()["llm_model"] == "gemma3:12b"
-    assert llm.model == "gemma3:12b"
-    bad = client.post("/api/settings", json={"llm_model": "phi4"})
-    assert bad.status_code == 400 and "ollama pull phi4" in bad.json()["detail"]
 
 
 def test_owner_can_be_renamed_and_is_remembered(tmp_path):

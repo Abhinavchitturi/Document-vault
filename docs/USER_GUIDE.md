@@ -20,12 +20,12 @@ The full reference for setting up, running and using the vault. For a short over
 | 10 | Reminders | ✅ Before expiries and due dates: phone notifications (even with the Mac off), Mac notifications, a calendar file, and the Dashboard; days, time and "Paid / Done" per person |
 | 11 | Security | ✅ Documents, scans, search index, file names and ID numbers encrypted on disk (AES-256), key in the macOS Keychain with a paper recovery key; encrypted one-file backups; an activity log of sign-ins and document access |
 | 12 | Family sharing | ✅ Whole-family mode (default): everyone sees every document not marked private; or each person's own plus documents shared with chosen members. Only the owner changes or deletes a document; every change in the activity log |
-| 13 | Deployment | ✅ `./vault start / stop / status / logs / update`, Start/Stop Vault in Finder: checks and starts PostgreSQL, Ollama and Tailscale, runs in the background under macOS launchd (restarted after a crash, logs in `data/logs/`), optional start at login; `update` pulls, installs what changed and says whether phones need a new app |
+| 13 | Deployment | ✅ `./vault start / stop / status / logs / update`, Start/Stop Vault in Finder: checks and starts the database, the local AI and Tailscale, runs in the background under macOS launchd (restarted after a crash, logs in `data/logs/`), optional start at login; `update` pulls, installs what changed and says whether phones need a new app |
 
 ## Privacy
 - Built for a family, not for the public internet. The repository contains **code and fictional samples only**.
 - Real documents, their text and the search index live in `data/` (git-ignored) on your computer.
-- **Local models only**: embeddings (Snowflake Arctic Embed), answers (a local LLM in llama.cpp, or Ollama)
+- **Local models only**: embeddings (Snowflake Arctic Embed), answers (a local LLM, Llama 3.1 8B, in llama.cpp)
   and OCR (Tesseract) all run on your machine. No models from Chinese developers are used. The LLM client refuses any non-local address, the
   embedding model runs offline once downloaded, and the web page loads nothing from the internet.
 - Every family member signs in with their own password, and the server only ever shows them their own
@@ -113,8 +113,8 @@ checked against their published SHA-256. The vault starts llama.cpp itself; ther
 ```bash
 python -m backend.llm.setup          # --check reports what is there
 ```
-Developers who prefer [Ollama](https://ollama.com) can start the vault with `--llm ollama` (or `VAULT_LLM=ollama`);
-otherwise the vault always uses llama.cpp.
+Or skip this: the apps show a **Download the AI** button (Settings, Ask, the dashboard) that downloads the same
+files with a progress bar and starts the AI when it's done.
 For photos and scanned PDFs (includes English and page-orientation detection):
 ```bash
 brew install tesseract
@@ -176,7 +176,7 @@ needed to build the pages.
 | **Chat** | Ask like a chatbot: answers stream in with numbered sources. Click one to see the page with the passage lightly highlighted and the answer itself (amounts, dates, policy numbers) strongly highlighted; **Open original** opens the untouched file. Follow-ups work; the chat is kept while you switch pages and forgotten when you close the tab. |
 | **Documents** | Every document, filterable by type and searchable by name. Change a document's type if auto-detect got it wrong, view it, open the original, or remove it. |
 | **Upload** | Drag and drop PDFs, Word files, text or photos; choose a type or let it detect one. |
-| **Settings** | Switch the answer model (any model you've downloaded in Ollama), theme, and where your data lives. |
+| **Settings** | The answer model (and its one-click download), theme, and where your data lives. |
 
 The pages load nothing from the internet: the server sends a Content-Security-Policy that
 only allows this computer.
@@ -184,8 +184,7 @@ only allows this computer.
 Working on the pages: run `python -m backend.api.app` and, in another terminal,
 `cd frontend && npm run dev`, then open http://localhost:3000 (it forwards `/api` to :8000).
 
-- Another local model: choose it in **Settings**, or start with `--llm-model gemma3:12b` (after `ollama pull gemma3:12b`)
-- If the local AI isn't running (or, with Ollama, Ollama isn't open), the header shows **Assistant offline**, and replies say how to start it and point to the closest line in your documents.
+- If the local AI isn't downloaded or running, the header shows **Assistant offline**, and replies say how to start it and point to the closest line in your documents.
 
 Import a whole folder instead of uploading one by one. Subfolders named `insurance/`,
 `warranty/`, `bill/` or `property/` set the category; anything else is auto-detected:
@@ -233,7 +232,7 @@ Uploads left on **Detect automatically** are sorted by the vault, with the model
 this computer (no extra download):
 1. **Keywords**: "premium", "sum insured", "due date", "serial number"… and the file name.
 2. **Meaning**: the search model compares the document's opening with a description of each type.
-3. **The answer model** (Ollama) is asked only when 1 and 2 disagree or aren't sure.
+3. **The answer model** (llama.cpp) is asked only when 1 and 2 disagree or aren't sure.
 
 Each document remembers whether a person or the vault chose its type, and how sure the vault
 was. Under 60% sure, Documents shows **check type** (also on the phone); picking a type in
@@ -266,7 +265,7 @@ Who reads them, best first:
    python -m backend.extract.needle_setup
    ```
    Needle's anonymous usage counts are switched off by the vault.
-2. The **answer model** in Ollama, if Needle isn't set up.
+2. The **answer model** (llama.cpp), if Needle isn't set up.
 3. **Text patterns** ("Due date: 18 September 2026"), always there as the fallback, and used
    to fill any field the model missed.
 
@@ -414,14 +413,9 @@ with `--search vector` or `--search keyword` to try one method alone.
 Models are picked by measuring on the sample questions, not by reputation. No models from
 Chinese developers are used.
 
-**Answer LLM.** Shortlist: `gemma3:12b` (bigger) and `llama3.1:8b` (smaller), ~13 GB together:
-```bash
-ollama pull gemma3:12b && ollama pull llama3.1:8b
-python -m backend.eval.compare_llms gemma3:12b llama3.1:8b --show-misses
-```
-Every model gets the same retrieved passages for the 24 sample questions; the table ranks
-them by accuracy, then speed, and `results/llm_comparison.json` keeps every answer. Start
-the app with the winner: `python -m backend.api.app --llm-model <winner>`.
+**Answer LLM.** Llama 3.1 8B Instruct (Meta), 4-bit GGUF, run by a pinned llama.cpp build: it fits an 8 GB
+computer and copies dates, amounts and numbers faithfully on the sample questions. Score it with
+`python -m backend.eval.evaluate --with-llm --show-misses`.
 
 **Embedding model.** Default is Snowflake Arctic Embed M v1.5 (bigger); compare with the smaller S:
 ```bash
@@ -449,18 +443,18 @@ Layout:
 | `backend/extract/` | Key facts: readers and checks (`facts.py`), filling in older documents (`run.py`), Needle setup (`needle_setup.py`) |
 | `backend/classify/` | Sorting documents into types (`classifier.py`), re-sorting older ones (`run.py`) |
 | `backend/retriever/` | Question → passages: hybrid fusion (`retriever.py`), keyword search (`bm25.py`) |
-| `backend/llm/` | The local AI: llama.cpp (`llamacpp.py`, downloaded by `setup.py`) or Ollama (`ollama.py`), and the answer-with-citations prompt |
+| `backend/llm/` | The local AI: llama.cpp (`llamacpp.py`), its download (`setup.py`, and `local_ai.py` for the apps' button), and the answer-with-citations prompt |
 | `backend/viewer/` | Finds the passage and the answer's facts on a page (PDF boxes, Word/text spans) |
 | `backend/api/` | FastAPI app: the API, and serving the built web app |
 | `frontend/` | Next.js web app (React, TypeScript), built to static files in `frontend/out/` |
-| `backend/eval/` | Scoring on the sample questions; `compare_llms.py` ranks local LLMs |
+| `backend/eval/` | Scoring on the sample questions |
 
 ## Tests
 ```bash
 pytest -q
 ```
 176 tests. They use a fake embedder and a fake LLM, so they run in a few seconds without
-downloading models or running Ollama. By default they use SQLite; to run them against
+downloading models or running the local AI. By default they use SQLite; to run them against
 PostgreSQL (each test gets a throwaway database):
 ```bash
 VAULT_TEST_DATABASE_URL=postgresql+psycopg://localhost/postgres pytest -q

@@ -27,7 +27,10 @@ public static class Categories
 
 public sealed record User(int Id, string Name, bool IsAdmin);
 public sealed record AuthStatus(User? User, bool SetupNeeded, string? SuggestedName);
-public sealed record LlmStatus(bool Ready, string Message);
+public sealed record LlmStatus(bool Ready, string Message, bool CanDownload = false);
+
+/// How far the one-click download of the local AI is: idle, downloading (step, done, total), done or failed.
+public sealed record AIDownloadStatus(string State, string? Step, long Done, long Total, string? Error);
 public sealed record Person(int Id, string Name);
 
 public sealed record Info(string Owner, bool IsAdmin, string? Llm, LlmStatus LlmStatus, int NumDocuments, int NumChunks,

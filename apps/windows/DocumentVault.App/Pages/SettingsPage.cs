@@ -81,6 +81,7 @@ public sealed class SettingsPage : UserControl
 
         var details = UI.Stack(6, UI.Subtitle("Vault"), UI.Caption("Loading…"));
         body.Children.Add(UI.Card(details));
+        if (state.Remote is null) body.Children.Add(UI.Card(UI.Stack(8, UI.Subtitle("Local AI"), new AIDownloadPanel())));
         body.Children.Add(UI.Card(UI.Stack(8, UI.Subtitle("Privacy"),
             UI.Text("Everything stays on this PC. Nothing listens on the network for this app; phones connect only if you pair them.", secondary: true),
             UI.Text(state.Remote is null ? $"Vault folder: {state.Folder}" : "The vault's folder is on the other computer.", secondary: true),

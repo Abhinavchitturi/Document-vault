@@ -81,17 +81,17 @@ def test_ask_returns_answer_with_cited_sources(tmp_path):
 
 
 def test_ask_when_llm_is_off_or_down(tmp_path):
-    from backend.llm.ollama import LLMUnavailableError
+    from backend.llm.llamacpp import LLMUnavailableError
     from tests.fakes import FakeLLM
 
     no_llm = signed_in(create_app(DocumentStore(tmp_path / "a"), FakeEmbedder(), RegexTokenizer()))
     assert no_llm.post("/api/ask", json={"question": "x"}).status_code == 503
     assert no_llm.get("/api/info").json()["llm_status"]["ready"] is False
-    down = FakeLLM(error=LLMUnavailableError("Can't reach Ollama on this computer."))
+    down = FakeLLM(error=LLMUnavailableError("Can't reach the local AI on this computer."))
     client = signed_in(create_app(DocumentStore(tmp_path / "b"), FakeEmbedder(), RegexTokenizer(), down))
     upload(client, "a.txt", b"Water bill due 15 July")
     res = client.post("/api/ask", json={"question": "water bill"})
-    assert res.status_code == 503 and "Ollama" in res.json()["detail"]
+    assert res.status_code == 503 and "local AI" in res.json()["detail"]
 
 
 def _chat(client, **body):
@@ -129,14 +129,14 @@ def test_chat_follow_up_uses_history(tmp_path):
 
 
 def test_chat_reports_llm_problems_as_an_event(tmp_path):
-    from backend.llm.ollama import LLMUnavailableError
+    from backend.llm.llamacpp import LLMUnavailableError
     from tests.fakes import FakeLLM
 
-    down = FakeLLM(error=LLMUnavailableError("Can't reach Ollama on this computer."))
+    down = FakeLLM(error=LLMUnavailableError("Can't reach the local AI on this computer."))
     client = signed_in(create_app(DocumentStore(tmp_path / "index"), FakeEmbedder(), RegexTokenizer(), down))
     upload(client, "a.txt", b"Water bill due 15 July")
     _, events = _chat(client, question="water bill")
     assert [e["type"] for e in events] == ["sources", "error"]
-    assert events[1]["message"].startswith("I'm not able to answer") and "Ollama" in events[1]["detail"]
+    assert events[1]["message"].startswith("I'm not able to answer") and "local AI" in events[1]["detail"]
     no_llm = signed_in(create_app(DocumentStore(tmp_path / "b"), FakeEmbedder(), RegexTokenizer()))
     assert no_llm.post("/api/chat", json={"question": "x"}).status_code == 503

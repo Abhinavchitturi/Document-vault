@@ -61,8 +61,9 @@ def main() -> None:
     logging.basicConfig(level=logging.WARNING, format="%(levelname)s %(message)s")
     from backend.database.db import DatabaseUnavailableError, database_url
     from backend.embeddings.embedder import DEFAULT_MODEL, Embedder
-    from backend.llm.ollama import DEFAULT_MODEL as DEFAULT_LLM
-    from backend.llm.ollama import OllamaLLM
+    from contextlib import nullcontext
+
+    from backend.llm import llamacpp
     from backend.vector_store.store import DocumentStore
 
     try:
@@ -70,16 +71,17 @@ def main() -> None:
     except DatabaseUnavailableError as e:
         raise SystemExit(str(e)) from e
     embedder = Embedder(store.model or DEFAULT_MODEL)
-    classifier = Classifier(embedder, None if args.no_llm else OllamaLLM(DEFAULT_LLM))
-    report = resort(store, classifier, embedder.encode_passages, args.apply)
-    if not report:
-        print("Nothing to change.")
-        return
-    for r in report:
-        arrow = f"{r['from']} -> {r['to']}" if r["from"] != r["to"] else f"{r['to']} (unchanged)"
-        check = "  ⚠ check" if r["confidence"] < REVIEW_BELOW else ""
-        print(f"{r['owner']:<12} {r['filename'][:48]:<48} {arrow:<26} {r['confidence']:>3}% {r['method']}{check}")
-    print("\nApplied." if args.apply else "\nNothing changed yet. Run again with --apply to make these changes.")
+    with (nullcontext() if args.no_llm else llamacpp.running()) as llm:
+        classifier = Classifier(embedder, llm)
+        report = resort(store, classifier, embedder.encode_passages, args.apply)
+        if not report:
+            print("Nothing to change.")
+            return
+        for r in report:
+            arrow = f"{r['from']} -> {r['to']}" if r["from"] != r["to"] else f"{r['to']} (unchanged)"
+            check = "  ⚠ check" if r["confidence"] < REVIEW_BELOW else ""
+            print(f"{r['owner']:<12} {r['filename'][:48]:<48} {arrow:<26} {r['confidence']:>3}% {r['method']}{check}")
+        print("\nApplied." if args.apply else "\nNothing changed yet. Run again with --apply to make these changes.")
 
 
 if __name__ == "__main__":

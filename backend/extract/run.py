@@ -43,26 +43,27 @@ def main() -> None:
     parser.add_argument("--apply", action="store_true")
     parser.add_argument("--index-dir", default="data/index")
     parser.add_argument("--database-url", default=None)
-    parser.add_argument("--reader", choices=["auto", "needle", "ollama", "rules"], default="auto")
+    parser.add_argument("--reader", choices=["auto", "needle", "llm", "rules"], default="auto")
     args = parser.parse_args()
 
     from backend.database.db import DatabaseUnavailableError, database_url
-    from backend.llm.ollama import DEFAULT_MODEL, OllamaLLM
+    from backend.llm import llamacpp
     from backend.vector_store.store import DocumentStore
 
     try:
         store = DocumentStore(args.index_dir, database_url(args.database_url))
     except DatabaseUnavailableError as e:
         raise SystemExit(str(e)) from e
-    reader = FactsReader(OllamaLLM(DEFAULT_MODEL), prefer=args.reader)
-    report = refresh(store, reader, args.apply)
-    if not report:
-        print("Nothing to change.")
-        return
-    for r in report:
-        shown = ", ".join(f"{k.replace('_on', '')}: {v}" for k, v in r["after"].items() if v) or "nothing found"
-        print(f"{r['owner']:<12} {r['filename'][:44]:<44} {shown}  [{r['method']}]")
-    print("\nSaved." if args.apply else "\nNothing saved yet. Run again with --apply to save these.")
+    with llamacpp.running() as llm:
+        reader = FactsReader(llm, prefer=args.reader)
+        report = refresh(store, reader, args.apply)
+        if not report:
+            print("Nothing to change.")
+            return
+        for r in report:
+            shown = ", ".join(f"{k.replace('_on', '')}: {v}" for k, v in r["after"].items() if v) or "nothing found"
+            print(f"{r['owner']:<12} {r['filename'][:44]:<44} {shown}  [{r['method']}]")
+        print("\nSaved." if args.apply else "\nNothing saved yet. Run again with --apply to save these.")
 
 
 if __name__ == "__main__":

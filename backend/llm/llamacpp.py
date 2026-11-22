@@ -3,16 +3,18 @@
 Nothing else to install or open: `python -m backend.llm.setup` (run by the installers) downloads a pinned
 llama-server build for this computer and the model file into ~/.document-vault/llm (or $VAULT_LLM_DIR),
 checking both against their published SHA-256. When both are there, the vault starts llama-server on
-127.0.0.1:8091 when it starts, and stops it when it stops. Ollama (ollama.py) is used only when asked for
-(--llm ollama).
+127.0.0.1:8091 when it starts, and stops it when it stops. Command-line tools that need the model on their own
+(ingest, the evaluations) start it for the length of their run with `running()`.
 
-Like the Ollama client, this one only ever talks to this computer.
+It only ever talks to this computer.
 """
 
 from __future__ import annotations
 
 import json
 import logging
+import time
+from contextlib import contextmanager
 import os
 import platform
 import subprocess
@@ -21,9 +23,11 @@ import urllib.error
 import urllib.request
 from pathlib import Path
 
-from backend.llm.ollama import LLMUnavailableError
-
 logger = logging.getLogger(__name__)
+
+
+class LLMUnavailableError(RuntimeError):
+    """The answer model can't be reached; the message says how to fix it."""
 
 PORT = 8091
 HOST = f"http://127.0.0.1:{PORT}"
@@ -46,7 +50,7 @@ BINARIES = {  # (sys.platform, machine) -> (file, sha256)
     ("linux", "aarch64"): ("llama-b12142-bin-ubuntu-arm64.tar.gz",
                            "d0ed8f1a21b4e19b6c588a3ba31488808c2c025ab80f9d56e199e984133be66a"),
 }
-# The same model the vault used through Ollama (llama3.1:8b), as one GGUF file, pinned to a repository commit.
+# Llama 3.1 8B Instruct as one GGUF file (4-bit, Q4_K_M), pinned to a repository commit.
 MODEL = {
     "label": "llama3.1:8b",
     "file": "Meta-Llama-3.1-8B-Instruct-Q4_K_M.gguf",
@@ -115,7 +119,7 @@ class LlamaServer:
 
 
 class LlamaCppLLM:
-    """The same interface as OllamaLLM, talking to llama-server's OpenAI-style API."""
+    """The answer model, through llama-server's OpenAI-style API: plain answers, streamed answers, and JSON."""
 
     def __init__(self, model: str = MODEL["label"], host: str = HOST, timeout: float = 180, server: LlamaServer | None = None):
         if not host.startswith(("http://127.0.0.1:", "http://localhost:")):
@@ -201,3 +205,22 @@ class LlamaCppLLM:
                     yield piece
                 if choice.get("finish_reason"):
                     return
+
+
+@contextmanager
+def running(log: Path | None = None, wait: float = 120):
+    """The answer model for a command-line run (ingest, the evaluations): llama-server started for the length of the
+    `with` block, or None when it isn't downloaded (the tools then do without it)."""
+    if not installed():
+        yield None
+        return
+    server = LlamaServer(log=log or llm_dir() / "llama-server.log")
+    server.start()
+    llm = LlamaCppLLM(server=server)
+    try:
+        deadline = time.monotonic() + wait
+        while not llm.status()[0] and time.monotonic() < deadline and server.exited() is None:
+            time.sleep(0.5)
+        yield llm
+    finally:
+        server.stop()

@@ -14,7 +14,7 @@ A **private, family-only vault** for important papers (insurance policies, warra
 
 Key principles:
 
-- **Everything runs on your own computer.** Embeddings (Snowflake Arctic Embed), answers (a local LLM via Ollama, default `llama3.1:8b`) and OCR (Tesseract) are all local. The LLM client refuses non-local addresses; the embedding model runs offline once downloaded; the web UI loads nothing from the internet (strict Content-Security-Policy).
+- **Everything runs on your own computer.** Embeddings (Snowflake Arctic Embed), answers (a local LLM, Llama 3.1 8B, run by llama.cpp) and OCR (Tesseract) are all local. The LLM client refuses non-local addresses; the embedding model runs offline once downloaded; the web UI loads nothing from the internet (strict Content-Security-Policy).
 - **Family-only.** No public sign-up; the admin adds members.
 - **Encrypted at rest** with a key in the macOS Keychain.
 - **Three ways in:** the web app on the Mac, a Flutter phone app (iOS/Android), and terminal tools.
@@ -31,7 +31,7 @@ Key principles:
                                                ├─ Upload pipeline: parse → OCR → classify → facts → chunk → embed
                                                ├─ Vault store: PostgreSQL (records) + FAISS (vectors) + files on disk
                                                ├─ Retriever: hybrid vector + BM25 with fusion
-                                               ├─ LLM (Ollama): answer with citations, streamed
+                                               ├─ LLM (llama.cpp): answer with citations, streamed
                                                ├─ Reminders, Viewer/highlights, Security, Activity log
                                                └─ One process also serves the built web pages
 ```
@@ -42,10 +42,10 @@ Key principles:
 | Records | PostgreSQL via SQLAlchemy Core (SQLite supported for single-file setup and tests) |
 | Vector search | FAISS + Snowflake Arctic Embed M v1.5 (sentence-transformers) |
 | Keyword search | Custom BM25 |
-| Answers | Ollama (`llama3.1:8b` default; any downloaded model can be selected) |
+| Answers | llama.cpp (`llama-server`, pinned build) with Llama 3.1 8B; started by the vault, downloaded with one click |
 | OCR | Tesseract (English + Hindi), pillow, pillow-heif (HEIC) |
 | PDF/Word | pypdfium2, python-docx |
-| Key-fact extraction | Needle 3 (cactus-needle) → Ollama → text patterns |
+| Key-fact extraction | Needle 3 (cactus-needle) → the answer model → text patterns |
 | Auth | scrypt password hashes, WebAuthn passkeys (py_webauthn) |
 | Encryption | AES-256-GCM (`cryptography`), key in Keychain (`keyring`) |
 | Web UI | Next.js / React / TypeScript, built to static files in `frontend/out/` |
@@ -96,7 +96,7 @@ Each document remembers whether a person or the vault chose its type and the con
 ### 3.6 Key facts: expiry, due date, amount, reference, issuer
 Read at upload (`backend/extract/facts.py`), best reader first:
 1. **Needle 3** (35 MB, offline after one-time setup: `python -m backend.extract.needle_setup`)
-2. The **Ollama answer model**
+2. The **answer model** (llama.cpp)
 3. **Text patterns** (always the fallback and used to fill gaps)
 
 Safety checks: any date, amount or number that doesn't appear in the document is dropped; bills never get an "expiry". Users can correct facts (pencil icon) and the vault never overwrites corrections. ID numbers (PAN/Aadhaar/passport/licence) become the document's reference; a passport's or licence's expiry feeds reminders. **Aadhaar numbers display masked** (`XXXX XXXX 1234`) but are searchable in full. Back-fill older documents with `python -m backend.extract.run [--apply]`.
@@ -157,14 +157,14 @@ Tabs: **Chat**, **Documents**, **Scan**, **Settings**.
 - Modes can be forced with `--search vector|keyword`.
 
 ### 3.15 Settings (web)
-Switch answer model (any model downloaded in Ollama), theme (light/dark), your account and password, passkeys, family members (admin), sharing mode, reminders, phones, security/backup, activity, and an About panel (which fact reader is active, where data lives).
+The answer model and its one-click download, theme (light/dark), your account and password, passkeys, family members (admin), sharing mode, reminders, phones, security/backup, activity, and an About panel (which fact reader is active, where data lives).
 
 ### 3.16 Deployment and operations (`./vault`)
 | Command | Does |
 |---|---|
-| `./vault start` | Checks/starts PostgreSQL, Ollama, Tailscale; runs the server in the background under launchd with phone access on; opens the browser; auto-restarts on crash |
+| `./vault start` | Checks/starts the database, the local AI and Tailscale; runs the server in the background under launchd with phone access on; opens the browser; auto-restarts on crash |
 | `./vault stop` | Stops it |
-| `./vault status` | Running state, plus PostgreSQL, Ollama, Tailscale, pages, OCR readiness |
+| `./vault status` | Running state, plus the database, the local AI, Tailscale, pages, OCR readiness |
 | `./vault logs [-f]` | Tail `data/logs/vault.log` (person + device on every line) |
 | `./vault update` | `git pull`, reinstall/rebuild only what changed, restart, say whether phones need a new app |
 | `./vault autostart on/off` | Start at login |
@@ -189,7 +189,7 @@ Double-click `Start Vault.command` / `Stop Vault.command` in Finder. The Mac is 
 
 1. Question (+ recent history) arrives at `/api/chat`; access limited to documents the user may see.
 2. Retriever runs vector and BM25 searches, fuses them with RRF, boosts exact-number matches.
-3. Top passages are numbered and sent with the system prompt (today's date, strict "only these passages" rules) to the local Ollama model.
+3. Top passages are numbered and sent with the system prompt (today's date, strict "only these passages" rules) to the local answer model (llama.cpp).
 4. Tokens stream back to the browser/phone; sources arrive first so citations are clickable immediately.
 5. `finalize()` extracts `[n]` citations and the "found/not found" flag; the viewer highlights passage and answer on the page.
 
@@ -243,7 +243,7 @@ The server runs in two modes: **web** (localhost:8000, pages + API) and **phone*
 | `backend/embeddings/` | Arctic Embed wrapper (offline once downloaded) |
 | `backend/vector_store/` | The vault: DB records + FAISS + files on disk |
 | `backend/retriever/` | Hybrid retrieval (`retriever.py`), BM25 (`bm25.py`) |
-| `backend/llm/` | Ollama client, answer/citation prompt, streaming |
+| `backend/llm/` | llama.cpp (start, client, download), answer/citation prompt, streaming |
 | `backend/classify/` | Type classifier and re-sort tool |
 | `backend/extract/` | Key-fact readers, back-fill, Needle setup |
 | `backend/reminders/` | Reminder rules, phone schedule, `.ics`, Mac notifications |
@@ -266,7 +266,7 @@ The server runs in two modes: **web** (localhost:8000, pages + API) and **phone*
 ```bash
 python -m venv .venv && source .venv/bin/activate && pip install -r requirements.txt
 brew install postgresql@16 && brew services start postgresql@16 && createdb vault
-ollama pull llama3.1:8b
+python -m backend.llm.setup       # llama.cpp and the answer model (or the apps' Download button)
 brew install tesseract tesseract-lang
 brew install node && (cd frontend && npm install && npm run build)
 ./vault start                      # run everything
@@ -282,7 +282,7 @@ Frontend development: run `python -m backend.api.app` and `cd frontend && npm ru
 ## 10. Evaluation
 
 - **Retrieval:** Recall@1/3, MRR@5, Answer@3 on 32 sample questions (8 are lookups by a number), comparing hybrid, vector-only and keyword-only. Throwaway vault; real data untouched.
-- **LLM comparison:** `compare_llms.py` ranks local models (e.g. `gemma3:12b` vs `llama3.1:8b`) by accuracy then speed on the same retrieved passages.
+- **Answers:** `evaluate.py --with-llm` scores the answer model on the same retrieved passages.
 - **Classifier and fact readers:** `classify_eval.py`, `facts_eval.py`.
 - **Policy:** models are chosen by measurement; no models from Chinese developers are used.
 

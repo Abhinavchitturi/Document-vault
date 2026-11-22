@@ -99,6 +99,13 @@ public sealed class VaultClient(IVaultTransport transport, ISessionStore session
         finally { await lines.DisposeAsync(); }
     }
 
+    // ---- the local AI
+
+    public Task<AIDownloadStatus> AIDownloadStatusAsync() => GetAsync<AIDownloadStatus>("/api/ai/download");
+
+    /// Download llama.cpp and the answer model (about 5 GB, once), then start it. Admins only.
+    public Task<AIDownloadStatus> StartAIDownloadAsync() => PostAsync<AIDownloadStatus>("/api/ai/download", new JsonObject());
+
     // ---- other devices
 
     /// A one-time code for another computer (`typed`: short, to type) or a phone (for a QR code), for 10 minutes.

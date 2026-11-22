@@ -37,8 +37,10 @@ def sha256_of(path: Path) -> str:
     return digest.hexdigest()
 
 
-def download(url: str, target: Path, size: int | None = None, say=print, opener=urllib.request.urlopen) -> Path:
-    """Fetch url into target, continuing a `.partial` file left by an interrupted try."""
+def download(url: str, target: Path, size: int | None = None, say=print, opener=urllib.request.urlopen,
+             progress=None) -> Path:
+    """Fetch url into target, continuing a `.partial` file left by an interrupted try. `progress(done, total)` is
+    called as it goes (the apps' progress bar)."""
     target.parent.mkdir(parents=True, exist_ok=True)
     partial = target.with_name(target.name + ".partial")
     have = partial.stat().st_size if partial.exists() else 0
@@ -60,6 +62,8 @@ def download(url: str, target: Path, size: int | None = None, say=print, opener=
                 done += len(block)
                 if total and int(done * 100 / total) != shown:
                     shown = int(done * 100 / total)
+                    if progress:
+                        progress(done, total)
                     speed = (done - have) / max(time.monotonic() - started, 0.001) / 1e6
                     amount = f"{total / 1e9:.1f} GB" if total >= 1e9 else f"{total / 1e6:.0f} MB"
                     say(f"\r  {target.name}: {shown}% of {amount} ({speed:.0f} MB/s)  ", end="")
@@ -81,17 +85,18 @@ def _extract(archive: Path, folder: Path) -> None:
             t.extractall(folder, filter="data")  # refuses absolute paths, '..' and links out of the folder
 
 
-def install_server(say=print, opener=urllib.request.urlopen) -> Path:
+def install_server(say=print, opener=urllib.request.urlopen, progress=None) -> Path:
     found = llamacpp.server_path()
     if found:
         return found
     choice = llamacpp.binary_for_this_computer()
     if not choice:
         raise SetupError(f"There is no llama.cpp build here for {sys.platform} on this processor. "
-                         "Install Ollama instead (https://ollama.com): the vault uses it when llama.cpp isn't there.")
+                         "Search and documents still work; answers need a supported computer (a Mac, or Windows or Linux on x64 or Arm).")
     name, expected = choice
     say(f"Downloading llama.cpp {llamacpp.BUILD} ({name})")
-    archive = download(f"{llamacpp.RELEASES}/{name}", llamacpp.llm_dir() / "downloads" / name, say=say, opener=opener)
+    archive = download(f"{llamacpp.RELEASES}/{name}", llamacpp.llm_dir() / "downloads" / name, say=say, opener=opener,
+                       progress=progress)
     if sha256_of(archive) != expected:
         archive.unlink()
         raise SetupError(f"{name} did not match its published checksum, so it was deleted. Run the setup again.")
@@ -107,7 +112,7 @@ def install_server(say=print, opener=urllib.request.urlopen) -> Path:
     return found
 
 
-def install_model(say=print, opener=urllib.request.urlopen) -> Path:
+def install_model(say=print, opener=urllib.request.urlopen, progress=None) -> Path:
     found = llamacpp.model_path()
     if found:
         return found
@@ -115,7 +120,7 @@ def install_model(say=print, opener=urllib.request.urlopen) -> Path:
     say(f"Downloading the answer model {model['label']} ({model['size'] / 1e9:.1f} GB, once)")
     target = llamacpp.llm_dir() / "models" / model["file"]
     pending = target.with_name(target.name + ".unchecked")
-    download(model["url"], pending, size=model["size"], say=say, opener=opener)
+    download(model["url"], pending, size=model["size"], say=say, opener=opener, progress=progress)
     say("  Checking the download…")
     if pending.stat().st_size != model["size"] or sha256_of(pending) != model["sha256"]:
         pending.unlink()

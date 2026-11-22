@@ -46,6 +46,7 @@ ACTIONS = {
     "family_mode_off": "Made documents private to their owners",
     "backup_made": "Made an encrypted backup",
     "backup_schedule_changed": "Changed the automatic backup settings",
+    "ai_download_started": "Started downloading the local AI",
     "searched": "Searched",  # these two only go to vault.log (no text: questions can hold ID numbers)
     "asked": "Asked the assistant",
 }

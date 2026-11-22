@@ -16,7 +16,7 @@ BILL = "Consumer number 4471. Units consumed 312. Amount due Rs. 2,486. Due date
 
 
 class SorterLLM:
-    """Stands in for Ollama's JSON answers."""
+    """Stands in for the answer model's JSON answers."""
 
     def __init__(self, answer=None, fail=False):
         self.answer, self.fail, self.calls = answer, fail, 0
@@ -25,7 +25,7 @@ class SorterLLM:
         self.calls += 1
         assert schema["properties"]["category"]["enum"] == ["insurance", "warranty", "bill", "property", "identity", "other"]
         if self.fail:
-            raise ConnectionError("Ollama is off")
+            raise ConnectionError("the local AI is off")
         return self.answer
 
 

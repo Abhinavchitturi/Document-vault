@@ -113,8 +113,8 @@ try {
         Press (Find $window "AddDocumentsButton")
         $dialog = Find $UIA::RootElement "Open" 30  # Windows shows the Open dialog from its own process
         $file = (Resolve-Path "samples/upload-demo/Laptop Warranty.pdf").Path
-        Type-Into (Find $dialog "1148") $file  # the dialog's "File name" box
-        Press (Find $dialog "1")  # its Open button
+        Start-Sleep -Seconds 2
+        [System.Windows.Forms.SendKeys]::SendWait($file + "{ENTER}")  # the cursor starts in its "File name" box
         Find $window "Added to your vault" 120 | Out-Null
         Shot "added"
         Press (Find $window "OK")

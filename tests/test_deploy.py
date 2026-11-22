@@ -51,7 +51,7 @@ class FakeMac:
         return ok()
 
     def http_ok(self, url, timeout=2):
-        return self.web_up if ":8000" in url else True  # Ollama answers
+        return self.web_up if ":8000" in url else True  # other local services answer
 
     def ran(self, *prefix):
         return [c for c in self.calls if c[:len(prefix)] == list(prefix)]

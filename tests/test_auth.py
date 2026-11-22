@@ -124,7 +124,7 @@ def test_each_person_sees_only_their_own_documents(tmp_path):
     assert admin.get("/api/search", params={"q": "car insurance", "method": "vector"}).json()["results"][0]["doc_id"] == doc
 
 
-def test_only_admins_manage_members_and_the_model(tmp_path):
+def test_only_admins_manage_members(tmp_path):
     _, app = make_app(tmp_path)
     admin = signed_in(app)
     admin.post("/api/users", json={"name": "Sunita", "password": SUNITA})
@@ -132,7 +132,6 @@ def test_only_admins_manage_members_and_the_model(tmp_path):
     assert sunita.get("/api/users").status_code == 403
     assert sunita.post("/api/users", json={"name": "Guest", "password": "guest password"}).status_code == 403
     assert sunita.post("/api/users/1/password", json={"new_password": "taken over!!"}).status_code == 403
-    assert sunita.post("/api/settings", json={"llm_model": "x"}).status_code == 403
     members = admin.get("/api/users").json()
     assert [(m["name"], m["is_admin"], m["can_sign_in"]) for m in members] == [("abhinav", True, True), ("Sunita", False, True)]
     assert "password_hash" not in members[0]
