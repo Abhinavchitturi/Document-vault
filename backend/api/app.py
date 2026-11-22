@@ -25,9 +25,9 @@ Usage:
     python -m backend.api.app                 # then open http://localhost:8000 (passkeys need "localhost")
     python -m backend.api.app --llm-model gemma2:9b
 
-Answers come from a local model: llama.cpp, started by the vault itself once `python -m backend.llm.setup`
-has downloaded it (backend/llm/llamacpp.py), or else Ollama (backend/llm/ollama.py). If neither is
-ready, search still works and the page says what to do.
+Answers come from a local model in llama.cpp, started by the vault itself once `python -m backend.llm.setup`
+has downloaded it (backend/llm/llamacpp.py); `--llm ollama` uses Ollama instead (backend/llm/ollama.py). Until
+the model is downloaded, search still works and the page says how to download it.
 
 Sign-in (Phase 6, backend/auth/): every /api call needs a signed-in family member, and
 each person only sees their own documents. The first visit sets up the admin's password.
@@ -1108,7 +1108,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--model", default=None, help="embedding model (default: snowflake-arctic-embed-m-v1.5)")
     parser.add_argument("--device", default=None, help="cuda / mps / cpu; default picks automatically")
     parser.add_argument("--llm", default=os.environ.get("VAULT_LLM", "auto"), choices=["auto", "llamacpp", "ollama"],
-                        help="who runs the answer model: llama.cpp when downloaded, else Ollama (auto, the default)")
+                        help="who runs the answer model: llama.cpp (auto, the default), or Ollama if asked for")
     parser.add_argument("--llm-model", default=None, help="local Ollama model (default: llama3.1:8b); implies --llm ollama")
     parser.add_argument("--no-llm", action="store_true", help="search only, no answers")
     parser.add_argument("--search", default="hybrid", choices=METHODS,
@@ -1162,7 +1162,7 @@ def start_vault(args: argparse.Namespace):
     if not args.no_llm:
         from backend.llm import llamacpp
 
-        use_llamacpp = args.llm == "llamacpp" or (args.llm == "auto" and not args.llm_model and llamacpp.installed())
+        use_llamacpp = args.llm != "ollama" and not args.llm_model  # Ollama only when asked for (--llm ollama)
         if use_llamacpp:
             llama_server = llamacpp.LlamaServer(log=Path(args.index_dir).parent / "logs" / "llama-server.log")
             try:

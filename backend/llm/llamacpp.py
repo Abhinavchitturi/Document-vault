@@ -3,8 +3,8 @@
 Nothing else to install or open: `python -m backend.llm.setup` (run by the installers) downloads a pinned
 llama-server build for this computer and the model file into ~/.document-vault/llm (or $VAULT_LLM_DIR),
 checking both against their published SHA-256. When both are there, the vault starts llama-server on
-127.0.0.1:8091 when it starts, and stops it when it stops. Otherwise it falls back to Ollama (ollama.py),
-so a computer that already has Ollama keeps working as before.
+127.0.0.1:8091 when it starts, and stops it when it stops. Ollama (ollama.py) is used only when asked for
+(--llm ollama).
 
 Like the Ollama client, this one only ever talks to this computer.
 """
@@ -133,6 +133,9 @@ class LlamaCppLLM:
         return [self.model]
 
     def status(self) -> tuple[bool, str]:
+        if self.server and not (self.server.server and self.server.model):
+            return False, ("The local AI isn't downloaded yet. Run the setup again, or in the vault folder: "
+                           "python -m backend.llm.setup (about 5 GB, once).")
         if self.server and self.server.exited() is not None:
             return False, (f"The local AI stopped (code {self.server.exited()}). Restart the vault; "
                            f"if it keeps stopping, see {self.server.log}.")

@@ -80,7 +80,7 @@ flowchart LR
 | Web app | Next.js, React, TypeScript (static export served by FastAPI) |
 | Mobile | Flutter |
 | Embeddings and search | Snowflake Arctic Embed, FAISS, BM25 with Reciprocal Rank Fusion |
-| Answers | llama.cpp (`llama-server`) with Llama 3.1 8B; Ollama also works |
+| Answers | llama.cpp (`llama-server`) with Llama 3.1 8B, started by the vault itself |
 | OCR | Tesseract (English and Hindi) |
 | Storage | SQLite (default) or PostgreSQL for records, FAISS for vectors, encrypted files on disk |
 | Security | AES-256-GCM, macOS Keychain / Windows Credential Manager, scrypt, passkeys (WebAuthn) |

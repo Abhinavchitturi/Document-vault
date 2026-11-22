@@ -77,14 +77,9 @@ venv/bin/python -m pip install --quiet -r requirements.txt
 say "Building the web app"
 (cd frontend && npm install --no-audit --no-fund && npm run build)
 
-# The answer model runs in llama.cpp, which the vault starts by itself. A computer that already has the same
-# model in Ollama keeps using Ollama instead of downloading it a second time.
-if command -v ollama >/dev/null 2>&1 && ollama list 2>/dev/null | grep -q 'llama3.1:8b'; then
-  say "Using the answer model you already have in Ollama (llama3.1:8b)"
-else
-  say "Downloading the local AI: llama.cpp and the answer model (about 5 GB, once)"
-  venv/bin/python -m backend.llm.setup || fail "the local AI did not download. Run ./install.sh again to continue where it stopped."
-fi
+# The answer model runs in llama.cpp, which the vault starts by itself.
+say "Downloading the local AI: llama.cpp and the answer model (about 5 GB, once)"
+venv/bin/python -m backend.llm.setup || fail "the local AI did not download. Run ./install.sh again to continue where it stopped."
 
 say "Downloading the search model and the fact reader (about 500 MB, once)"
 venv/bin/python -c "from backend.embeddings.embedder import Embedder; Embedder()" \

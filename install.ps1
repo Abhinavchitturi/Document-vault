@@ -168,19 +168,10 @@ if ($tesseract) {
 }
 
 # ---- 4. the local AI: llama.cpp and the answer model (the vault starts llama.cpp by itself) -----------------------------
-# A computer that already has the same model in Ollama keeps using Ollama instead of downloading it a second time.
 if (-not $SkipModel) {
-    $hasOllamaModel = $false
-    if (Test-Command ollama) {
-        try { $hasOllamaModel = [bool]((& ollama list 2>$null) | Select-String -SimpleMatch $Model) } catch { }
-    }
-    if ($hasOllamaModel) {
-        Say "Using the answer model you already have in Ollama ($Model)"
-    } else {
-        Say "Downloading the local AI: llama.cpp and the answer model (about 5 GB, once)"
-        & $venvPython -m backend.llm.setup
-        if ($LASTEXITCODE -ne 0) { Stop-Setup "the local AI did not download. Run this again to continue where it stopped." }
-    }
+    Say "Downloading the local AI: llama.cpp and the answer model (about 5 GB, once)"
+    & $venvPython -m backend.llm.setup
+    if ($LASTEXITCODE -ne 0) { Stop-Setup "the local AI did not download. Run this again to continue where it stopped." }
 }
 
 # ---- 5. the search model and the fact reader (so the first start works offline) ----------------------------------------

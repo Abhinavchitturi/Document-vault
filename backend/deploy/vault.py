@@ -182,19 +182,21 @@ class Vault:
                 if self.http_ok("http://localhost:11434/api/tags"):
                     ollama = True
                     break
-        return Check("Answers (Ollama)", ollama, "running" if ollama else
-                     f"not running: open the Ollama app, or download the local AI with: {self.python} -m backend.llm.setup "
-                     "(search and documents work without it)")
+        return Check("Answers (Ollama)", ollama, "running" if ollama else "not running: open the Ollama app")
 
     def checks(self, fix: bool = True) -> list[Check]:
         out = [self.database_check(fix)]
 
         from backend.llm import llamacpp
 
-        if llamacpp.installed():  # the vault starts llama.cpp itself: nothing to open
+        if os.environ.get("VAULT_LLM") == "ollama":  # asked for by name
+            out.append(self._ollama_check(fix))
+        elif llamacpp.installed():  # the vault starts llama.cpp itself: nothing to open
             out.append(Check("Answers (local AI)", True, f"llama.cpp with {llamacpp.MODEL['label']}, starts with the vault"))
         else:
-            out.append(self._ollama_check(fix))
+            out.append(Check("Answers (local AI)", False,
+                             f"not downloaded yet: {self.python} -m backend.llm.setup (about 5 GB, once; search and "
+                             "documents work without it)"))
 
         address = self.tailscale() or ""
         out.append(Check("Private tunnel (Tailscale)", bool(address), f"connected ({address})" if address else

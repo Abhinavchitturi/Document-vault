@@ -113,8 +113,8 @@ checked against their published SHA-256. The vault starts llama.cpp itself; ther
 ```bash
 python -m backend.llm.setup          # --check reports what is there
 ```
-Already using [Ollama](https://ollama.com)? Then skip this: without llama.cpp, the vault uses Ollama's
-`llama3.1:8b` (`--llm ollama` forces it, `--llm llamacpp` forces llama.cpp).
+Developers who prefer [Ollama](https://ollama.com) can start the vault with `--llm ollama` (or `VAULT_LLM=ollama`);
+otherwise the vault always uses llama.cpp.
 For photos and scanned PDFs (includes English and page-orientation detection):
 ```bash
 brew install tesseract
