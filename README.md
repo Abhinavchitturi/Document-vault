@@ -36,7 +36,7 @@ Nothing is sent to a cloud AI service.
 > **Opening it the first time** (only once: the apps aren't signed with a paid Apple or Microsoft certificate yet)
 >
 > **Mac:** open Document Vault from Applications. If macOS says it can't check the app, click **Done**, then open
-> **System Settings → Privacy & Security**, scroll down to *Security* and click **Open Anyway** next to "Document Vault",
+> **System Settings → Privacy & Security**, scroll all the way down (past the list) to *Security* and click **Open Anyway** next to "Document Vault",
 > then **Open Anyway** again. (The DMG window shows these steps too.)
 >
 > **Windows:** if *"Windows protected your PC"* appears, click **More info → Run anyway**.

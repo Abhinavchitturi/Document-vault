@@ -35,7 +35,7 @@ def draw(scale: int) -> Image.Image:
     d.text((s(52), s(282)), "Opening it the first time", font=font(s(15), "Semibold"), fill=INK)
     steps = [
         "Open Document Vault from Applications. If macOS says it can't check the app, click Done.",
-        "Open System Settings → Privacy & Security, and scroll down to Security.",
+        "Open System Settings → Privacy & Security, and scroll all the way down, past the list, to Security.",
         "Click Open Anyway next to “Document Vault”, then Open Anyway again.",
     ]
     for i, step in enumerate(steps):
