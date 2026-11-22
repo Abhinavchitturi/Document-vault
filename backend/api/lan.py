@@ -27,6 +27,7 @@ import ipaddress
 import shutil
 import socket
 import subprocess
+import sys
 from pathlib import Path
 
 PHONE_PORT = 8443
@@ -62,6 +63,8 @@ def tailscale_address() -> str | None:
         pass
     finally:
         s.close()
+    if sys.platform == "darwin":
+        return None  # on a Mac, a "tailscale" command can be the Tailscale app itself, which would open
     for cli in TAILSCALE_CLI:
         path = shutil.which(cli) or (cli if Path(cli).exists() else None)
         if not path:

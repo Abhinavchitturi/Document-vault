@@ -72,6 +72,9 @@ struct AccountBar: View {
                 .help(model.info?.llmStatus.message ?? "")
             }
             Spacer()
+            SettingsLink { Image(systemName: "gearshape").font(.title3) }  // the same as Document Vault → Settings… (⌘,)
+                .buttonStyle(.borderless)
+                .help("Settings (⌘,)")
         }
         .padding(12)
     }
