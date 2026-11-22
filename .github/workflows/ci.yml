@@ -75,10 +75,23 @@ jobs:
       contents: write
     steps:
       - uses: actions/checkout@v4
-      - name: Build DocumentVault-macOS.dmg
+      - name: Build DocumentVault-macOS.dmg (the native app with its engine inside)
         run: |
           case "$GITHUB_REF" in refs/tags/v*) version="${GITHUB_REF_NAME#v}" ;; *) version="0.0.0-dev" ;; esac
           sh packaging/macos/build_dmg.sh "$version"
+          ls -lh dist/DocumentVault-macOS.dmg
+      - name: Open the DMG like a person would, and add the sample documents with the app's own engine
+        run: |
+          hdiutil attach -nobrowse -mountpoint "$RUNNER_TEMP/dmg" dist/DocumentVault-macOS.dmg
+          ditto "$RUNNER_TEMP/dmg/Document Vault.app" "$RUNNER_TEMP/Applications/Document Vault.app"
+          hdiutil detach "$RUNNER_TEMP/dmg"
+          engine="$RUNNER_TEMP/Applications/Document Vault.app/Contents/Resources/Engine"
+          mkdir -p "$RUNNER_TEMP/vault" && cd "$RUNNER_TEMP/vault"
+          export PYTHONPATH="$engine" PYTHONNOUSERSITE=1 PYTHONDONTWRITEBYTECODE=1 VAULT_KEYCHAIN=off
+          export VAULT_KEY_DIR="$RUNNER_TEMP/keys" VAULT_DATABASE_URL="sqlite:///data/index/vault.db"
+          "$engine/python/bin/python3" -c "from backend.parser import ocr; p = ocr.tesseract_path(); print(p); assert '/Engine/' in p"
+          "$engine/python/bin/python3" -m backend.upload.ingest "$GITHUB_WORKSPACE/samples/pdfs" "$GITHUB_WORKSPACE/samples/scans" --owner abhinav
+          codesign --verify "$RUNNER_TEMP/Applications/Document Vault.app"
       - uses: actions/upload-artifact@v4
         with:
           name: DocumentVault-macOS

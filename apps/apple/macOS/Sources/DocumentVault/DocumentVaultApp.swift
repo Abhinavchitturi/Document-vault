@@ -50,7 +50,7 @@ struct RootView: View {
                 StatusScreen(title: "Opening your vault…", detail: nil, busy: true)
             case .notInstalled(let folder):
                 StatusScreen(title: "Document Vault isn't set up on this Mac yet",
-                             detail: "Run the installer from github.com/Abhinavchitturi/Document-vault, then open the app again. Looked for it in \(folder).",
+                             detail: "Download DocumentVault-macOS.dmg from github.com/Abhinavchitturi/Document-vault/releases and drag the app to Applications again. Looked for the engine in \(folder).",
                              busy: false)
             case .failed(let why):
                 StatusScreen(title: "Document Vault couldn't open", detail: why, busy: false) {

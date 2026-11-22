@@ -64,9 +64,10 @@ def _pytesseract():
     path = tesseract_path()
     if path:
         pytesseract.pytesseract.tesseract_cmd = path
-    extra = ROOT / "data" / "tessdata"
-    if (extra / "eng.traineddata").is_file():
-        os.environ.setdefault("TESSDATA_PREFIX", str(extra))
+    for extra in (ROOT / "tesseract" / "tessdata", ROOT / "data" / "tessdata"):  # bundled with the app, or added
+        if (extra / "eng.traineddata").is_file():
+            os.environ.setdefault("TESSDATA_PREFIX", str(extra))
+            break
     return pytesseract
 
 MIN_OCR_WIDTH = 1600  # smaller images are enlarged before reading

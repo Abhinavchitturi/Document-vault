@@ -30,10 +30,21 @@ final class AppModel {
         get { UserDefaults.standard.string(forKey: "mode") }
         set { UserDefaults.standard.set(newValue, forKey: "mode") }
     }
+    /// The engine inside the app (Contents/Resources/Engine: its own Python, the vault's code, Tesseract), or nil
+    /// when the app runs against a development checkout.
+    static let bundledEngine: URL? = {
+        guard let engine = Bundle.main.resourceURL?.appending(path: "Engine"),
+              FileManager.default.isExecutableFile(atPath: engine.appending(path: "python/bin/python3").path) else { return nil }
+        return engine
+    }()
+
+    /// The vault's own folder (its data/ holds the documents, the index and the logs), where the engine runs. Apart
+    /// from the app, so replacing or deleting the app never touches it.
     let folder: URL
 
     init() {
-        folder = Self.vaultFolder()
+        folder = Self.bundledEngine == nil ? Self.vaultFolder()
+            : FileManager.default.homeDirectoryForCurrentUser.appending(path: "Library/Application Support/Document Vault/Vault")
     }
 
     var user: User? {
@@ -75,7 +86,7 @@ final class AppModel {
         default:
             break
         }
-        let python = folder.appending(path: "venv/bin/python")
+        let python = Self.bundledEngine?.appending(path: "python/bin/python3") ?? folder.appending(path: "venv/bin/python")
         guard FileManager.default.isExecutableFile(atPath: python.path) else {
             phase = .notInstalled(folder: folder.path)
             return
@@ -83,7 +94,14 @@ final class AppModel {
         phase = .starting
         do {
             try FileManager.default.createDirectory(at: logFile.deletingLastPathComponent(), withIntermediateDirectories: true)
-            let engine = try EnginePipe(python: python, folder: folder, log: logFile)
+            var environment: [String: String] = [:]
+            if let bundled = Self.bundledEngine {
+                environment["PYTHONPATH"] = bundled.path
+                environment["PYTHONNOUSERSITE"] = "1"
+                environment["PYTHONDONTWRITEBYTECODE"] = "1"  // the app stays as it was signed (compiled at build)
+                Self.allowBundledEngine(bundled)
+            }
+            let engine = try EnginePipe(python: python, folder: folder, environment: environment, log: logFile)
             self.engine = engine
             try await engine.waitUntilReady()
             client = VaultClient(transport: engine)
@@ -91,6 +109,16 @@ final class AppModel {
         } catch {
             phase = .failed(error.localizedDescription)
         }
+    }
+
+    /// A downloaded app's files carry the "downloaded from the internet" mark. The person allowed this app already,
+    /// so take the mark off its own engine, or macOS would ask again about its Python and Tesseract.
+    private static func allowBundledEngine(_ engine: URL) {
+        let xattr = Process()
+        xattr.executableURL = URL(fileURLWithPath: "/usr/bin/xattr")
+        xattr.arguments = ["-dr", "com.apple.quarantine", engine.path]
+        try? xattr.run()
+        xattr.waitUntilExit()
     }
 
     func stop() {
