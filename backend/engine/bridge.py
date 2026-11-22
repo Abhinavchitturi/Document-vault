@@ -163,6 +163,14 @@ def main(argv: list[str] | None = None) -> None:
     pipe = Pipe(os.fdopen(os.dup(1), "w", encoding="utf-8"))  # the pipe keeps the real stdout…
     os.dup2(2, 1)  # …and anything else printed goes to stderr (the app's log), never into the pipe
     sys.stdout = sys.stderr
+    # The same for the requests: a private copy of stdin, and stdin itself pointed at nothing. On Windows, while one
+    # thread waits to read a pipe, anything else touching that pipe (a library checking stdin as it loads, in the
+    # search model's background thread) freezes until the next request arrives, which may be never.
+    requests = os.fdopen(os.dup(0), "r", encoding="utf-8")
+    nothing = os.open(os.devnull, os.O_RDONLY)
+    os.dup2(nothing, 0)
+    os.close(nothing)
+    sys.stdin = open(os.devnull, encoding="utf-8")
     from backend.api.app import parse_args, start_vault
 
     if "--no-phones" in argv:
@@ -179,6 +187,6 @@ def main(argv: list[str] | None = None) -> None:
         raise SystemExit(1) from e
     pipe.send({"event": "ready"})
     try:
-        serve(app, pipe, sys.stdin)
+        serve(app, pipe, requests)
     finally:
         stop()

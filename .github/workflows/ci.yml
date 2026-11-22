@@ -111,6 +111,7 @@ jobs:
     # The native Windows app (WinUI 3): its core against the real engine, a build, and a screenshot of it running.
     name: Windows app (WinUI)
     runs-on: windows-latest
+    timeout-minutes: 90  # a hang fails the build instead of holding it for 6 hours
     permissions:
       contents: write  # to attach the installer to a release
     steps:
