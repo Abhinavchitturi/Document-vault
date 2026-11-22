@@ -38,14 +38,16 @@ struct MainView: View {
             .navigationSplitViewColumnWidth(min: 200, ideal: 220)
             .safeAreaInset(edge: .bottom) { AccountBar() }
         } detail: {
-            switch pane ?? .dashboard {
-            case .dashboard: DashboardView(pane: $pane)
-            case .chat: ChatView()
-            case .documents: DocumentsView(category: nil)
-            case .category(let category): DocumentsView(category: category)
+            Group {
+                switch pane ?? .dashboard {
+                case .dashboard: DashboardView(pane: $pane)
+                case .chat: ChatView()
+                case .documents: DocumentsView(category: nil)
+                case .category(let category): DocumentsView(category: category)
+                }
             }
+            .modifier(AddDocuments())  // on the main area only: on the whole window it took the sidebar's clicks
         }
-        .modifier(AddDocuments())
         .safeAreaInset(edge: .top, spacing: 0) {
             VStack(spacing: 0) {
                 UpdateBanner()

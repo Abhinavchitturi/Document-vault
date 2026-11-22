@@ -89,6 +89,7 @@ public sealed class DocumentsPage : UserControl
         grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(120) });
         grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(110) });
         grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(80) });
+        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(40) });  // remove
         var key = document.DueOn is { } due ? $"Due {UI.Date(due)}" : document.ExpiresOn is { } exp ? $"Expires {UI.Date(exp)}" : null;
         var name = UI.Stack(0, UI.Text(document.Filename));
         if (key is not null) name.Children.Add(UI.Caption(key));
@@ -127,6 +128,22 @@ public sealed class DocumentsPage : UserControl
             menu.Items.Add(remove);
         }
         grid.ContextFlyout = menu;
+        if (document.Mine)  // removing, without having to find the right-click menu
+        {
+            var trash = new Button { Content = UI.Glyph("\uE74D", 14), Padding = new Thickness(8, 6, 8, 6), VerticalAlignment = VerticalAlignment.Center,
+                                     Background = new Microsoft.UI.Xaml.Media.SolidColorBrush(Microsoft.UI.Colors.Transparent),
+                                     BorderThickness = new Thickness(0) }.Id($"Remove-{document.DocId}");
+            ToolTipService.SetToolTip(trash, "Remove from vault");
+            trash.Click += async (_, _) =>
+            {
+                if (await UI.Confirm(XamlRoot, $"Remove {document.Filename} from the vault?",
+                        "The vault's encrypted copy and its search data are deleted, on every computer that keeps this vault. " +
+                        "Your original file, if you still have it, isn't touched.", "Remove"))
+                    await Run(() => AppState.Current.Client!.DeleteAsync(document));
+            };
+            Grid.SetColumn(trash, 5);
+            grid.Children.Add(trash);
+        }
         return grid;
     }
 

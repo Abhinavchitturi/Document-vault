@@ -10,7 +10,7 @@ struct DocumentsView: View {
     @State private var search = ""
     @State private var selection = Set<VaultDocument.ID>()
     @State private var sortOrder = [KeyPathComparator(\VaultDocument.addedAt, order: .reverse)]
-    @State private var toDelete: VaultDocument?
+    @State private var toDelete: [VaultDocument] = []
 
     private var shown: [VaultDocument] {
         let matching: [VaultDocument] = model.documents.filter(matches)
@@ -22,6 +22,11 @@ struct DocumentsView: View {
         if search.isEmpty { return true }
         let fields: [String] = [document.filename, document.reference ?? "", document.issuer ?? ""]
         return fields.contains { $0.localizedCaseInsensitiveContains(search) }
+    }
+
+    /// The selected documents this person may remove: their own.
+    private func removable(_ ids: Set<VaultDocument.ID>) -> [VaultDocument] {
+        ids.compactMap(document).filter(\.mine)
     }
 
     private func document(_ id: VaultDocument.ID) -> VaultDocument? {
@@ -58,11 +63,19 @@ struct DocumentsView: View {
                         }
                     }
                     Divider()
-                    Button("Remove from Vault…", role: .destructive) { toDelete = document }
+                    Button("Remove from Vault…", role: .destructive) { toDelete = removable(ids) }
                 }
             }
         } primaryAction: { ids in
             ids.forEach { openWindow(id: "document", value: $0) }
+        }
+        .onDeleteCommand { toDelete = removable(selection) }  // the Delete key
+        .toolbar {
+            ToolbarItem {
+                Button("Remove from Vault", systemImage: "trash") { toDelete = removable(selection) }
+                    .help("Remove the selected documents from the vault (or press Delete)")
+                    .disabled(removable(selection).isEmpty)
+            }
         }
         .searchable(text: $search, prompt: "Name, policy or reference number")
         .navigationTitle(category?.label ?? "All Documents")
@@ -78,13 +91,15 @@ struct DocumentsView: View {
                 }
             }
         }
-        .confirmationDialog("Remove \(toDelete?.filename ?? "") from the vault?",
-                            isPresented: Binding(get: { toDelete != nil }, set: { if !$0 { toDelete = nil } })) {
+        .confirmationDialog(toDelete.count == 1 ? "Remove \(toDelete[0].filename) from the vault?"
+                                                : "Remove \(toDelete.count) documents from the vault?",
+                            isPresented: Binding(get: { !toDelete.isEmpty }, set: { if !$0 { toDelete = [] } })) {
             Button("Remove", role: .destructive) {
-                if let document = toDelete { Task { await model.delete(document) } }
+                let removing = toDelete
+                Task { for document in removing { await model.delete(document) } }
             }
         } message: {
-            Text("The vault's encrypted copy and its search data are deleted. Your original file, if you still have it, isn't touched.")
+            Text("The vault's encrypted copy and its search data are deleted, on every computer that keeps this vault. Your original file, if you still have it, isn't touched.")
         }
     }
 }

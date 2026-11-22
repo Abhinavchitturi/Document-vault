@@ -9,6 +9,8 @@ struct DocumentWindow: View {
     let docId: String
     @State private var data: Data?
     @State private var problem: String?
+    @State private var confirming = false
+    @Environment(\.dismiss) private var dismiss
 
     private var document: VaultDocument? { model.documents.first { $0.docId == docId } }
 
@@ -34,6 +36,25 @@ struct DocumentWindow: View {
         .navigationTitle(document?.filename ?? "Document")
         .navigationSubtitle(document.map { "\($0.category.label) · \($0.pages) page\($0.pages == 1 ? "" : "s")" } ?? "")
         .frame(minWidth: 480, minHeight: 520)
+        .toolbar {
+            if document?.mine == true {
+                ToolbarItem {
+                    Button("Remove from Vault", systemImage: "trash") { confirming = true }.help("Remove this document from the vault")
+                }
+            }
+        }
+        .confirmationDialog("Remove \(document?.filename ?? "this document") from the vault?", isPresented: $confirming) {
+            Button("Remove", role: .destructive) {
+                if let document {
+                    Task {
+                        await model.delete(document)
+                        dismiss()
+                    }
+                }
+            }
+        } message: {
+            Text("The vault's encrypted copy and its search data are deleted, on every computer that keeps this vault. Your original file, if you still have it, isn't touched.")
+        }
         .task {
             do {
                 data = try await model.client?.original(docId)
