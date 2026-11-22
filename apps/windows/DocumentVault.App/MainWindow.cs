@@ -65,7 +65,7 @@ public sealed class MainWindow : Window
         if (!state.Installed)
         {
             Show(new StatusPage("Document Vault isn't set up on this PC yet",
-                $"Run the installer from github.com/Abhinavchitturi/Document-vault, then open the app again. Looked for it in {state.Folder}.",
+                $"Install it again with DocumentVault-Setup.exe from github.com/Abhinavchitturi/Document-vault/releases. Looked for it in {state.Folder}.",
                 busy: false));
             return;
         }

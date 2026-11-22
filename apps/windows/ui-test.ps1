@@ -1,12 +1,15 @@
 # Click through the Windows app like a person would, with a screenshot of every screen (run by CI on Windows).
 #
-#   powershell -File apps/windows/ui-test.ps1 -AppPath dist\windows-app\DocumentVault.exe -Python C:\...\python.exe -Out screens
+#   powershell -File apps/windows/ui-test.ps1 -AppPath "$env:LOCALAPPDATA\Programs\Document Vault\App\DocumentVault.exe"
+#   powershell -File apps/windows/ui-test.ps1 -AppPath dist\windows-app\DocumentVault.exe -Python C:\...\python.exe
 #
-# The vault is a throwaway one in this checkout's data\ folder, preloaded with the fictional samples. Uses Windows'
-# UI Automation (what screen readers use) and the automation ids the app sets on its controls.
+# An installed app (DocumentVault-Setup.exe) uses its own engine and its vault in %LOCALAPPDATA%\Document Vault\Vault;
+# with -Python, the app runs against this checkout instead (its data\ folder). Either way the vault is preloaded
+# with the fictional samples. Uses Windows' UI Automation (what screen readers use) and the automation ids the app
+# sets on its controls.
 param(
     [Parameter(Mandatory = $true)][string]$AppPath,
-    [Parameter(Mandatory = $true)][string]$Python,
+    [string]$Python = "",
     [string]$Out = "screens"
 )
 $ErrorActionPreference = "Stop"
@@ -81,9 +84,24 @@ function Step([string]$name, [scriptblock]$block) {
 
 # ---- a throwaway vault with the fictional samples in it
 $env:VAULT_DATABASE_URL = "sqlite:///data/index/vault.db"
-& $Python -m backend.upload.ingest samples/pdfs samples/scans --owner abhinav
-$env:DOCUMENT_VAULT_DIR = (Get-Location).Path
-$env:DOCUMENT_VAULT_PYTHON = $Python
+$samples = (Get-Location).Path
+if ($Python) {
+    & $Python -m backend.upload.ingest samples/pdfs samples/scans --owner abhinav
+    $env:DOCUMENT_VAULT_DIR = $samples
+    $env:DOCUMENT_VAULT_PYTHON = $Python
+} else {
+    # the installed app: its engine, in its vault folder
+    $engine = [System.IO.Path]::GetFullPath((Join-Path (Split-Path $AppPath) "..\Engine"))
+    $vaultHome = Join-Path $env:LOCALAPPDATA "Document Vault\Vault"
+    New-Item -ItemType Directory -Force -Path $vaultHome | Out-Null
+    $env:PYTHONPATH = $engine
+    Push-Location $vaultHome
+    & (Join-Path $engine "python\python.exe") -m backend.upload.ingest "$samples\samples\pdfs" "$samples\samples\scans" --owner abhinav
+    $ingested = $LASTEXITCODE
+    Pop-Location
+    Remove-Item Env:PYTHONPATH
+    if ($ingested -ne 0) { throw "the installed engine couldn't add the samples" }
+}
 $app = Start-Process $AppPath -PassThru  # (PowerShell names ignore case: the path must not be called $app)
 try {
     # 1. first start: choose the admin's password

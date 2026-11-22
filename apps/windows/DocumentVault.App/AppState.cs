@@ -9,12 +9,33 @@ public sealed class AppState
 {
     public static AppState Current { get; } = new();
 
-    public string Folder { get; } = VaultFolder();
-    public string LogFile => Path.Combine(Folder, "data", "logs", "app-engine.log");
-    /// The vault's own Python (its venv); %DOCUMENT_VAULT_PYTHON% overrides it (development, CI).
-    public string Python => Environment.GetEnvironmentVariable("DOCUMENT_VAULT_PYTHON") is { Length: > 0 } set
-        ? set : Path.Combine(Folder, "venv", "Scripts", "python.exe");
+    /// The engine shipped with the app by the installer (Engine\ next to App\: its own Python, code and Tesseract), or
+    /// null when the app runs from a development checkout.
+    public static readonly string? BundledEngine = FindBundledEngine();
+
+    /// The engine's folder: the bundled one, else a development checkout (%DOCUMENT_VAULT_DIR%, the recorded one).
+    public string Folder { get; } = BundledEngine ?? VaultFolder();
+
+    /// The vault's own folder (its data\ holds the documents, the index and the logs), never inside the app's files,
+    /// so updating or removing the app can't touch them: %LOCALAPPDATA%\Document Vault\Vault, or the checkout itself
+    /// in development. The engine runs in it.
+    public string VaultHome => BundledEngine is null ? Folder
+        : Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Document Vault", "Vault");
+
+    public string LogFile => Path.Combine(VaultHome, "data", "logs", "app-engine.log");
+
+    /// The engine's Python: the bundled one, else the checkout's venv; %DOCUMENT_VAULT_PYTHON% overrides it (CI).
+    public string Python => Environment.GetEnvironmentVariable("DOCUMENT_VAULT_PYTHON") is { Length: > 0 } set ? set
+        : BundledEngine is not null ? Path.Combine(BundledEngine, "python", "python.exe")
+        : Path.Combine(Folder, "venv", "Scripts", "python.exe");
+
     public bool Installed => File.Exists(Python);
+
+    private static string? FindBundledEngine()
+    {
+        var engine = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..", "Engine"));
+        return File.Exists(Path.Combine(engine, "python", "python.exe")) ? engine : null;
+    }
 
     public EnginePipe? Engine { get; private set; }
     public RemoteVault? Remote { get; private set; }
@@ -49,7 +70,11 @@ public sealed class AppState
 
     public async Task StartAsync()
     {
-        Engine = new EnginePipe(Python, Folder, logFile: LogFile);
+        // The engine's code is read from the app's Engine\ folder; it runs in the vault's folder, so everything it keeps
+        // (data\index, data\logs, backups) lands there.
+        Directory.CreateDirectory(Path.Combine(VaultHome, "data", "logs"));
+        var environment = BundledEngine is null ? null : new Dictionary<string, string> { ["PYTHONPATH"] = BundledEngine };
+        Engine = new EnginePipe(Python, VaultHome, environment: environment, logFile: LogFile);
         await Engine.WaitUntilReadyAsync();
         Client = new VaultClient(Engine, new ProtectedSessionStore());
     }

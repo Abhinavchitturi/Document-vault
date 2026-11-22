@@ -44,7 +44,10 @@ WINDOWS_TESSERACT = (  # where the Windows installers put it; neither is added t
 
 
 def tesseract_path() -> str | None:
-    """The tesseract program: on PATH, else where the Windows installer puts it."""
+    """The tesseract program: the one bundled with the app's engine, else on PATH, else where Windows installs it."""
+    bundled = ROOT / "tesseract" / ("tesseract.exe" if os.name == "nt" else "tesseract")
+    if bundled.is_file():
+        return str(bundled)
     found = shutil.which("tesseract")
     if found:
         return found

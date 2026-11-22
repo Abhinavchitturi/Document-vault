@@ -112,7 +112,10 @@ jobs:
           dotnet test apps/windows/DocumentVault.Core.Tests
       - name: Build the app
         run: dotnet publish apps/windows/DocumentVault.App -c Release -r win-x64 -p:Platform=x64 -o dist/windows-app
-      - name: Build DocumentVault-Setup.exe (the app, and the engine set up on first install)
+      - name: Build the engine the installer ships (a private Python, the vault's packages, Tesseract)
+        shell: pwsh
+        run: ./packaging/windows/build_engine.ps1 -Out dist\engine
+      - name: Build DocumentVault-Setup.exe (self-contained)
         shell: pwsh
         run: |
           if (-not (Test-Path "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe")) { choco install innosetup -y --no-progress }
@@ -129,16 +132,25 @@ jobs:
         run: gh release upload "$env:GITHUB_REF_NAME" dist/DocumentVault-Setup.exe --clobber
         env:
           GH_TOKEN: ${{ github.token }}
-      - name: Click through every screen, with screenshots
+      - name: Install it, like a person would (no Python, Git or Node from this machine is used)
+        shell: pwsh
+        run: |
+          Start-Process dist\DocumentVault-Setup.exe -ArgumentList "/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART", "/LOG=setup.log" -Wait
+          $app = "$env:LOCALAPPDATA\Programs\Document Vault\App\DocumentVault.exe"
+          if (-not (Test-Path $app)) { Get-Content setup.log -Tail 40; throw "the installer didn't install the app" }
+          $size = (Get-Item dist\DocumentVault-Setup.exe).Length / 1MB
+          Write-Host ("Installed. DocumentVault-Setup.exe is {0:N0} MB" -f $size)
+      - name: Click through every screen of the installed app, with screenshots
         shell: powershell
-        run: powershell -ExecutionPolicy Bypass -File apps/windows/ui-test.ps1 -AppPath dist\windows-app\DocumentVault.exe -Python (Get-Command python).Source -Out screens
+        run: powershell -ExecutionPolicy Bypass -File apps/windows/ui-test.ps1 -AppPath "$env:LOCALAPPDATA\Programs\Document Vault\App\DocumentVault.exe" -Out screens
       - uses: actions/upload-artifact@v4
         if: always()
         with:
           name: DocumentVault-Windows-screens
           path: |
             screens
-            data/logs
+            setup.log
+            ~/AppData/Local/Document Vault/Vault/data/logs
           if-no-files-found: ignore
       - uses: actions/upload-artifact@v4
         if: always()  # the app is worth having even when a screen in the click-through fails

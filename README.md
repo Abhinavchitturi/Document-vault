@@ -36,8 +36,10 @@ Nothing is sent to a cloud AI service.
 **Beta.** Native apps: SwiftUI on the Mac, WinUI on Windows, both following Apple's design. They keep the vault on your
 computer and talk to it over a private pipe, with no network port. The phone app pairs with the vault on your computer.
 
-**Windows:** run the installer. It installs the app, sets up the vault's engine and downloads the AI models (about
-6 GB, once; a window shows the progress), and adds **Document Vault** to the Start menu.
+**Windows:** run the installer, like any Windows app. Everything it needs is inside it (its own private Python and
+the scan reader), so it installs nothing else: no Git, Node, Python or command prompt, and no administrator rights.
+On the first start the app offers the local AI as a one-click download (about 5 GB, once). Your documents are kept in
+`%LOCALAPPDATA%\Document Vault\Vault`, apart from the program, so updating or uninstalling never touches them.
 
 **Mac:** the app needs the vault's engine and AI models first (about 6 GB, once): run the one-command setup under
 [Getting started](#getting-started) with `--no-start`, then open the app.
@@ -105,14 +107,15 @@ It downloads the vault to `~/Document-Vault`, sets everything up (AI models incl
 
 ### Windows (beta)
 
-In PowerShell:
+Use [DocumentVault-Setup.exe](https://github.com/Abhinavchitturi/Document-vault/releases/download/v0.9.0-beta/DocumentVault-Setup.exe)
+(above). For the browser version or development, there is also a one-command setup in PowerShell:
 
 ```powershell
 & ([scriptblock]::Create((irm https://raw.githubusercontent.com/Abhinavchitturi/Document-vault/main/install.ps1))) -WithSamples
 ```
 
-It installs Git, Python, Node and Tesseract through `winget` (Windows may ask for permission for some of them) and
-then does the same as on the Mac. The Windows version is tested automatically on Windows in CI but has had far less
+That one is for developers: it installs Git, Python, Node and Tesseract through `winget` and then does the same as on
+the Mac. The app's installer needs none of them. The Windows version is tested automatically on Windows in CI but has had far less
 real-world use. Not on Windows yet: desktop pop-up reminders (phone reminders and the calendar file work).
 
 ### Phone (Android and iPhone)
@@ -126,8 +129,8 @@ Keep the vault on one computer (the centre) and use it from your other laptops, 
 
 1. On the centre, open Document Vault → **Settings → Connect another computer or phone → Show a code**. It shows a
    one-time code (for example `K7QF-2M9X`, valid for 10 minutes), the computer's address and a security code.
-2. On the other laptop, install the app and choose **Connect to the vault on another computer** on its first start (the
-   Windows installer has an option to skip the 6 GB setup for this). Type the address and the code.
+2. On the other laptop, install the app and choose **Connect to the vault on another computer** on its first start (it doesn't
+   need the AI download for this). Type the address and the code.
 3. Check that the security code it shows matches the centre's screen, then confirm.
 
 The laptop then works with the centre's documents over your Wi-Fi, or from anywhere with Tailscale (below). Nothing is
