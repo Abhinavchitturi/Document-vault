@@ -71,6 +71,14 @@ public struct SyncJoining: Codable, Sendable {
     public let total: Int
     public let error: String?
     public let with: String?
+
+    public init(state: String, done: Int, total: Int, error: String?, with: String?) {
+        self.state = state
+        self.done = done
+        self.total = total
+        self.error = error
+        self.with = with
+    }
 }
 
 public struct SyncStatus: Codable, Sendable {
