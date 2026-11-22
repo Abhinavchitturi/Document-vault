@@ -1,0 +1,4 @@
+<Solution>
+  <Project Path="DocumentVault.Core.Tests/DocumentVault.Core.Tests.csproj" />
+  <Project Path="DocumentVault.Core/DocumentVault.Core.csproj" />
+</Solution>
