@@ -64,7 +64,7 @@ public class TheRealEngine
                  "--no-llm", "--no-phones", "--owner", "abhinav"],
                 new Dictionary<string, string>
                 {
-                    ["VAULT_KEYCHAIN"] = "off", ["VAULT_KEY_DIR"] = Path.Combine(tmp, "keys"),
+                    ["VAULT_KEYCHAIN"] = "off", ["VAULT_AI_AUTO_DOWNLOAD"] = "0", ["VAULT_KEY_DIR"] = Path.Combine(tmp, "keys"),
                     ["VAULT_LLM_DIR"] = Path.Combine(tmp, "llm"), ["VAULT_FACTS_READER"] = "rules",
                 },
                 Path.Combine(tmp, "engine.log"));

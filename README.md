@@ -51,8 +51,9 @@ Mac. Both are just the app: nothing else is installed (no Git, Node, Python, Hom
 administrator rights are needed. The first question is how this computer uses the vault:
 
 - **Keep the vault on this computer** (the centre): the app downloads the vault's engine once, with a progress bar (its
-  own private Python and the scan reader, checked against a fingerprint built into the app). Then it offers the local
-  AI as a one-click download (about 5 GB, once).
+  own private Python and the scan reader, checked against a fingerprint built into the app). Then, in the background,
+  it downloads the search model and the private AI (about 5 GB, once) by itself, with a progress bar at the top: the
+  app works meanwhile, and the assistant answers as soon as the AI is there. It needs about 7 GB of free space.
 - **Use the vault on another computer**: nothing else is downloaded and nothing is stored on this computer.
 
 **Updates:** the apps check for a new version when they open and every few hours. *Update* downloads it, checks it

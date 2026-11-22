@@ -1133,6 +1133,8 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--model", default=None, help="embedding model (default: snowflake-arctic-embed-m-v1.5)")
     parser.add_argument("--device", default=None, help="cuda / mps / cpu; default picks automatically")
     parser.add_argument("--no-llm", action="store_true", help="search only, no answers")
+    parser.add_argument("--download-ai", action="store_true",
+                        help="download the local AI by itself if it isn't here yet (the apps' engine does)")
     parser.add_argument("--search", default="hybrid", choices=METHODS,
                         help="hybrid (meaning + exact words, default), vector (meaning only) or keyword (BM25 only)")
     parser.add_argument("--port", type=int, default=8000)
@@ -1200,6 +1202,8 @@ def start_vault(args: argparse.Namespace):
     from backend.llm.local_ai import LocalAI
 
     local_ai = LocalAI(llama_server) if llama_server else None
+    if local_ai is not None and getattr(args, "download_ai", False) and local_ai.downloadable():
+        local_ai.start_automatically(after=embedder.wait)  # the search model first, then the local AI
     from sqlalchemy.engine import make_url
 
     db_label = make_url(database_url(args.database_url)).render_as_string(hide_password=True)

@@ -233,3 +233,58 @@ def test_one_click_download_from_the_app(tmp_path, monkeypatch, pretend):
     admin.post("/api/auth/logout")
     admin.post("/api/auth/login", json={"name": "sunita", "password": "another long password"})
     assert admin.post("/api/ai/download").status_code == 403  # only an admin downloads it
+
+
+def test_the_apps_engine_downloads_the_local_ai_by_itself_after_the_search_model(tmp_path, monkeypatch, pretend):
+    """A computer that keeps the vault can't answer without the local AI: it downloads by itself, search model first."""
+    import time
+
+    from backend.llm.local_ai import LocalAI
+
+    _with_files(tmp_path, monkeypatch, pretend)
+
+    class Server:
+        server = model = None
+        started = False
+
+        def start(self):
+            self.started = True
+
+    search_ready = threading.Event()
+    local_ai = LocalAI(Server())
+    local_ai.start_automatically(after=search_ready.wait)
+    time.sleep(0.3)
+    assert local_ai.status()["state"] == "idle"  # waits for the search model
+    search_ready.set()
+    deadline = time.monotonic() + 20
+    while local_ai.status()["state"] != "done" and time.monotonic() < deadline:
+        time.sleep(0.1)
+    assert local_ai.status()["state"] == "done" and llamacpp.installed() and local_ai.server.started
+
+
+def test_no_download_without_room_for_it(tmp_path, monkeypatch):
+    import shutil
+    import time
+
+    from backend.llm.local_ai import LocalAI
+
+    monkeypatch.setenv("VAULT_LLM_DIR", str(tmp_path / "llm"))
+    monkeypatch.setattr(shutil, "disk_usage", lambda path: shutil._ntuple_diskusage(10**12, 10**12 - 10**9, 10**9))
+    local_ai = LocalAI(server=None)
+    monkeypatch.setattr(local_ai, "downloadable", lambda: True)
+    local_ai.start_automatically()
+    deadline = time.monotonic() + 5
+    while local_ai.status()["state"] == "idle" and time.monotonic() < deadline:
+        time.sleep(0.05)
+    status = local_ai.status()
+    assert status["state"] == "failed" and "isn't enough free space" in status["error"] and "1.0 GB free" in status["error"]
+
+
+def test_the_apps_engine_asks_for_the_download_unless_switched_off(monkeypatch):
+    from backend.api.app import parse_args
+    from backend.engine.bridge import engine_arguments
+
+    monkeypatch.setenv("VAULT_AI_AUTO_DOWNLOAD", "1")
+    assert parse_args(engine_arguments(["--no-phones"])).download_ai
+    monkeypatch.setenv("VAULT_AI_AUTO_DOWNLOAD", "0")
+    assert not parse_args(engine_arguments(["--no-phones"])).download_ai

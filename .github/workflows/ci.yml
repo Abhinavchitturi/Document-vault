@@ -133,6 +133,8 @@ jobs:
     name: Windows app (WinUI)
     runs-on: windows-latest
     timeout-minutes: 45  # usually ~15 with the scenarios: a hang fails fast
+    env:
+      VAULT_AI_AUTO_DOWNLOAD: "0"  # the engines started here (tests, the installed app) don't need the 5 GB AI
     permissions:
       contents: write  # to attach the installer to a release
     steps:

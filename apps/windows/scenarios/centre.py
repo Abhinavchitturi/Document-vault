@@ -13,7 +13,7 @@ from pathlib import Path
 folder = Path(sys.argv[1]).resolve()
 folder.mkdir(parents=True, exist_ok=True)
 repo = Path(__file__).resolve().parents[3]
-env = {**os.environ, "PYTHONPATH": str(repo), "VAULT_KEYCHAIN": "off", "VAULT_KEY_DIR": str(folder / "keys"),
+env = {**os.environ, "PYTHONPATH": str(repo), "VAULT_KEYCHAIN": "off", "VAULT_AI_AUTO_DOWNLOAD": "0", "VAULT_KEY_DIR": str(folder / "keys"),
        "VAULT_LLM_DIR": str(folder / "llm"), "VAULT_FACTS_READER": "rules", "PYTHONUTF8": "1"}
 engine = subprocess.Popen(
     [sys.executable, "-m", "backend.engine", "--index-dir", str(folder / "index"),

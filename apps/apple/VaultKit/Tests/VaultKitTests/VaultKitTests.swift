@@ -40,7 +40,7 @@ func theMacAppTalksToTheRealEngineOverThePipe() async throws {
         arguments: ["--index-dir", tmp.appendingPathComponent("index").path,
                     "--database-url", "sqlite:///\(tmp.appendingPathComponent("vault.db").path)",
                     "--no-llm", "--no-phones", "--owner", "abhinav"],
-        environment: ["VAULT_KEYCHAIN": "off", "VAULT_KEY_DIR": tmp.appendingPathComponent("keys").path,
+        environment: ["VAULT_KEYCHAIN": "off", "VAULT_AI_AUTO_DOWNLOAD": "0", "VAULT_KEY_DIR": tmp.appendingPathComponent("keys").path,
                       "VAULT_LLM_DIR": tmp.appendingPathComponent("llm").path, "VAULT_FACTS_READER": "rules"],
         log: tmp.appendingPathComponent("engine.log"))
     defer { engine.stop() }
@@ -89,7 +89,7 @@ func aMacPairsWithTheCentreComputerAndUsesItsVault() async throws {
         arguments: ["--index-dir", tmp.appendingPathComponent("index").path,
                     "--database-url", "sqlite:///\(tmp.appendingPathComponent("vault.db").path)",
                     "--no-llm", "--phone-port", "8473", "--phone-address", "127.0.0.1", "--owner", "abhinav"],
-        environment: ["VAULT_KEYCHAIN": "off", "VAULT_KEY_DIR": tmp.appendingPathComponent("keys").path,
+        environment: ["VAULT_KEYCHAIN": "off", "VAULT_AI_AUTO_DOWNLOAD": "0", "VAULT_KEY_DIR": tmp.appendingPathComponent("keys").path,
                       "VAULT_LLM_DIR": tmp.appendingPathComponent("llm").path, "VAULT_FACTS_READER": "rules"],
         log: tmp.appendingPathComponent("centre.log"))
     defer { centre.stop() }

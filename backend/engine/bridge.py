@@ -158,6 +158,19 @@ def serve(app, pipe: Pipe, lines) -> None:
     loop.call_soon_threadsafe(loop.stop)
 
 
+def engine_arguments(argv: list[str]) -> list[str]:
+    """The vault's options for the apps' engine: phone access on, and the local AI downloaded by itself (a computer
+    that keeps the vault needs it to answer), unless VAULT_AI_AUTO_DOWNLOAD=0 (the automatic tests)."""
+    argv = list(argv)
+    if os.environ.get("VAULT_AI_AUTO_DOWNLOAD", "1").lower() not in ("0", "off", "no", "false") and "--download-ai" not in argv:
+        argv.append("--download-ai")
+    if "--no-phones" in argv:
+        argv.remove("--no-phones")
+    elif "--phones" not in argv:
+        argv.append("--phones")
+    return argv
+
+
 def main(argv: list[str] | None = None) -> None:
     argv = list(sys.argv[1:] if argv is None else argv)
     pipe = Pipe(os.fdopen(os.dup(1), "w", encoding="utf-8"))  # the pipe keeps the real stdout…
@@ -173,10 +186,7 @@ def main(argv: list[str] | None = None) -> None:
     sys.stdin = open(os.devnull, encoding="utf-8")
     from backend.api.app import parse_args, start_vault
 
-    if "--no-phones" in argv:
-        argv.remove("--no-phones")
-    elif "--phones" not in argv:
-        argv.append("--phones")
+    argv = engine_arguments(argv)
     try:
         app, stop = start_vault(parse_args(argv))
     except SystemExit as e:  # the vault explains startup problems this way (no key, database unreachable…)

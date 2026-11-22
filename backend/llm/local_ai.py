@@ -34,6 +34,44 @@ class LocalAI:
         threading.Thread(target=self._run, name="download-ai", daemon=True).start()
         return self.status()
 
+    def start_automatically(self, after=None) -> None:
+        """A computer that keeps the vault can't answer without the local AI, so the apps' engine downloads it by
+        itself (in the background, after `after()` returns: the search model first). Not without room for it."""
+        def run():
+            if after is not None:
+                try:
+                    after()
+                except Exception:  # noqa: BLE001 (the search model's own problem, shown on its own)
+                    pass
+            if not self.downloadable():
+                return
+            if (problem := self.too_little_space()) is not None:
+                with self._lock:
+                    self._state.update(state="failed", error=problem)
+                logger.warning("Not downloading the local AI: %s", problem)
+                return
+            logger.info("Downloading the local AI by itself (about %d GB, once)", llamacpp.MODEL["size"] // 10**9)
+            self.start_download()
+
+        threading.Thread(target=run, name="download-ai-soon", daemon=True).start()
+
+    @staticmethod
+    def too_little_space() -> str | None:
+        """Why there isn't room for the model (with 2 GB to spare), or None."""
+        import shutil
+
+        folder = llamacpp.llm_dir()
+        here = folder
+        while not here.exists():
+            here = here.parent
+        partial = folder / "models" / (llamacpp.MODEL["file"] + ".partial")
+        needed = llamacpp.MODEL["size"] - (partial.stat().st_size if partial.exists() else 0) + 2 * 10**9
+        free = shutil.disk_usage(here).free
+        if free >= needed:
+            return None
+        return (f"There isn't enough free space for the local AI: it needs about {needed / 10**9:.0f} GB and this "
+                f"computer has {free / 10**9:.1f} GB free. Free some space, then download it.")
+
     def _progress(self, step: str):
         def update(done: int, total: int) -> None:
             with self._lock:
