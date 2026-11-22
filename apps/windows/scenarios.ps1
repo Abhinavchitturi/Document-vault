@@ -49,19 +49,18 @@ try {
         $win = Top-Window "Setup - Document Vault*" 120
         Find-Like $win "How will this PC use Document Vault?*" 60 | Out-Null
         Shot "installer-question"
-        Press (Find-Like $win "Next*")
+        Press (Find-Button $win "Next*")
         $box = Top-Window "Setup" 20  # nothing chosen: it asks for an answer
         Find-Like $box "Choose how this PC*" 10 | Out-Null
         Shot "installer-must-choose"
-        Press (Find-Like $box "OK")
-        try { Press (Find-Like $win "Use the vault on another computer*" 5) }
-        catch { $win.SetFocus(); [System.Windows.Forms.SendKeys]::SendWait("{DOWN}{DOWN} ") }  # the options, by keyboard
+        Press (Find-Button $box "OK")
+        Press (Find-Like $win "Use the vault on another computer*" 10 "RadioButton")
         Start-Sleep -Seconds 1
         Shot "installer-chose-connect"
-        Press (Find-Like $win "Next*")
-        Press (Find-Like $win "Next*" 30)  # the desktop shortcut page
-        Press (Find-Like $win "*Install*" 30)
-        Press (Find-Like $win "*Finish*" 600)  # opens the app
+        Press (Find-Button $win "Next*")
+        Press (Find-Button $win "Next*" 30)  # the desktop shortcut page
+        Press (Find-Button $win "*Install*" 30)
+        Press (Find-Button $win "*Finish*" 600)  # opens the app
         if (-not $setupProcess.WaitForExit(60000)) { throw "the installer didn't finish" }
         $mode = (Get-Content $ModeFile -ErrorAction SilentlyContinue | Out-String).Trim()
         if ($mode -ne "remote") { throw "the installer saved '$mode', not the answer 'remote'" }
@@ -86,7 +85,7 @@ try {
         $security = (($pairing.fingerprint.Substring(0, 16).ToUpper()) -split '(.{4})' | Where-Object { $_ }) -join ' '
         Find-Like $window "*$security*" 60 | Out-Null  # the app shows the centre's security code
         Shot "connect-security-code"
-        Press (Find-Like $window "It matches")
+        Press (Find-Button $window "It matches")
         Find $window "Nav-dashboard" 120 | Out-Null
         Press (Find $window "Nav-documents")
         Find-Like $window "Car Insurance 2026.txt*" 120 | Out-Null  # the centre's document, seen from this PC

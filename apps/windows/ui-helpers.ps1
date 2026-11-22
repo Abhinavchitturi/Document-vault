@@ -35,11 +35,26 @@ function Find($within, [string]$id, [int]$seconds = 60) {
     throw "Couldn't find '$id' within $seconds s"
 }
 
+Add-Type -Namespace Win32 -Name Mouse -MemberDefinition @"
+[DllImport("user32.dll")] public static extern bool SetCursorPos(int x, int y);
+[DllImport("user32.dll")] public static extern void mouse_event(uint flags, uint x, uint y, uint data, System.UIntPtr extra);
+"@
+
+function Click-At($element) {
+    # a real mouse click in the middle of the control: for controls that don't offer a way to be pressed
+    $r = $element.Current.BoundingRectangle
+    [Win32.Mouse]::SetCursorPos([int]($r.X + $r.Width / 2), [int]($r.Y + $r.Height / 2)) | Out-Null
+    [Win32.Mouse]::mouse_event(0x02, 0, 0, 0, [System.UIntPtr]::Zero)  # left down
+    [Win32.Mouse]::mouse_event(0x04, 0, 0, 0, [System.UIntPtr]::Zero)  # left up
+}
+
 function Press($element) {
     $pattern = $null
     if ($element.TryGetCurrentPattern([System.Windows.Automation.InvokePattern]::Pattern, [ref]$pattern)) { $pattern.Invoke(); return }
     if ($element.TryGetCurrentPattern([System.Windows.Automation.SelectionItemPattern]::Pattern, [ref]$pattern)) { $pattern.Select(); return }
-    $element.SetFocus(); [System.Windows.Forms.SendKeys]::SendWait(" ")
+    if ($element.TryGetCurrentPattern([System.Windows.Automation.TogglePattern]::Pattern, [ref]$pattern)) { $pattern.Toggle(); return }
+    try { $element.SetFocus(); [System.Windows.Forms.SendKeys]::SendWait(" ") }
+    catch { Click-At $element }
 }
 
 function Type-Into($element, [string]$text) {
@@ -73,12 +88,16 @@ function Step([string]$name, [scriptblock]$block) {
 }
 
 
-function Find-Like($within, [string]$pattern, [int]$seconds = 60) {
-    # by name, with wildcards (Inno Setup's buttons are "Next >", "&Install"...)
+function Find-Like($within, [string]$pattern, [int]$seconds = 60, [string]$type = "") {
+    # by name, with wildcards (Inno Setup's buttons are "Next >", "&Install"...); -type Button / RadioButton / ...
+    # to skip labels with the same words
     $deadline = (Get-Date).AddSeconds($seconds)
     while ((Get-Date) -lt $deadline) {
         $all = $within.FindAll($Scope::Descendants, [System.Windows.Automation.Condition]::TrueCondition)
-        foreach ($e in $all) { if ($e.Current.Name -like $pattern) { return $e } }
+        foreach ($e in $all) {
+            if ($e.Current.Name -like $pattern -and (-not $type -or $e.Current.ControlType.ProgrammaticName -eq "ControlType.$type") -and
+                -not $e.Current.IsOffscreen) { return $e }
+        }
         Start-Sleep -Milliseconds 500
     }
     Shot "not-found-$($pattern -replace '[^A-Za-z0-9]', '')"
@@ -104,3 +123,5 @@ function Wait-Until([scriptblock]$condition, [int]$seconds, [string]$what) {
     Shot "timeout-$($what -replace '[^A-Za-z0-9]', '')"
     throw "Waited $seconds s for: $what"
 }
+
+function Find-Button($within, [string]$pattern, [int]$seconds = 60) { Find-Like $within $pattern $seconds "Button" }
