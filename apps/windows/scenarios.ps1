@@ -127,7 +127,7 @@ try {
         Start-Sleep -Seconds 5
         if (Get-Process DocumentVault -ErrorAction SilentlyContinue) { throw "the app opened again after 'Update When I Quit'" }
         if ((Get-Content $ModeFile | Out-String).Trim() -ne "remote") { throw "the update changed this PC's answer" }
-        $installed = (Get-ChildItem "$env:LOCALAPPDATA\Microsoft\Windows\Start Menu\Programs" -Recurse -Filter "Document Vault*.lnk").Count
+        $installed = (Get-ChildItem "$env:APPDATA\Microsoft\Windows\Start Menu\Programs" -Recurse -Filter "Document Vault*.lnk").Count
         if ($installed -ne 1) { throw "expected one Start menu shortcut after updating, found $installed" }
     }
 
