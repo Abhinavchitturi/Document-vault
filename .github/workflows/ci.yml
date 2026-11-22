@@ -68,31 +68,6 @@ jobs:
         shell: cmd
         run: type data\logs\vault.log
 
-  installer:
-    name: Windows installer
-    runs-on: windows-latest
-    permissions:
-      contents: write  # to attach the installer to a release
-    steps:
-      - uses: actions/checkout@v4
-      - name: Build DocumentVault-Setup.exe
-        shell: pwsh
-        run: |
-          if (-not (Test-Path "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe")) { choco install innosetup -y --no-progress }
-          $version = if ($env:GITHUB_REF -like 'refs/tags/v*') { $env:GITHUB_REF_NAME.TrimStart('v') } else { "0.0.0-dev" }
-          & "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe" "/DVersion=$version" packaging\windows\DocumentVault.iss
-          if ($LASTEXITCODE -ne 0) { exit 1 }
-      - uses: actions/upload-artifact@v4
-        with:
-          name: DocumentVault-Setup
-          path: dist/DocumentVault-Setup.exe
-      - name: Attach to the release
-        if: startsWith(github.ref, 'refs/tags/v')
-        shell: pwsh
-        run: gh release upload "$env:GITHUB_REF_NAME" dist/DocumentVault-Setup.exe --clobber
-        env:
-          GH_TOKEN: ${{ github.token }}
-
   mac-app:
     name: Mac app (.dmg)
     runs-on: macos-latest
@@ -118,6 +93,8 @@ jobs:
     # The native Windows app (WinUI 3): its core against the real engine, a build, and a screenshot of it running.
     name: Windows app (WinUI)
     runs-on: windows-latest
+    permissions:
+      contents: write  # to attach the installer to a release
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -135,6 +112,23 @@ jobs:
           dotnet test apps/windows/DocumentVault.Core.Tests
       - name: Build the app
         run: dotnet publish apps/windows/DocumentVault.App -c Release -r win-x64 -p:Platform=x64 -o dist/windows-app
+      - name: Build DocumentVault-Setup.exe (the app, and the engine set up on first install)
+        shell: pwsh
+        run: |
+          if (-not (Test-Path "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe")) { choco install innosetup -y --no-progress }
+          $version = if ($env:GITHUB_REF -like 'refs/tags/v*') { $env:GITHUB_REF_NAME.TrimStart('v') } else { "0.0.0-dev" }
+          & "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe" "/DVersion=$version" packaging\windows\DocumentVault.iss
+          if ($LASTEXITCODE -ne 0) { exit 1 }
+      - uses: actions/upload-artifact@v4
+        with:
+          name: DocumentVault-Setup
+          path: dist/DocumentVault-Setup.exe
+      - name: Attach the installer to the release
+        if: startsWith(github.ref, 'refs/tags/v')
+        shell: pwsh
+        run: gh release upload "$env:GITHUB_REF_NAME" dist/DocumentVault-Setup.exe --clobber
+        env:
+          GH_TOKEN: ${{ github.token }}
       - name: Click through every screen, with screenshots
         shell: powershell
         run: powershell -ExecutionPolicy Bypass -File apps/windows/ui-test.ps1 -AppPath dist\windows-app\DocumentVault.exe -Python (Get-Command python).Source -Out screens

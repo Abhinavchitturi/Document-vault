@@ -121,6 +121,9 @@ if ($here -and (Test-Path (Join-Path $here "backend\deploy\vault.py")) -and -not
 }
 Set-Location $Dir
 Write-Host "Using $Dir"
+# the apps look here for the vault (it can be anywhere: the Windows installer puts it in its own folder)
+New-Item -ItemType Directory -Force -Path (Join-Path $env:USERPROFILE ".document-vault") | Out-Null
+Set-Content -Path (Join-Path $env:USERPROFILE ".document-vault\install-dir") -Value $Dir -Encoding UTF8 -NoNewline
 
 # ---- 3. Python packages and the web app ----------------------------------------------------------------------------
 Say "Installing Python packages (the first time this takes several minutes)"

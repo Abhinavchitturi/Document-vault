@@ -30,16 +30,20 @@ Nothing is sent to a cloud AI service.
 | Device | Download | Requires |
 |:---:|:---:|:---:|
 | 💻 **Mac** | [**DocumentVault-macOS.dmg**](https://github.com/Abhinavchitturi/Document-vault/releases/download/v0.9.0-beta/DocumentVault-macOS.dmg) | macOS 14 or later, Apple Silicon |
-| 🪟 **Windows** | [**DocumentVault-Windows.zip**](https://github.com/Abhinavchitturi/Document-vault/releases/download/v0.9.0-beta/DocumentVault-Windows.zip) | Windows 10 or 11, 64-bit |
+| 🪟 **Windows** | [**DocumentVault-Setup.exe**](https://github.com/Abhinavchitturi/Document-vault/releases/download/v0.9.0-beta/DocumentVault-Setup.exe) | Windows 10 or 11, 64-bit |
 | 📱 **Android phone** | [**DocumentVault-Android.apk**](https://github.com/Abhinavchitturi/Document-vault/releases/download/v0.9.0-beta/DocumentVault-Android.apk) | Android 7 or later |
 
 **Beta.** Native apps: SwiftUI on the Mac, WinUI on Windows, both following Apple's design. They keep the vault on your
 computer and talk to it over a private pipe, with no network port. The phone app pairs with the vault on your computer.
 
-**First time on a computer:** the app needs the vault's engine and AI models (about 6 GB, downloaded once). Run the
-one-command setup for your system under [Getting started](#getting-started) (add `--no-start` on a Mac or `-NoStart` on
-Windows), then open the app. The apps aren't code-signed yet: on a Mac, allow it once under *System Settings → Privacy &
-Security → Open Anyway*; on Windows, choose *More info → Run anyway*.
+**Windows:** run the installer. It installs the app, sets up the vault's engine and downloads the AI models (about
+6 GB, once; a window shows the progress), and adds **Document Vault** to the Start menu.
+
+**Mac:** the app needs the vault's engine and AI models first (about 6 GB, once): run the one-command setup under
+[Getting started](#getting-started) with `--no-start`, then open the app.
+
+The apps aren't code-signed yet. On a Mac, allow it once under *System Settings → Privacy & Security → Open Anyway*;
+on Windows, choose *More info → Run anyway*.
 
 All versions: [Releases page](https://github.com/Abhinavchitturi/Document-vault/releases).
 

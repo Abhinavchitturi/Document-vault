@@ -49,6 +49,9 @@ else
   printf 'Using %s\n' "$PWD"
 fi
 
+# the apps look here for the vault (it can be anywhere: $DOCUMENT_VAULT_DIR moves it)
+mkdir -p "$HOME/.document-vault" && printf '%s' "$PWD" > "$HOME/.document-vault/install-dir"
+
 say "Checking Homebrew"
 command -v brew >/dev/null 2>&1 || fail "Homebrew is missing. Install it from https://brew.sh, then run ./install.sh again."
 
