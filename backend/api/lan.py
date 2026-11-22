@@ -73,6 +73,10 @@ def phone_urls(port: int, extra: list[str] | None = None) -> list[str]:
     found = [lan_address(), tailscale_address(), *(extra or [])]
     urls = []
     for address in found:
+        if address and "://" in address:  # a full address was given: keep only its host
+            from urllib.parse import urlsplit
+
+            address = urlsplit(address).hostname
         if address:
             host = f"[{address}]" if ":" in address and not address.startswith("[") else address
             url = f"https://{host}:{port}"

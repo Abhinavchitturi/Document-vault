@@ -396,7 +396,8 @@ def create_app(
 
     @app.get("/api/auth/status")
     def auth_status(request: Request) -> dict:
-        user = accounts.user_for_token(request.cookies.get(SESSION_COOKIE))
+        # a paired device (phone, another computer) is already known by its key; a browser by its sign-in cookie
+        user = getattr(request.state, "user", None) or accounts.user_for_token(request.cookies.get(SESSION_COOKIE))
         setup = accounts.setup_needed()
         try:
             keys.site(request.url.scheme, request.headers.get("host", ""))
@@ -592,7 +593,7 @@ def create_app(
         return {"app": "document-vault", "api": 1}
 
     @app.post("/api/mobile/pairing")
-    def start_pairing(user: dict = Depends(current_user)) -> dict:
+    def start_pairing(typed: bool = False, user: dict = Depends(current_user)) -> dict:
         """A QR code for the phone app: the vault's network address, its certificate fingerprint,
         and a one-time code (10 minutes)."""
         if not phone_link:
@@ -600,7 +601,7 @@ def create_app(
         urls = current_urls()
         if not urls:
             raise HTTPException(409, "This Mac isn't on a network phones can reach. Connect to Wi-Fi or start Tailscale.")
-        code, seconds = devices.start_pairing(user["id"])
+        code, seconds = devices.start_pairing(user["id"], typed=typed)  # typed: for another computer
         payload = json.dumps({"v": 1, "url": urls[0], "urls": urls, "fp": phone_link["fingerprint"], "code": code},
                              separators=(",", ":"))
         import io

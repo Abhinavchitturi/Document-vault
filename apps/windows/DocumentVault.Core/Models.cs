@@ -48,6 +48,9 @@ public sealed record UploadResult(string Filename, string Status, VaultDocument?
 
 public sealed record ChatTurn(string Role, string Content);
 
+/// What the centre computer shows to connect another device: a one-time code, its addresses, its certificate.
+public sealed record Pairing(string Code, int ExpiresIn, string Url, List<string> Urls, string Fingerprint);
+
 public sealed record Settings(string Owner, bool IsAdmin, string? LlmModel, List<string> LlmModels, LlmStatus LlmStatus,
                               string EmbeddingModel, string Database, string IndexDir, bool OcrAvailable, string SearchMethod,
                               string FactsReader, string KeyKeptIn, bool FamilyMode);

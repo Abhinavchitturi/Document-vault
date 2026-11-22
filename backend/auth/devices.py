@@ -37,25 +37,34 @@ def _hash(token: str) -> str:
     return hashlib.sha256(token.encode()).hexdigest()
 
 
+TYPED_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"  # no O/0, I/1: easy to read and type
+
+
 class Devices:
     def __init__(self, engine):
         self.engine = engine
         self._codes: dict[str, tuple[int, float]] = {}  # pairing code -> (user id, expires)
         self._lock = threading.Lock()
 
-    def start_pairing(self, user_id: int) -> tuple[str, int]:
-        """A one-time pairing code for this person, and how many seconds it lasts."""
-        code = secrets.token_urlsafe(12)
+    def start_pairing(self, user_id: int, typed: bool = False) -> tuple[str, int]:
+        """A one-time pairing code for this person, and how many seconds it lasts. `typed`: one a person types into
+        another computer (8 characters such as K7QF-2M9X, no look-alikes, any case) instead of one in a QR code."""
+        if typed:
+            letters = "".join(secrets.choice(TYPED_ALPHABET) for _ in range(8))
+            code, key = f"{letters[:4]}-{letters[4:]}", letters
+        else:
+            code = key = secrets.token_urlsafe(12)
         now = time.monotonic()
         with self._lock:
             self._codes = {c: v for c, v in self._codes.items() if v[1] > now and v[0] != user_id}  # one open code each
-            self._codes[code] = (user_id, now + PAIRING_SECONDS)
+            self._codes[key] = (user_id, now + PAIRING_SECONDS)
         return code, PAIRING_SECONDS
 
     def pair(self, code: str, name: str) -> tuple[dict, dict, str]:
         """(user, device, access key) for a valid code; the code is used up either way."""
+        typed = "".join((code or "").split()).replace("-", "").upper()
         with self._lock:
-            entry = self._codes.pop(code or "", None)
+            entry = self._codes.pop(code or "", None) or (self._codes.pop(typed, None) if len(typed) == 8 else None)
         if entry is None or entry[1] < time.monotonic():
             raise AuthError("This pairing code is wrong or expired. Show a new QR code on the Mac.")
         name = " ".join((name or "").split())[:100] or "Phone"

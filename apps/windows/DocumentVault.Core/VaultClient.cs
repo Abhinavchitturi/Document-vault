@@ -99,6 +99,12 @@ public sealed class VaultClient(IVaultTransport transport, ISessionStore session
         finally { await lines.DisposeAsync(); }
     }
 
+    // ---- other devices
+
+    /// A one-time code for another computer (`typed`: short, to type) or a phone (for a QR code), for 10 minutes.
+    public async Task<Pairing> StartPairingAsync(bool typed) =>
+        Decode<Pairing>(await SendAsync(new VaultRequest("POST", $"/api/mobile/pairing?typed={(typed ? "true" : "false")}")));
+
     // ---- plumbing
 
     private sealed record SignedIn(User User);

@@ -133,3 +133,28 @@ def test_phone_urls_lists_wifi_then_tunnel(monkeypatch):
     monkeypatch.setattr(lan, "lan_address", lambda: None)
     monkeypatch.setattr(lan, "tailscale_address", lambda: None)
     assert lan.phone_urls(8443) == []
+
+
+def test_another_computer_pairs_with_a_short_typed_code(tmp_path):
+    import re
+
+    from backend.auth.devices import TYPED_ALPHABET
+
+    web, phone_app = apps(tmp_path)
+    me = signed_in(web)
+    shown = me.post("/api/mobile/pairing", params={"typed": "true"}).json()
+    assert re.fullmatch(r"[A-Z2-9]{4}-[A-Z2-9]{4}", shown["code"]) and not set(shown["code"]) & set("01IO")
+    assert set(shown["code"].replace("-", "")) <= set(TYPED_ALPHABET)
+    laptop = TestClient(phone_app, base_url="https://192.168.1.20:8443")
+    typed = shown["code"].lower().replace("-", " ")  # typed loosely: any case, a space instead of the dash
+    r = laptop.post("/api/mobile/pair", json={"code": typed, "device_name": "Abhinav's Windows laptop"})
+    assert r.status_code == 200, r.text
+    laptop.headers["Authorization"] = f"Bearer {r.json()['token']}"
+    assert laptop.get("/api/info").json()["owner"] == "abhinav"
+    assert laptop.post("/api/mobile/pair", json={"code": shown["code"], "device_name": "x"}).status_code == 401  # once
+
+
+def test_a_paired_device_is_told_who_it_belongs_to(tmp_path):
+    web, phone_app = apps(tmp_path)
+    phone, _ = pair(signed_in(web), phone_app)
+    assert phone.get("/api/auth/status").json()["user"]["name"] == "abhinav"
