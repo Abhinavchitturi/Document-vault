@@ -1173,11 +1173,9 @@ def start_vault(args: argparse.Namespace):
     model_name = args.model or DEFAULT_MODEL
     # The vault opens at once; the search model and its tokenizer load beside it (the first search, question or
     # added document waits for them). Re-embedding below, rare, waits too.
-    from backend.embeddings import download
 
     def make_embedder():  # downloaded first if needed (the apps show its progress: GET /api/search/status)
-        download.ensure(model_name)
-        return Embedder(model_name, device=args.device, revision=download.revision_for(model_name))
+        return Embedder(model_name, device=args.device)
 
     embedder = InBackground("search model", make_embedder, model_name=model_name)
     if store.model and store.model != embedder.model_name:
@@ -1208,7 +1206,7 @@ def start_vault(args: argparse.Namespace):
     accounts, devices = Accounts(store.engine), Devices(store.engine)
     def make_tokenizer():  # after the model: transformers can't be imported by two threads at once
         embedder.wait()
-        return HFTokenizer(model_name, revision=download.revision_for(model_name))
+        return HFTokenizer(model_name)
 
     tokenizer = InBackground("tokenizer", make_tokenizer, name=model_name)
     phone_server, phone_link = None, None

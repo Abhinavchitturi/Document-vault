@@ -20,6 +20,12 @@ from pathlib import Path
 import numpy as np
 
 DEFAULT_MODEL = "Snowflake/snowflake-arctic-embed-m-v1.5"
+DEFAULT_REVISION = "e58a8f756156a1293d763f17e3aae643474e9b8a"  # its pinned version (backend/embeddings/download.py)
+
+
+def revision_for(model_name: str) -> str | None:
+    """The pinned commit for the default model (None for any other: its latest version)."""
+    return DEFAULT_REVISION if model_name == DEFAULT_MODEL else None
 
 # Prefixes recommended by each model's authors for query -> passage retrieval.
 _PREFIXES = {
@@ -66,9 +72,14 @@ def prefer_offline(model_name: str) -> bool:
 class Embedder:
     def __init__(self, model_name: str = DEFAULT_MODEL, device: str | None = None, batch_size: int = 64,
                  revision: str | None = None):
+        if model_name == DEFAULT_MODEL:  # the pinned files, downloaded once (every caller: the apps, the scripts)
+            from backend.embeddings import download
+
+            download.ensure(model_name)
         prefer_offline(model_name)
         from sentence_transformers import SentenceTransformer
 
+        revision = revision or revision_for(model_name)
         self.model_name = model_name
         self.batch_size = batch_size
         # device=None picks cuda/mps/cpu; `revision` pins the model's version (the apps' engine)

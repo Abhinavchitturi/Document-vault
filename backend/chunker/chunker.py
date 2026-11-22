@@ -37,9 +37,10 @@ class HFTokenizer:
     """Wraps a Hugging Face fast tokenizer to produce character spans."""
 
     def __init__(self, model_name: str = DEFAULT_TOKENIZER, revision: str | None = None):
-        from backend.embeddings.embedder import prefer_offline
+        from backend.embeddings.embedder import prefer_offline, revision_for
 
         prefer_offline(model_name)
+        revision = revision or revision_for(model_name)
         from transformers import AutoTokenizer
 
         self.name = model_name

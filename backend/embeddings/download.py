@@ -9,11 +9,11 @@ import logging
 import threading
 from dataclasses import asdict, dataclass
 
-from backend.embeddings.embedder import DEFAULT_MODEL, _hf_cache_dir
+from backend.embeddings.embedder import DEFAULT_MODEL, DEFAULT_REVISION, _hf_cache_dir, revision_for  # noqa: F401
 
 logger = logging.getLogger(__name__)
 
-REVISION = "e58a8f756156a1293d763f17e3aae643474e9b8a"  # Snowflake/snowflake-arctic-embed-m-v1.5
+REVISION = DEFAULT_REVISION  # Snowflake/snowflake-arctic-embed-m-v1.5
 FILES = {  # what sentence-transformers reads, with their sizes at that commit
     "model.safetensors": 435588776,
     "tokenizer.json": 711649,
@@ -46,11 +46,6 @@ progress = Progress()
 
 def _repo_dir(model_name: str):
     return _hf_cache_dir() / f"models--{model_name.replace('/', '--')}"
-
-
-def revision_for(model_name: str) -> str | None:
-    """The pinned commit for the default model (None for any other: its latest version)."""
-    return REVISION if model_name == DEFAULT_MODEL else None
 
 
 def downloaded(model_name: str = DEFAULT_MODEL) -> bool:
