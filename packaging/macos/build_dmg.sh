@@ -36,7 +36,7 @@ rm -f "$OUT/DocumentVault-macOS.dmg"
 tiffutil -cathidpicheck packaging/macos/dmg-background.png packaging/macos/dmg-background@2x.png -out "$OUT/build/background.tiff"
 command -v create-dmg >/dev/null 2>&1 || brew install create-dmg >/dev/null 2>&1 || true
 if ! command -v create-dmg >/dev/null 2>&1 || ! create-dmg --volname "Document Vault" --background "$OUT/build/background.tiff" \
-     --window-pos 200 120 --window-size 660 480 --icon-size 96 --text-size 13 \
+     --window-pos 200 100 --window-size 660 580 --icon-size 96 --text-size 13 \
      --icon "Document Vault.app" 165 150 --hide-extension "Document Vault.app" --app-drop-link 495 150 \
      --format ULMO --no-internet-enable "$OUT/DocumentVault-macOS.dmg" "$STAGE"; then
   echo "Laying out the window didn't work here; building a plain DMG instead" >&2

@@ -8,7 +8,7 @@ from pathlib import Path
 from PIL import Image, ImageDraw, ImageFont
 
 HERE = Path(__file__).parent
-W, H = 660, 460  # the window's size, in points
+W, H = 660, 560  # the window's size, in points (room below for Finder's tab and status bars)
 INK, SOFT, ACCENT, PAPER = (29, 29, 31), (110, 110, 115), (88, 86, 214), (245, 245, 247)
 
 
@@ -31,7 +31,7 @@ def draw(scale: int) -> Image.Image:
     d.line([(s(250), y), (s(400), y)], fill=ACCENT, width=s(5))
     d.polygon([(s(412), y), (s(396), y - s(11)), (s(396), y + s(11))], fill=ACCENT)
     # the first time
-    d.rounded_rectangle([s(30), s(262), s(W - 30), s(H - 24)], radius=s(14), fill=(255, 255, 255), outline=(220, 220, 225), width=max(1, s(1)))
+    d.rounded_rectangle([s(30), s(262), s(W - 30), s(436)], radius=s(14), fill=(255, 255, 255), outline=(220, 220, 225), width=max(1, s(1)))
     d.text((s(52), s(282)), "Opening it the first time", font=font(s(15), "Semibold"), fill=INK)
     steps = [
         "Open Document Vault from Applications. If macOS says it can't check the app, click Done.",
@@ -43,7 +43,7 @@ def draw(scale: int) -> Image.Image:
         d.ellipse([s(52), top, s(74), top + s(22)], fill=ACCENT)
         d.text((s(63), top + s(11)), str(i + 1), font=font(s(13), "Semibold"), fill=(255, 255, 255), anchor="mm")
         d.text((s(86), top + s(11)), step, font=font(s(12.5)), fill=SOFT, anchor="lm")
-    d.text((s(W / 2), s(H - 40)), "Only once: after that it opens normally, and it updates itself.",
+    d.text((s(W / 2), s(420)), "Only once: after that it opens normally, and it updates itself.",
            font=font(s(11.5)), fill=SOFT, anchor="mm")
     return image
 
