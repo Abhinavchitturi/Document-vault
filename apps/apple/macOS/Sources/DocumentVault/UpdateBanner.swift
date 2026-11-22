@@ -3,7 +3,7 @@ import SwiftUI
 import VaultKit
 
 /// "Document Vault 0.9.2 is available": across the top of the window when the releases page has a newer version
-/// (checked at start and every few hours). The person chooses: Restart & Update (download, swap, reopen), Update When
+/// (checked at start and every hour). The person chooses: Restart & Update (download, swap, reopen), Update When
 /// I Quit (download now, swap in when the app quits) or Later. The DMG is checked against the SHA-256 GitHub publishes;
 /// the new app takes this one's place (same name, same folder, this Mac's answer kept, documents untouched), and the
 /// DMG is deleted.
@@ -52,7 +52,7 @@ struct UpdateBanner: View {
             guard let current = Self.version else { return }
             while !Task.isCancelled {
                 if update == nil { update = await Updates.check(current: current, asset: "DocumentVault-macOS.dmg") }
-                try? await Task.sleep(for: .seconds(6 * 3600))
+                try? await Task.sleep(for: .seconds(3600))  // every hour
             }
         }
     }

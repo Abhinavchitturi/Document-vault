@@ -7,7 +7,7 @@ using Microsoft.UI.Xaml.Controls;
 namespace DocumentVault.Pages;
 
 /// "Document Vault 0.9.2 is available": across the top of the window when the releases page has a newer version
-/// (checked at start and every few hours). The person chooses: Restart & Update (download, install, reopen), Update
+/// (checked at start and every hour). The person chooses: Restart & Update (download, install, reopen), Update
 /// When I Quit (download now, install quietly when the app is closed) or Later. The installer is checked against the
 /// SHA-256 GitHub publishes, replaces this app in place (same folder and shortcuts, this PC's answer kept, documents
 /// untouched) and is deleted afterwards.
@@ -18,7 +18,7 @@ public sealed class UpdateBar : UserControl
     private readonly TextBlock _text = UI.Text("");
     private readonly ProgressBar _bar = new() { Maximum = 100, Visibility = Visibility.Collapsed, Width = 260 };
     private readonly StackPanel _buttons = UI.Row(8);
-    private readonly DispatcherTimer _timer = new() { Interval = TimeSpan.FromHours(6) };
+    private readonly DispatcherTimer _timer = new() { Interval = TimeSpan.FromHours(1) };
     private AppUpdate? _update;
 
     /// This app's version (the release it was built for), or null in development (no checking then).
