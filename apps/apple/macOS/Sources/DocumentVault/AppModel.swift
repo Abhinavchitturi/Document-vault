@@ -27,10 +27,25 @@ final class AppModel {
     let connections = ConnectionStore()
 
     /// "here" (this Mac is the centre: the engine runs here) or "remote" (it uses the vault on another computer).
+    /// Asked again for every newly installed copy of the app: the answer belongs to the copy it was given to.
     var mode: String? {
-        get { UserDefaults.standard.string(forKey: "mode") }
-        set { UserDefaults.standard.set(newValue, forKey: "mode") }
+        get {
+            guard UserDefaults.standard.string(forKey: "modeInstall") == Self.installIdentity else { return nil }
+            return UserDefaults.standard.string(forKey: "mode")
+        }
+        set {
+            UserDefaults.standard.set(newValue, forKey: "mode")
+            UserDefaults.standard.set(Self.installIdentity, forKey: "modeInstall")
+        }
     }
+
+    /// This installed copy of the app: where it is and when it was put there (a new download dragged to
+    /// Applications is a new copy).
+    static let installIdentity: String = {
+        let app = Bundle.main.bundleURL
+        let created = (try? app.resourceValues(forKeys: [.creationDateKey]).creationDate)?.timeIntervalSince1970 ?? 0
+        return "\(app.path)|\(Int(created))"
+    }()
     /// The engine this app version needs (engine.json, written when the DMG is built), or nil when the app runs
     /// against a development checkout. It is downloaded only when this Mac keeps the vault.
     static let release: EngineRelease? = Bundle.main.url(forResource: "engine", withExtension: "json").flatMap(EngineInstaller.load)
@@ -65,6 +80,11 @@ final class AppModel {
     init() {
         folder = Self.bundledEngine == nil ? Self.vaultFolder()
             : FileManager.default.homeDirectoryForCurrentUser.appending(path: "Library/Application Support/Document Vault/Vault")
+        if let earlier = UserDefaults.standard.string(forKey: "modeInstall"), earlier != Self.installIdentity {
+            connections.save(nil)  // a newly installed copy starts fresh: asked again, paired again if it connects
+            UserDefaults.standard.removeObject(forKey: "mode")
+            UserDefaults.standard.removeObject(forKey: "modeInstall")
+        }
     }
 
     var user: User? {

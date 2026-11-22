@@ -64,11 +64,11 @@ Type: filesandordirs; Name: "{app}\Engine"
 // First question of the setup: is this PC the centre (the vault and its documents live here), or does it only use
 // the vault on another computer? Saved as the app's own first-start choice (%LOCALAPPDATA%\Document Vault\mode.txt),
 // so the app opens straight to the right screen; it can be changed later in the app's Settings. It is asked on every
-// install, with the earlier answer chosen already. A silent install asks nothing (the app asks on its first start),
-// unless it is given /MODE=here or /MODE=remote. Uninstalling forgets the answer (never the documents).
+// install, with nothing chosen beforehand: Next waits for an answer. A silent install asks nothing (the app asks on
+// its first start), unless it is given /MODE=here or /MODE=remote. Uninstalling forgets the answer (never the
+// documents).
 var
   RolePage: TInputOptionWizardPage;
-  Earlier: AnsiString;
 
 function ModeFile(): String;
 begin
@@ -87,9 +87,18 @@ begin
     True, False);
   RolePage.Add('Keep the vault on this PC (this PC is the centre)');
   RolePage.Add('Use the vault on another computer (just connect to it)');
-  RolePage.Values[0] := True;
-  if LoadStringFromFile(ModeFile(), Earlier) and (Pos('remote', String(Earlier)) > 0) then
-    RolePage.Values[1] := True;
+  RolePage.Values[0] := False;  // nothing chosen beforehand
+  RolePage.Values[1] := False;
+end;
+
+function NextButtonClick(CurPageID: Integer): Boolean;
+begin
+  Result := True;
+  if (CurPageID = RolePage.ID) and not RolePage.Values[0] and not RolePage.Values[1] then
+  begin
+    MsgBox('Choose how this PC will use Document Vault.', mbInformation, MB_OK);
+    Result := False;
+  end;
 end;
 
 procedure CurStepChanged(CurStep: TSetupStep);
@@ -101,7 +110,9 @@ begin
   if (Mode = '') and not WizardSilent() then
   begin
     if RolePage.Values[1] then Mode := 'remote' else Mode := 'here';
-  end;
+  end
+  else if Mode = '' then
+    DeleteFile(ModeFile());  // a silent install: the app asks on its first start
   if (Mode = 'here') or (Mode = 'remote') then
   begin
     ForceDirectories(ExtractFileDir(ModeFile()));
