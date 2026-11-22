@@ -8,17 +8,58 @@ public struct Connection: Codable, Equatable, Sendable {
     public let fingerprint: String
     public let token: String
     public let name: String
+    /// 1.0: the other computers that keep the same vault, used when the paired one is off.
+    public var others: [Centre]?
+}
+
+/// 1.0: another computer that keeps the same vault, and its certificate.
+public struct Centre: Codable, Equatable, Sendable {
+    public let name: String
+    public let urls: [String]
+    public let fingerprint: String
 }
 
 public final class RemoteVault: VaultTransport, @unchecked Sendable {
     public static let port = 8443
     private let lock = NSLock()
     private var current: Connection
-    private let session: URLSession
+    private var preferred: String?  // the address that answered last (maybe another computer that keeps the vault)
+    private var session: URLSession!
 
     public init(_ connection: Connection) {
         current = connection
-        session = Self.session(trusting: connection.fingerprint)
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.timeoutIntervalForRequest = 15
+        // the paired computer, and the others that keep the same vault
+        session = URLSession(configuration: configuration, delegate: Pinning(trusted: { [weak self] in self?.trusts($0) ?? false }),
+                             delegateQueue: nil)
+    }
+
+    private func trusts(_ fingerprint: String) -> Bool {
+        lock.withLock { current.fingerprint == fingerprint || (current.others ?? []).contains { $0.fingerprint == fingerprint } }
+    }
+
+    /// The paired computer's addresses first, then the other computers that keep the vault; the one that answered
+    /// last before all of them.
+    private var candidates: [String] {
+        lock.withLock {
+            var all: [String] = []
+            for url in current.urls + (current.others ?? []).flatMap(\.urls) where !all.contains(url) { all.append(url) }
+            if let preferred, let at = all.firstIndex(of: preferred) { all.insert(all.remove(at: at), at: 0) }
+            return all
+        }
+    }
+
+    /// Learn which computers keep this vault now (the paired one tells), to use another when it is off. Returns the
+    /// updated connection, to save.
+    public func refreshCentres() async throws -> Connection {
+        struct Answer: Decodable { let centres: [Centre]? }
+        let body = try await send(VaultRequest("GET", "/api/mobile/addresses")).body
+        guard let centres = try JSONDecoder().decode(Answer.self, from: body).centres else { return connection }  // before 1.0
+        return lock.withLock {
+            current.others = centres.filter { $0.fingerprint.count == 64 && $0.fingerprint != current.fingerprint }
+            return current
+        }
     }
 
     public var connection: Connection { lock.withLock { current } }
@@ -69,7 +110,9 @@ public final class RemoteVault: VaultTransport, @unchecked Sendable {
     /// Step 2: pair with the typed code, trusting only the certificate the person confirmed.
     public static func pair(_ typed: String, code: String, fingerprint: String, deviceName: String) async throws -> Connection {
         let base = address(typed)
-        let session = Self.session(trusting: fingerprint)
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.timeoutIntervalForRequest = 15
+        let session = URLSession(configuration: configuration, delegate: Pinning(expected: fingerprint), delegateQueue: nil)
         defer { session.finishTasksAndInvalidate() }
         var request = URLRequest(url: URL(string: base + "/api/mobile/pair")!)
         request.httpMethod = "POST"
@@ -80,17 +123,17 @@ public final class RemoteVault: VaultTransport, @unchecked Sendable {
         guard status == 200, let token = ((try? JSONSerialization.jsonObject(with: data)) as? [String: Any])?["token"] as? String else {
             throw EnginePipe.error(status: status == 401 ? 400 : status, body: data)
         }
-        let paired = RemoteVault(Connection(urls: [base], fingerprint: fingerprint, token: token, name: base))
+        let paired = RemoteVault(Connection(urls: [base], fingerprint: fingerprint, token: token, name: base, others: nil))
         let answer = try await paired.send(VaultRequest("GET", "/api/mobile/addresses"))
         let urls = ((try? JSONSerialization.jsonObject(with: answer.body)) as? [String: Any])?["urls"] as? [String] ?? []
-        return Connection(urls: [base] + urls.filter { $0 != base }, fingerprint: fingerprint, token: token, name: base)
+        return Connection(urls: [base] + urls.filter { $0 != base }, fingerprint: fingerprint, token: token, name: base, others: nil)
     }
 
     // MARK: - VaultTransport
 
     public func send(_ request: VaultRequest) async throws -> VaultResponse {
         var last: Error?
-        for url in connection.urls {  // the address that answers: home Wi-Fi, else Tailscale
+        for url in candidates {  // the address that answers: home Wi-Fi, Tailscale, another computer that keeps the vault
             do {
                 let (data, response) = try await session.data(for: try build(url, request))
                 let http = response as? HTTPURLResponse
@@ -115,7 +158,7 @@ public final class RemoteVault: VaultTransport, @unchecked Sendable {
         AsyncThrowingStream { continuation in
             let task = Task {
                 do {
-                    let (bytes, response) = try await session.bytes(for: try build(connection.urls[0], request))
+                    let (bytes, response) = try await session.bytes(for: try build(candidates[0], request))
                     let status = (response as? HTTPURLResponse)?.statusCode ?? 0
                     if status != 200 {
                         var body = Data()
@@ -137,7 +180,7 @@ public final class RemoteVault: VaultTransport, @unchecked Sendable {
     // MARK: - Plumbing
 
     private func remember(_ url: String) {
-        lock.withLock { if current.urls.first != url { current.urls = [url] + current.urls.filter { $0 != url } } }
+        lock.withLock { preferred = url }
     }
 
     private func build(_ base: String, _ request: VaultRequest) throws -> URLRequest {
@@ -171,20 +214,16 @@ public final class RemoteVault: VaultTransport, @unchecked Sendable {
         return http
     }
 
-    /// A session that trusts exactly one certificate: the vault's own (no certificate authority at all).
-    private static func session(trusting fingerprint: String) -> URLSession {
-        let configuration = URLSessionConfiguration.ephemeral
-        configuration.timeoutIntervalForRequest = 15
-        return URLSession(configuration: configuration, delegate: Pinning(expected: fingerprint), delegateQueue: nil)
-    }
 }
 
 /// Checks the vault's certificate by its SHA-256 fingerprint; with no expected one (pairing), it only records it.
 final class Pinning: NSObject, URLSessionDelegate, @unchecked Sendable {
     let expected: String?
+    let trusted: ((String) -> Bool)?
     private(set) var seen: String?
 
-    init(expected: String?) { self.expected = expected }
+    init(expected: String?) { self.expected = expected; trusted = nil }
+    init(trusted: @escaping (String) -> Bool) { expected = nil; self.trusted = trusted }
 
     func urlSession(_ session: URLSession, didReceive challenge: URLAuthenticationChallenge,
                     completionHandler: @escaping (URLSession.AuthChallengeDisposition, URLCredential?) -> Void) {
@@ -196,7 +235,8 @@ final class Pinning: NSObject, URLSessionDelegate, @unchecked Sendable {
         }
         let fingerprint = SHA256.hash(data: SecCertificateCopyData(leaf) as Data).map { String(format: "%02x", $0) }.joined()
         seen = fingerprint
-        if expected == nil || expected == fingerprint {
+        let ok = trusted.map { $0(fingerprint) } ?? (expected == nil || expected == fingerprint)
+        if ok {
             completionHandler(.useCredential, URLCredential(trust: trust))
         } else {
             completionHandler(.cancelAuthenticationChallenge, nil)

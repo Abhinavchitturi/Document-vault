@@ -64,6 +64,8 @@ struct RootView: View {
                 }
             case .signIn(let status):
                 SignInView(status: status)
+            case .joining:
+                JoinVaultView()
             case .ready:
                 MainView()
             }

@@ -79,6 +79,8 @@ public sealed class SettingsPage : UserControl
                 }))));
         }
 
+        if (state.Remote is null) body.Children.Add(Computers(state));
+
         var details = UI.Stack(6, UI.Subtitle("Vault"), UI.Caption("Loading…"));
         body.Children.Add(UI.Card(details));
         if (state.Remote is null) body.Children.Add(UI.Card(UI.Stack(8, UI.Subtitle("Local AI"), new AIDownloadPanel())));
@@ -101,5 +103,51 @@ public sealed class SettingsPage : UserControl
             }
             catch (Exception e) { details.Children.Add(UI.Text(e.Message, secondary: true)); }
         };
+    }
+
+    /// 1.0: the computers that keep this vault, how up to date they are, and adding another.
+    private UIElement Computers(AppState state)
+    {
+        var list = UI.Stack(6, UI.Caption("Loading…"));
+        var shown = UI.Stack(6);
+        async Task Load()
+        {
+            try
+            {
+                var status = await state.Client!.SyncStatusAsync();
+                list.Children.Clear();
+                list.Children.Add(UI.Text($"● {status.Name} (this PC)"));
+                foreach (var peer in status.Peers)
+                    list.Children.Add(UI.Stack(0, UI.Text($"● {peer.Name}"),
+                        UI.Caption(peer.Problem is { } p ? $"Not reached lately: {p}"
+                                   : peer.SyncedAt is { } at ? $"Up to date ({at.ToLocalTime():d MMM, HH:mm})" : "Catching up…")));
+                if (status.Peers.Count == 0)
+                    list.Children.Add(UI.Caption("Only this PC keeps the vault. Add another computer, so either one can be off."));
+            }
+            catch (Exception e) { list.Children.Clear(); list.Children.Add(UI.Caption(e.Message)); }
+        }
+        _ = Load();
+        var add = UI.Button("Add a computer that also keeps this vault", async () =>
+        {
+            try
+            {
+                var invite = await state.Client!.SyncInviteAsync();
+                shown.Children.Clear();
+                shown.Children.Add(UI.Text("On the other computer, install Document Vault, choose \"Keep the vault on this computer\", then " +
+                                           "\"Join a vault kept on another computer instead\", and type:"));
+                shown.Children.Add(UI.Caption("Code (works once, for 10 minutes)"));
+                shown.Children.Add(UI.Text(invite.Code, "TitleTextBlockStyle").Id("JoinCodeText"));
+                shown.Children.Add(UI.Caption("Address"));
+                shown.Children.Add(UI.Text(string.Join("   or   ", invite.Urls.Select(u => new Uri(u).Host))));
+                shown.Children.Add(UI.Caption("Security code (the other computer asks you to check it)"));
+                shown.Children.Add(UI.Text(RemoteVault.SecurityCode(invite.Fingerprint), "SubtitleTextBlockStyle"));
+            }
+            catch (Exception e) { shown.Children.Clear(); shown.Children.Add(UI.Text(e.Message, secondary: true)); }
+        }).Id("AddComputerButton");
+        if (state.User?.IsAdmin != true) add.Visibility = Visibility.Collapsed;
+        return UI.Card(UI.Stack(8, UI.Subtitle("Computers that keep this vault"),
+            UI.Text("Each one has every document, kept up to date with the others within seconds when they can reach each other " +
+                    "(the same Wi-Fi, or Tailscale). Laptops and phones use whichever one is on.", secondary: true),
+            list, add, shown));
     }
 }

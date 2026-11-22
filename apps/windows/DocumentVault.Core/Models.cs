@@ -31,6 +31,16 @@ public sealed record LlmStatus(bool Ready, string Message, bool CanDownload = fa
 
 /// How far the one-click download of the local AI is: idle, downloading (step, done, total), done or failed.
 public sealed record AIDownloadStatus(string State, string? Step, long Done, long Total, string? Error);
+/// 1.0: several computers keep one vault. A code for another computer to join this vault.
+public sealed record SyncInvite(string Code, int ExpiresIn, List<string> Urls, string Fingerprint, string Name);
+/// Another computer that keeps this vault: when it was last caught up with, or why not.
+public sealed record SyncPeer(string CentreId, string Name, List<string> Urls, string Fingerprint, DateTimeOffset? SyncedAt, string? Problem);
+/// Copying a joined vault: copying (Done of Total documents), done or failed.
+public sealed record SyncJoining(string State, int Done, int Total, string? Error, string? With);
+public sealed record SyncStatus(string CentreId, string Name, List<SyncPeer> Peers, SyncJoining? Joining, bool CanJoin);
+public sealed record SyncProbe(string Fingerprint, string Address);
+public sealed record SyncJoiningAnswer(SyncJoining? Joining);
+
 /// The search model: downloading (Done of Total bytes, the first start only), loading, ready or failed.
 public sealed record SearchStatus(string State, long Done, long Total, string? Error);
 public sealed record Person(int Id, string Name);

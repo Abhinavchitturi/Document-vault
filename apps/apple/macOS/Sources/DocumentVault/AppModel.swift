@@ -13,6 +13,7 @@ final class AppModel {
         case notInstalled(folder: String)  // no vault on this Mac yet
         case failed(String)  // the vault couldn't open; says why
         case signIn(AuthStatus)
+        case joining  // 1.0: joining a vault kept on another computer
         case ready(User)
     }
 
@@ -128,6 +129,8 @@ final class AppModel {
             self.remote = remote
             client = VaultClient(transport: remote, session: MemorySessionStore())  // a paired device signs in with its key
             await checkSignIn()
+            // 1.0: remember every computer that keeps this vault, so this Mac still works when the paired one is off
+            if let updated = try? await remote.refreshCentres() { connections.save(updated) }
             return
         default:
             break

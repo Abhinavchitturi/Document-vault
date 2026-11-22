@@ -11,18 +11,47 @@ namespace DocumentVault.Core;
 
 /// The vault on another computer (the centre), reached over the network (home Wi-Fi, or Tailscale from anywhere)
 /// the way a paired phone reaches it: HTTPS pinned to that vault's own certificate, and this device's access key.
-public sealed record Connection(List<string> Urls, string Fingerprint, string Token, string Name);
+public sealed record Connection(List<string> Urls, string Fingerprint, string Token, string Name, List<Centre>? Others = null);
+
+/// 1.0: another computer that keeps the same vault, and its certificate: used when the paired one is off.
+public sealed record Centre(string Name, List<string> Urls, string Fingerprint);
 
 public sealed class RemoteVault : IVaultTransport, IDisposable
 {
     public const int Port = 8443;
     private readonly HttpClient _http;
     private Connection _connection;
+    private string? _preferred;  // the address that answered last (maybe another computer that keeps the vault)
 
     public RemoteVault(Connection connection)
     {
         _connection = connection;
-        _http = Pinned(connection.Fingerprint);
+        _http = Pinned(Trusted);  // the paired computer, and the others that keep the same vault
+    }
+
+    private bool Trusted(string fingerprint) =>
+        fingerprint == _connection.Fingerprint || (_connection.Others ?? []).Any(c => c.Fingerprint == fingerprint);
+
+    /// The paired computer's addresses first, then the other computers that keep the vault; the one that answered
+    /// last before all of them.
+    private List<string> Candidates()
+    {
+        var all = _connection.Urls.Concat((_connection.Others ?? []).SelectMany(c => c.Urls)).Distinct().ToList();
+        if (_preferred is not null && all.Remove(_preferred)) all.Insert(0, _preferred);
+        return all;
+    }
+
+    /// Learn which computers keep this vault now (the paired one tells), to use another when it is off. Returns the
+    /// updated connection, to save.
+    public async Task<Connection> RefreshCentresAsync(CancellationToken cancel = default)
+    {
+        var answer = JsonNode.Parse((await SendAsync(new VaultRequest("GET", "/api/mobile/addresses"), cancel)).Body);
+        var centres = answer?["centres"]?.AsArray().Select(c => new Centre(
+            c?["name"]?.GetValue<string>() ?? "", c?["urls"]?.AsArray().Select(u => u!.GetValue<string>()).ToList() ?? [],
+            c?["fingerprint"]?.GetValue<string>() ?? "")).Where(c => c.Fingerprint.Length == 64).ToList();
+        if (centres is null) return _connection;  // a vault from before 1.0
+        _connection = _connection with { Others = centres.Where(c => c.Fingerprint != _connection.Fingerprint).ToList() };
+        return _connection;
     }
 
     public Connection Connection => _connection;
@@ -97,7 +126,7 @@ public sealed class RemoteVault : IVaultTransport, IDisposable
         Exception? last = null;
         // uploads may wait while the centre reads big scans (or, just after it opened, loads its search model)
         var limit = request.Files is { Count: > 0 } ? TimeSpan.FromMinutes(30) : TimeSpan.FromMinutes(5);
-        foreach (var url in _connection.Urls)  // the address that answers: home Wi-Fi, else Tailscale
+        foreach (var url in Candidates())  // the address that answers: home Wi-Fi, Tailscale, another computer that keeps the vault
         {
             using var timer = CancellationTokenSource.CreateLinkedTokenSource(cancel);
             timer.CancelAfter(limit);
@@ -108,7 +137,7 @@ public sealed class RemoteVault : IVaultTransport, IDisposable
                 var headers = answer.Headers.Concat(answer.Content.Headers)
                     .ToDictionary(h => h.Key.ToLowerInvariant(), h => string.Join(", ", h.Value));
                 var body = await answer.Content.ReadAsByteArrayAsync(timer.Token);
-                if (url != _connection.Urls[0]) _connection = _connection with { Urls = [url, .. _connection.Urls.Where(u => u != url)] };
+                _preferred = url;
                 return new VaultResponse((int)answer.StatusCode, headers, body);
             }
             catch (HttpRequestException e) { last = e; }
@@ -127,7 +156,7 @@ public sealed class RemoteVault : IVaultTransport, IDisposable
 
     public async IAsyncEnumerable<string> LinesAsync(VaultRequest request, [EnumeratorCancellation] CancellationToken cancel = default)
     {
-        using var message = Build(_connection.Urls[0], request);
+        using var message = Build(Candidates()[0], request);
         HttpResponseMessage answer;
         try { answer = await _http.SendAsync(message, HttpCompletionOption.ResponseHeadersRead, cancel); }
         catch (HttpRequestException e) { throw VaultException.Engine($"Can't reach the vault on {_connection.Name}: {e.Message}"); }
@@ -162,14 +191,17 @@ public sealed class RemoteVault : IVaultTransport, IDisposable
     }
 
     /// An HTTP client that trusts exactly one certificate: the vault's own (no certificate authority at all).
-    private static HttpClient Pinned(string fingerprint)
+    private static HttpClient Pinned(string fingerprint) => Pinned(seen => seen == fingerprint);
+
+    /// An HTTP client that trusts only the certificates `trusted` accepts.
+    private static HttpClient Pinned(Func<string, bool> trusted)
     {
         var handler = new SocketsHttpHandler
         {
             SslOptions = new SslClientAuthenticationOptions
             {
                 RemoteCertificateValidationCallback = (_, cert, _, _) =>
-                    cert is not null && Convert.ToHexStringLower(SHA256.HashData(cert.GetRawCertData())) == fingerprint,
+                    cert is not null && trusted(Convert.ToHexStringLower(SHA256.HashData(cert.GetRawCertData()))),
             },
             ConnectTimeout = TimeSpan.FromSeconds(6),
         };

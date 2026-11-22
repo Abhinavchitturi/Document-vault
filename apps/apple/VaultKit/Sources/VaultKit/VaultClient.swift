@@ -91,6 +91,29 @@ public final class VaultClient: Sendable {
         }
     }
 
+    // MARK: - 1.0: several computers keep this vault
+
+    public func syncStatus() async throws -> SyncStatus { try await get("/api/sync/status") }
+
+    /// A code for another computer to also keep this vault (admins).
+    public func syncInvite() async throws -> SyncInvite { try await post("/api/sync/invite", [:]) }
+
+    /// The certificate of the computer at `address`, to show its security code before joining it.
+    public func syncProbe(_ address: String) async throws -> SyncProbe {
+        try await get("/api/sync/probe?address=\(address.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? address)")
+    }
+
+    /// This new, empty vault joins the one kept on another computer (whose security code the person checked).
+    public func joinVault(address: String, code: String, fingerprint: String) async throws {
+        _ = try await send(VaultRequest("POST", "/api/sync/join-vault", json: try JSONSerialization.data(
+            withJSONObject: ["address": address, "code": code, "fingerprint": fingerprint])))
+    }
+
+    public func syncJoining() async throws -> SyncJoining? {
+        struct Answer: Decodable { let joining: SyncJoining? }
+        return try await get("/api/sync/joining", as: Answer.self).joining
+    }
+
     // MARK: - The search model
 
     /// Downloaded and loaded in the background on the first start; until it's ready, searches wait.

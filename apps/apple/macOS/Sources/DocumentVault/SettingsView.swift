@@ -47,6 +47,7 @@ struct VaultSettings: View {
                 }
             } else {
                 ConnectAnotherDevice()
+                ComputersSettings()
             }
             Section("Privacy") {
                 LabeledContent("Encryption key", value: settings?.keyKeptIn ?? "–")

@@ -59,6 +59,7 @@ public sealed class MainWindow : Window
             {
                 state.StartRemote(connection);
                 await CheckSignInAsync();
+                _ = state.RefreshCentresAsync();
             }
             catch (Exception e)
             {

@@ -38,6 +38,9 @@ jobs:
           if [ "$RUNNER_OS" = "Linux" ]; then python -m pip install torch --index-url https://download.pytorch.org/whl/cpu; fi
           python -m pip install -r requirements.txt
       - run: python -m pytest -q --durations=15  # lists the slowest tests, to speed them up
+      - name: "Two real vaults kept as one: joining with a code, both ways, deletions, catching up (1.0)"
+        if: runner.os == 'Linux'
+        run: python tests/sync_two_vaults.py
       - name: The pinned llama.cpp build downloads, checks out and runs here
         shell: bash
         run: |

@@ -99,6 +99,22 @@ public sealed class VaultClient(IVaultTransport transport, ISessionStore session
         finally { await lines.DisposeAsync(); }
     }
 
+    // ---- 1.0: several computers keep this vault
+
+    public Task<SyncStatus> SyncStatusAsync() => GetAsync<SyncStatus>("/api/sync/status");
+
+    /// A code for another computer to also keep this vault (admins).
+    public Task<SyncInvite> SyncInviteAsync() => PostAsync<SyncInvite>("/api/sync/invite", new JsonObject());
+
+    /// The certificate of the computer at `address`, to show its security code before joining it.
+    public Task<SyncProbe> SyncProbeAsync(string address) => GetAsync<SyncProbe>($"/api/sync/probe?address={Uri.EscapeDataString(address)}");
+
+    /// This new, empty vault joins the one kept on another computer (whose security code the person checked).
+    public Task<JsonObject> JoinVaultAsync(string address, string code, string fingerprint) =>
+        PostAsync<JsonObject>("/api/sync/join-vault", new JsonObject { ["address"] = address, ["code"] = code, ["fingerprint"] = fingerprint });
+
+    public async Task<SyncJoining?> SyncJoiningAsync() => (await GetAsync<SyncJoiningAnswer>("/api/sync/joining")).Joining;
+
     // ---- the search model (downloaded and loaded in the background on the first start)
 
     public Task<SearchStatus> SearchStatusAsync() => GetAsync<SearchStatus>("/api/search/status");

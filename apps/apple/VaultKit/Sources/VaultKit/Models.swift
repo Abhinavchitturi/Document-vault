@@ -44,6 +44,48 @@ public struct AIDownloadStatus: Codable, Sendable {
     public let error: String?
 }
 
+/// 1.0: several computers keep one vault. A code for another computer to join this vault.
+public struct SyncInvite: Codable, Sendable {
+    public let code: String
+    public let expiresIn: Int
+    public let urls: [String]
+    public let fingerprint: String
+    public let name: String
+}
+
+/// Another computer that keeps this vault: when it was last caught up with, or why not.
+public struct SyncPeer: Codable, Sendable, Identifiable {
+    public let centreId: String
+    public let name: String
+    public let urls: [String]
+    public let fingerprint: String
+    public let syncedAt: String?
+    public let problem: String?
+    public var id: String { centreId }
+}
+
+/// Copying a joined vault: copying (done of total documents), done or failed.
+public struct SyncJoining: Codable, Sendable {
+    public let state: String
+    public let done: Int
+    public let total: Int
+    public let error: String?
+    public let with: String?
+}
+
+public struct SyncStatus: Codable, Sendable {
+    public let centreId: String
+    public let name: String
+    public let peers: [SyncPeer]
+    public let joining: SyncJoining?
+    public let canJoin: Bool
+}
+
+public struct SyncProbe: Codable, Sendable {
+    public let fingerprint: String
+    public let address: String
+}
+
 /// The search model: downloading (done of total bytes, the first start only), loading, ready or failed.
 public struct SearchStatus: Codable, Sendable {
     public let state: String

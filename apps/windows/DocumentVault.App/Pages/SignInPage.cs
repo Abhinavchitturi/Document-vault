@@ -58,6 +58,9 @@ public sealed class SignInPage : UserControl
             UI.Text(firstTime ? "Choose the name and password for this vault's admin. Your documents never leave this PC."
                               : "Your family's papers, answered privately on this PC.", secondary: true),
             name, password, again, problem, submit);
+        if (firstTime && AppState.Current.Remote is null)  // 1.0: or keep a vault another computer keeps
+            form.Children.Add(UI.Button("Join a vault kept on another computer instead",
+                () => App.Window!.Show(new JoinVaultPage())).Id("JoinInsteadButton"));
         form.Width = 380;
         form.HorizontalAlignment = HorizontalAlignment.Center;
         form.VerticalAlignment = VerticalAlignment.Center;

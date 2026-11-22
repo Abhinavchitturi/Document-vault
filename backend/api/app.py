@@ -642,8 +642,18 @@ def create_app(
     @app.get("/api/mobile/addresses")
     def mobile_addresses(user: dict = Depends(current_user)) -> dict:
         """Where this vault can be reached right now (Wi-Fi, Tailscale): a paired phone refreshes its
-        list whenever it connects, so a changed home address doesn't strand it."""
-        return {"urls": current_urls()}
+        list whenever it connects, so a changed home address doesn't strand it. 1.0: `centres`, every
+        computer that keeps this vault (this one first), each with its certificate: when this one is off, a
+        connected laptop uses another."""
+        centres = [{"name": sync_name(), "urls": current_urls(), "fingerprint": (phone_link or {}).get("fingerprint")}]
+        if sync is not None:
+            centres += [{"name": p["name"], "urls": p["urls"], "fingerprint": p["fingerprint"]} for p in sync.peers()]
+        return {"urls": current_urls(), "centres": centres}
+
+    def sync_name() -> str:
+        from backend.sync.service import computer_name
+
+        return computer_name()
 
     @app.post("/api/mobile/pair")
     def pair_phone(req: PairRequest, request: Request) -> dict:

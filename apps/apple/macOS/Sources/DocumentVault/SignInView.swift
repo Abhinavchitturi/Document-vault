@@ -48,6 +48,9 @@ struct SignInView: View {
             .buttonStyle(.borderedProminent)
             .keyboardShortcut(.defaultAction)
             .disabled(!ready || busy)
+            if firstTime && model.remote == nil {  // 1.0: or keep a vault another computer keeps
+                Button("Join a vault kept on another computer instead") { model.phase = .joining }.buttonStyle(.link)
+            }
         }
         .padding(40)
         .frame(maxWidth: .infinity, maxHeight: .infinity)

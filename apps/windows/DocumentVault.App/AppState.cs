@@ -99,6 +99,14 @@ public sealed class AppState
         Client = new VaultClient(Remote, new MemorySessionStore());  // a paired device signs in with its key, not a cookie
     }
 
+    /// 1.0: remember every computer that keeps this vault, so this one still works when the paired one is off.
+    public async Task RefreshCentresAsync()
+    {
+        if (Remote is null) return;
+        try { SavedConnection = await Remote.RefreshCentresAsync(); }
+        catch { /* checked again next time */ }
+    }
+
     public async Task StopAsync()
     {
         if (Engine is not null) await Engine.DisposeAsync();  // the engine (and llama.cpp with it) stops with the app
