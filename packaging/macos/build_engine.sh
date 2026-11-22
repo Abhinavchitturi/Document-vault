@@ -43,7 +43,7 @@ TESS="$(brew --prefix tesseract)"
 mkdir -p "$OUT/tesseract/tessdata"
 cp "$TESS/bin/tesseract" "$OUT/tesseract/tesseract"
 chmod u+w "$OUT/tesseract/tesseract"
-dylibbundler -of -b -x "$OUT/tesseract/tesseract" -d "$OUT/tesseract/lib" -p @executable_path/lib/ >/dev/null
+dylibbundler -of -cd -b -x "$OUT/tesseract/tesseract" -d "$OUT/tesseract/lib" -p @executable_path/lib/ >/dev/null
 cp "$TESS/share/tessdata/eng.traineddata" "$TESS/share/tessdata/osd.traineddata" "$OUT/tesseract/tessdata/"
 fetch "$HINDI_URL" "$OUT/tesseract/tessdata/hin.traineddata" "$HINDI_SHA"
 for f in "$OUT/tesseract/tesseract" "$OUT"/tesseract/lib/*.dylib; do codesign --force --sign - "$f"; done
