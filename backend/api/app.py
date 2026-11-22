@@ -234,7 +234,7 @@ def admin_user(user: dict = Depends(current_user)) -> dict:
     return user
 
 
-ASSISTANT_OFF = ("I'm not able to answer right now: the assistant on the Mac isn't running. "
+ASSISTANT_OFF = ("I'm not able to answer right now: the assistant on this computer isn't running. "
                  "The closest passages from your documents are below.")
 ANSWER_FAILED = "I'm not able to answer that right now. Please try again."
 

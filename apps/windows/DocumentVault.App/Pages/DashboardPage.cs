@@ -27,7 +27,7 @@ public sealed class DashboardPage : UserControl
         _body.Children.Clear();
         _body.Children.Add(UI.Title("Dashboard"));
 
-        var stats = new VariableSizedWrapGrid { Orientation = Orientation.Horizontal, ItemWidth = 168, ItemHeight = 96 };
+        var stats = new VariableSizedWrapGrid { Orientation = Orientation.Horizontal, ItemWidth = 168, ItemHeight = 118 };
         stats.Children.Add(Stat("Documents", state.Documents.Count, "", "documents", accent: true));
         foreach (var category in Categories.All.Where(c => c != Category.Other))
             stats.Children.Add(Stat(category.Label(), state.Documents.Count(d => d.Category == category), category.Glyph(), category.Wire()));

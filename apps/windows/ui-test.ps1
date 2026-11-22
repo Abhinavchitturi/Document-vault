@@ -88,6 +88,8 @@ $app = Start-Process $AppPath -PassThru  # (PowerShell names ignore case: the pa
 try {
     # 1. first start: choose the admin's password
     $window = Window-Of $app.Id "Document Vault"
+    $window.GetCurrentPattern([System.Windows.Automation.WindowPattern]::Pattern).SetWindowVisualState(
+        [System.Windows.Automation.WindowVisualState]::Maximized)  # the whole app in every screenshot
     $submit = Find $window "SubmitButton" 180
     Shot "setup"
     $password = "ci-only-" + [guid]::NewGuid().ToString("N").Substring(0, 12)  # a throwaway vault's password
@@ -105,7 +107,7 @@ try {
     Step "add" {
         Press (Find $window "Nav-documents")
         Press (Find $window "AddDocumentsButton")
-        $dialog = Window-Of $app.Id "Open" 30
+        $dialog = Find $UIA::RootElement "Open" 30  # Windows shows the Open dialog from its own process
         $file = (Resolve-Path "samples/upload-demo/Laptop Warranty.pdf").Path
         Type-Into (Find $dialog "1148") $file  # the dialog's "File name" box
         Press (Find $dialog "1")  # its Open button
@@ -126,7 +128,7 @@ try {
         $list = Find $window "DocumentList"
         $first = $list.FindFirst($Scope::Children, [System.Windows.Automation.Condition]::TrueCondition)
         Press $first
-        $document = Window-Of $app.Id "· Document Vault" 20
+        $document = Window-Of $app.Id ".pdf" 20  # the document's own window: "<name>.pdf - Document Vault"
         Start-Sleep -Seconds 4
         Shot "document"
         $document.GetCurrentPattern([System.Windows.Automation.WindowPattern]::Pattern).Close()

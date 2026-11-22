@@ -123,7 +123,8 @@ public sealed class ChatPage : UserControl
                             var snippet = source.Text.Length > 220 ? source.Text[..220] + "…" : source.Text;
                             var card = new HyperlinkButton
                             {
-                                Content = UI.Stack(2, UI.Caption($"{source.Filename} · p. {source.Page}"), UI.Text(snippet)),
+                                Content = UI.Stack(2, UI.Caption($"{source.Filename} · p. {source.Page}"), UI.Text(snippet, secondary: true)),
+                                Foreground = (Brush)Application.Current.Resources["TextFillColorPrimaryBrush"],
                                 HorizontalAlignment = HorizontalAlignment.Stretch, HorizontalContentAlignment = HorizontalAlignment.Left,
                             };
                             card.Click += (_, _) =>

@@ -10,7 +10,7 @@ namespace DocumentVault.Pages;
 public sealed class DocumentsPage : UserControl
 {
     private readonly Category? _category;
-    private readonly AutoSuggestBox _search = new() { PlaceholderText = "Search names, policy or reference numbers", QueryIcon = new SymbolIcon(Symbol.Find), Width = 360 };
+    private readonly AutoSuggestBox _search = new() { PlaceholderText = "Search names, policy or reference numbers", QueryIcon = new SymbolIcon(Symbol.Find), MaxWidth = 360, MinWidth = 180 };
     private readonly ListView _list = new ListView { SelectionMode = ListViewSelectionMode.None, IsItemClickEnabled = true }.Id("DocumentList");
     private readonly TextBlock _count = UI.Caption("");
 
@@ -24,10 +24,13 @@ public sealed class DocumentsPage : UserControl
         _list.ItemClick += (_, e) => { if ((e.ClickedItem as FrameworkElement)?.Tag is VaultDocument d) new DocumentWindow(d).Activate(); };
 
         var header = new Grid { ColumnSpacing = 12 };
+        header.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
         header.ColumnDefinitions.Add(new ColumnDefinition());
         header.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-        header.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-        var title = UI.Stack(2, UI.Title(category?.Label() ?? "All documents"), _count);
+        _search.HorizontalAlignment = HorizontalAlignment.Right;
+        var heading = UI.Title(category?.Label() ?? "All documents");
+        heading.TextWrapping = TextWrapping.NoWrap;
+        var title = UI.Stack(2, heading, _count);
         Grid.SetColumn(_search, 1);
         Grid.SetColumn(add, 2);
         _search.VerticalAlignment = add.VerticalAlignment = VerticalAlignment.Center;
