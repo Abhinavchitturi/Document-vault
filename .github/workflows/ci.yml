@@ -7,9 +7,14 @@ on:
   workflow_dispatch:
     inputs:
       release:
-        description: "Put the tested installers on this release (for example v0.9.0-beta); empty: don't"
+        description: "Put the installers on this release (for example v0.9.2); empty: don't"
         required: false
         default: ""
+      full_tests:
+        description: "Test everything first (big features). Off: just build and release."
+        type: boolean
+        required: false
+        default: false
 
 # A newer push makes the check run of an older one pointless: it stops by itself. Release builds (started by hand
 # with a release name) are never cut short.
@@ -20,6 +25,7 @@ concurrency:
 jobs:
   tests:
     name: Tests (${{ matrix.os }})
+    if: github.event_name != 'workflow_dispatch' || inputs.full_tests  # a release without full tests skips it (checks on every push still run)
     runs-on: ${{ matrix.os }}
     timeout-minutes: 25  # usually 2-8; a hang fails fast
     strategy:
@@ -50,6 +56,7 @@ jobs:
   windows-vault:
     # Starts the real vault on real Windows through the same commands a person uses, then stops it.
     name: Windows start / stop
+    if: github.event_name != 'workflow_dispatch' || inputs.full_tests
     runs-on: windows-latest
     timeout-minutes: 20
     steps:
@@ -103,6 +110,7 @@ jobs:
           sh packaging/macos/build_dmg.sh "${{ inputs.release || (startsWith(github.ref, 'refs/tags/v') && github.ref_name) || 'v0.0.0-dev' }}"
           ls -lh dist/DocumentVault-macOS.dmg dist/DocumentVault-Engine-macOS-*.tar.xz
       - name: Open the DMG, set up the engine like the app does (check its SHA-256, unpack), and add the samples with it
+        if: github.event_name != 'workflow_dispatch' || inputs.full_tests
         run: |
           hdiutil attach -nobrowse -mountpoint "$RUNNER_TEMP/dmg" dist/DocumentVault-macOS.dmg
           ditto "$RUNNER_TEMP/dmg/Document Vault.app" "$RUNNER_TEMP/Applications/Document Vault.app"
@@ -146,11 +154,13 @@ jobs:
         with:
           python-version: "3.11"
           cache: pip
-      - run: python -m pip install -r requirements.txt
+      - run: python -m pip install -r requirements.txt  # for the tests
+        if: github.event_name != 'workflow_dispatch' || inputs.full_tests
       - uses: actions/setup-dotnet@v4
         with:
           dotnet-version: "10.0.x"
       - name: Core tests, against the real engine over the pipe
+        if: github.event_name != 'workflow_dispatch' || inputs.full_tests
         shell: pwsh
         run: |
           $env:VAULT_TEST_PYTHON = (Get-Command python).Source
@@ -177,6 +187,7 @@ jobs:
           name: DocumentVault-Setup
           path: dist/DocumentVault-Setup.exe
       - name: Install it, like a person would (no Python, Git or Node from this machine is used)
+        if: github.event_name != 'workflow_dispatch' || inputs.full_tests
         shell: pwsh
         run: |
           Start-Process dist\DocumentVault-Setup.exe -ArgumentList "/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART", "/LOG=setup.log" -Wait
@@ -185,11 +196,13 @@ jobs:
           $size = (Get-Item dist\DocumentVault-Setup.exe).Length / 1MB
           Write-Host ("Installed. DocumentVault-Setup.exe is {0:N0} MB" -f $size)
       - name: Click through every screen of the installed app, with screenshots (it sets up its engine from this build)
+        if: github.event_name != 'workflow_dispatch' || inputs.full_tests
         shell: powershell
         run: |
           $env:DOCUMENT_VAULT_ENGINE_ARCHIVE = (Resolve-Path dist\DocumentVault-Engine-Windows-*.zip).Path
           powershell -ExecutionPolicy Bypass -File apps/windows/ui-test.ps1 -AppPath "$env:LOCALAPPDATA\Programs\Document Vault\App\DocumentVault.exe" -Out screens
       - name: "Scenarios: the installer's question, connecting to a centre computer, updating from inside the app"
+        if: github.event_name != 'workflow_dispatch' || inputs.full_tests
         shell: pwsh
         run: |
           # a pretend newer version (99.0.0) for the app to update to
@@ -230,6 +243,7 @@ jobs:
   mac-native:
     # The native Mac app (SwiftUI), built with GitHub's Xcode.
     name: Mac app (SwiftUI)
+    if: github.event_name != 'workflow_dispatch' || inputs.full_tests
     runs-on: macos-latest
     timeout-minutes: 20
     steps:
