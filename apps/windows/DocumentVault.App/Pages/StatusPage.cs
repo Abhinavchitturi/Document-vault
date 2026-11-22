@@ -35,6 +35,6 @@ public sealed class StatusPage : UserControl
             buttons.HorizontalAlignment = HorizontalAlignment.Center;
             panel.Children.Add(buttons);
         }
-        Content = panel;
+        Content = UI.Page(panel);
     }
 }

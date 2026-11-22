@@ -2,11 +2,47 @@
     x:Class="DocumentVault.App"
     xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+    <!-- The app follows Apple's design, like the Mac app and the web app: Apple's system greys and true-black dark mode,
+         the vault's indigo as the accent (not the Windows accent colour), rounder corners and large bold titles.
+         Apple's own font (SF Pro) isn't licensed for Windows, so the text uses Segoe UI Variable, its closest match. -->
     <Application.Resources>
         <ResourceDictionary>
             <ResourceDictionary.MergedDictionaries>
                 <XamlControlsResources xmlns="using:Microsoft.UI.Xaml.Controls" />
             </ResourceDictionary.MergedDictionaries>
+
+            <ResourceDictionary.ThemeDictionaries>
+                <ResourceDictionary x:Key="Light">
+                    <Color x:Key="SystemAccentColor">#5856D6</Color>
+                    <Color x:Key="SystemAccentColorLight1">#6E6CDE</Color>
+                    <Color x:Key="SystemAccentColorLight2">#8583E6</Color>
+                    <Color x:Key="SystemAccentColorLight3">#9C9AEC</Color>
+                    <Color x:Key="SystemAccentColorDark1">#4B49C9</Color>
+                    <Color x:Key="SystemAccentColorDark2">#3F3DB6</Color>
+                    <Color x:Key="SystemAccentColorDark3">#3331A0</Color>
+                    <SolidColorBrush x:Key="VaultBackgroundBrush" Color="#F5F5F7" />
+                    <SolidColorBrush x:Key="CardBackgroundFillColorDefaultBrush" Color="#FFFFFF" />
+                    <SolidColorBrush x:Key="CardStrokeColorDefaultBrush" Color="#0F000000" />
+                    <SolidColorBrush x:Key="TextFillColorSecondaryBrush" Color="#6E6E73" />
+                </ResourceDictionary>
+                <ResourceDictionary x:Key="Dark">
+                    <Color x:Key="SystemAccentColor">#5E5CE6</Color>
+                    <Color x:Key="SystemAccentColorLight1">#7D7AFF</Color>
+                    <Color x:Key="SystemAccentColorLight2">#918EFF</Color>
+                    <Color x:Key="SystemAccentColorLight3">#A5A3FF</Color>
+                    <Color x:Key="SystemAccentColorDark1">#5856D6</Color>
+                    <Color x:Key="SystemAccentColorDark2">#4B49C9</Color>
+                    <Color x:Key="SystemAccentColorDark3">#3F3DB6</Color>
+                    <SolidColorBrush x:Key="VaultBackgroundBrush" Color="#000000" />
+                    <SolidColorBrush x:Key="CardBackgroundFillColorDefaultBrush" Color="#1C1C1E" />
+                    <SolidColorBrush x:Key="CardStrokeColorDefaultBrush" Color="#26FFFFFF" />
+                    <SolidColorBrush x:Key="TextFillColorSecondaryBrush" Color="#A1A1A6" />
+                </ResourceDictionary>
+            </ResourceDictionary.ThemeDictionaries>
+
+            <CornerRadius x:Key="ControlCornerRadius">10</CornerRadius>
+            <CornerRadius x:Key="OverlayCornerRadius">14</CornerRadius>
+            <FontFamily x:Key="ContentControlThemeFontFamily">Segoe UI Variable Text, Segoe UI</FontFamily>
         </ResourceDictionary>
     </Application.Resources>
 </Application>

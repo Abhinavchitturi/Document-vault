@@ -15,6 +15,7 @@ public sealed class MainWindow : Window
         HorizontalContentAlignment = HorizontalAlignment.Stretch,
         VerticalContentAlignment = VerticalAlignment.Stretch,
     };
+    private readonly Grid _root = new();
     private bool _started;
 
     public MainWindow()
@@ -25,7 +26,8 @@ public sealed class MainWindow : Window
         AppWindow.Resize(new Windows.Graphics.SizeInt32(1240, 820));
         var icon = Path.Combine(AppContext.BaseDirectory, "DocumentVault.ico");
         if (File.Exists(icon)) AppWindow.SetIcon(icon);
-        Content = _host;
+        _root.Children.Add(_host);
+        Content = _root;
         Activated += async (_, _) =>
         {
             if (_started) return;

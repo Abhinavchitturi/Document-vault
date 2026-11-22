@@ -30,6 +30,9 @@ public sealed class ShellPage : UserControl
             Go((e.SelectedItem as NavigationViewItem)?.Tag as string ?? "dashboard");
         };
         _nav.SelectedItem = _nav.MenuItems[0];
+        // the pages sit on Apple's solid grey (black in dark mode); the pane stays translucent, like a Mac sidebar
+        _nav.Resources["NavigationViewContentBackground"] = Application.Current.Resources["VaultBackgroundBrush"];
+        _nav.Resources["NavigationViewContentGridBorderBrush"] = new Microsoft.UI.Xaml.Media.SolidColorBrush(Microsoft.UI.Colors.Transparent);
         Content = _nav;
     }
 

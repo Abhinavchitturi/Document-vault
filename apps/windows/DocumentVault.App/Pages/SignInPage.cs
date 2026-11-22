@@ -61,8 +61,9 @@ public sealed class SignInPage : UserControl
         form.Width = 380;
         form.HorizontalAlignment = HorizontalAlignment.Center;
         form.VerticalAlignment = VerticalAlignment.Center;
-        Content = UI.Card(form, 28);
-        ((Border)Content).HorizontalAlignment = HorizontalAlignment.Center;
-        ((Border)Content).VerticalAlignment = VerticalAlignment.Center;
+        var card = UI.Card(form, 28);
+        card.HorizontalAlignment = HorizontalAlignment.Center;
+        card.VerticalAlignment = VerticalAlignment.Center;
+        Content = UI.Page(card);
     }
 }

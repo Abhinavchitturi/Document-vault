@@ -23,7 +23,16 @@ public static class UI
         return block;
     }
 
-    public static TextBlock Title(string text) => Text(text, "TitleTextBlockStyle");
+    /// A large bold title, like macOS: Apple's design rather than Windows' lighter titles.
+    public static TextBlock Title(string text)
+    {
+        var title = Text(text, "TitleTextBlockStyle");
+        title.FontSize = 30;
+        title.FontWeight = Microsoft.UI.Text.FontWeights.Bold;
+        title.FontFamily = new FontFamily("Segoe UI Variable Display, Segoe UI");
+        title.CharacterSpacing = -20;  // Apple tightens large titles slightly
+        return title;
+    }
     public static TextBlock Subtitle(string text) => Text(text, "SubtitleTextBlockStyle");
     public static TextBlock Caption(string text) => Text(text, "CaptionTextBlockStyle", secondary: true);
 
@@ -32,10 +41,17 @@ public static class UI
     {
         Child = child,
         Padding = new Thickness(padding),
-        CornerRadius = new CornerRadius(8),
+        CornerRadius = new CornerRadius(14),
         Background = (Brush)Application.Current.Resources["CardBackgroundFillColorDefaultBrush"],
         BorderBrush = (Brush)Application.Current.Resources["CardStrokeColorDefaultBrush"],
         BorderThickness = new Thickness(1),
+    };
+
+    /// A full-window page on Apple's solid grey (black in dark mode).
+    public static Grid Page(UIElement child) => new()
+    {
+        Background = (Brush)Application.Current.Resources["VaultBackgroundBrush"],
+        Children = { child },
     };
 
     public static StackPanel Stack(double spacing, params UIElement[] children)
