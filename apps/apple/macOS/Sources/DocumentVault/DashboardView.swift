@@ -9,11 +9,12 @@ struct DashboardView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 24) {
+                if model.documents.isEmpty { FirstDocuments() }
                 LazyVGrid(columns: [GridItem(.adaptive(minimum: 140), spacing: 12)], spacing: 12) {
                     StatCard(title: "Documents", value: model.documents.count, symbol: "doc.on.doc", tint: .indigo, filled: true) {
                         pane = .documents
                     }
-                    ForEach(Category.allCases.filter { $0 != .other }, id: \.self) { category in
+                    ForEach(Category.allCases.filter { c in c != .other && model.documents.contains { $0.category == c } }, id: \.self) { category in
                         StatCard(title: category.label, value: model.documents.filter { $0.category == category }.count,
                                  symbol: category.symbol, tint: category.color) { pane = .category(category) }
                     }
@@ -124,5 +125,26 @@ struct DocumentRow: View {
             .padding(.vertical, 8)
         }
         .buttonStyle(.plain)
+    }
+}
+
+/// An empty vault: the one thing to do first.
+struct FirstDocuments: View {
+    @Environment(AppModel.self) private var model
+
+    var body: some View {
+        VStack(spacing: 12) {
+            Image(systemName: "doc.badge.plus").font(.system(size: 40)).foregroundStyle(Color.vault)
+            Text("Add your first documents").font(.title2.weight(.semibold))
+            Text("Insurance policies, warranties, bills, property papers, ID cards: PDFs, Word files or photos. "
+                 + "Each one is read, filed by type and encrypted on this computer.")
+                .multilineTextAlignment(.center).foregroundStyle(.secondary).frame(maxWidth: 460)
+            Button { model.choosingFiles = true } label: { Label("Add Documents", systemImage: "plus").padding(.horizontal, 6) }
+                .buttonStyle(.borderedProminent).controlSize(.large)
+            Text("or drop files anywhere on this window").font(.caption).foregroundStyle(.secondary)
+        }
+        .frame(maxWidth: .infinity)
+        .padding(28)
+        .background(.background.secondary, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
     }
 }

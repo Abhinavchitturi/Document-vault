@@ -27,9 +27,10 @@ public sealed class DashboardPage : UserControl
         _body.Children.Clear();
         _body.Children.Add(UI.Title("Dashboard"));
 
+        if (state.Documents.Count == 0) _body.Children.Add(FirstDocuments());
         var stats = new VariableSizedWrapGrid { Orientation = Orientation.Horizontal, ItemWidth = 168, ItemHeight = 118 };
         stats.Children.Add(Stat("Documents", state.Documents.Count, "", "documents", accent: true));
-        foreach (var category in Categories.All.Where(c => c != Category.Other))
+        foreach (var category in Categories.All.Where(c => c != Category.Other && state.Documents.Any(d => d.Category == c)))
             stats.Children.Add(Stat(category.Label(), state.Documents.Count(d => d.Category == category), category.Glyph(), category.Wire()));
         _body.Children.Add(stats);
 
@@ -93,5 +94,25 @@ public sealed class DashboardPage : UserControl
         if (accent) button.Style = (Style)Application.Current.Resources["AccentButtonStyle"];
         button.Click += (_, _) => _shell.Go(tag);
         return button;
+    }
+
+    /// An empty vault: the one thing to do first.
+    private UIElement FirstDocuments()
+    {
+        var add = new Button
+        {
+            Content = UI.Row(8, UI.Glyph("\uE710", 14), new TextBlock { Text = "Add documents" }),
+            Style = (Style)Application.Current.Resources["AccentButtonStyle"], HorizontalAlignment = HorizontalAlignment.Center,
+        }.Id("AddFirstDocumentsButton");
+        add.Click += async (_, _) => await Adding.PickAsync(XamlRoot);
+        var title = UI.Subtitle("Add your first documents");
+        var text = UI.Text("Insurance policies, warranties, bills, property papers, ID cards: PDFs, Word files or photos. " +
+                           "Each one is read, filed by type and encrypted on this computer.", secondary: true);
+        var hint = UI.Caption("or drop files anywhere on this window");
+        foreach (var t in new[] { title, text, hint }) { t.HorizontalAlignment = HorizontalAlignment.Center; t.TextAlignment = TextAlignment.Center; }
+        text.MaxWidth = 480;
+        var icon = UI.Glyph("\uE8E5", 36);
+        icon.HorizontalAlignment = HorizontalAlignment.Center;
+        return UI.Card(UI.Stack(12, icon, title, text, add, hint), padding: 28);
     }
 }

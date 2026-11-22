@@ -20,9 +20,19 @@ public sealed class ShellPage : UserControl
         _nav.MenuItems.Add(Item("Dashboard", "", "dashboard"));
         _nav.MenuItems.Add(Item("Ask", "", "chat"));
         _nav.MenuItems.Add(Item("All documents", "", "documents"));
-        _nav.MenuItems.Add(new NavigationViewItemHeader { Content = "Types" });
-        foreach (var category in Categories.All)
-            _nav.MenuItems.Add(Item(category.Label(), category.Glyph(), category.Wire()));
+        _nav.MenuItems.Add(_typesHeader);
+        ShowUsedTypes();
+        AppState.Current.Changed += ShowUsedTypes;
+        Unloaded += (_, _) => AppState.Current.Changed -= ShowUsedTypes;
+        // adding documents, from every page (and files dropped anywhere on the window)
+        var add = new Button
+        {
+            Content = UI.Row(8, UI.Glyph("\uE710", 14), new TextBlock { Text = "Add documents" }),
+            Style = (Style)Application.Current.Resources["AccentButtonStyle"],
+            HorizontalAlignment = HorizontalAlignment.Stretch, Margin = new Thickness(12, 4, 12, 8),
+        }.Id("AddAnywhereButton");
+        add.Click += async (_, _) => await Adding.PickAsync(XamlRoot);
+        _nav.PaneCustomContent = add;
         _nav.PaneFooter = new AccountFooter();
         _nav.SelectionChanged += (_, e) =>
         {
@@ -44,7 +54,21 @@ public sealed class ShellPage : UserControl
         layout.Children.Add(update);
         layout.Children.Add(bar);
         layout.Children.Add(_nav);
+        Adding.AcceptDrops(layout);
         Content = layout;
+    }
+
+    private readonly NavigationViewItemHeader _typesHeader = new() { Content = "Types" };
+
+    /// Only the types that have documents: the others appear once a document of that type is added.
+    private void ShowUsedTypes()
+    {
+        var used = Categories.All.Where(c => AppState.Current.Documents.Any(d => d.Category == c)).ToList();
+        var shown = _nav.MenuItems.OfType<NavigationViewItem>().Where(i => Enum.TryParse<Category>((string)i.Tag, true, out _)).ToList();
+        if (shown.Count > 0 && shown.Select(i => (string)i.Tag).SequenceEqual(used.Select(c => c.Wire()))) return;
+        foreach (var item in shown) _nav.MenuItems.Remove(item);
+        foreach (var category in used) _nav.MenuItems.Add(Item(category.Label(), category.Glyph(), category.Wire()));
+        _typesHeader.Visibility = used.Count > 0 ? Visibility.Visible : Visibility.Collapsed;
     }
 
     private static NavigationViewItem Item(string label, string glyph, string tag) =>

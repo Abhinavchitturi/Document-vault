@@ -117,10 +117,15 @@ function Show-Controls($within) {
 
 function Top-Window([string]$titlePattern, [int]$seconds = 90) {
     # a top-level window by its title (any process: installers, dialogs)
+    # also message boxes a window owns (UI Automation puts those inside the window that owns them)
     $deadline = (Get-Date).AddSeconds($seconds)
+    $isWindow = New-Object System.Windows.Automation.PropertyCondition($UIA::ControlTypeProperty, [System.Windows.Automation.ControlType]::Window)
     while ((Get-Date) -lt $deadline) {
         foreach ($w in $UIA::RootElement.FindAll($Scope::Children, [System.Windows.Automation.Condition]::TrueCondition)) {
             if ($w.Current.Name -like $titlePattern) { return $w }
+            foreach ($owned in $w.FindAll($Scope::Descendants, $isWindow)) {
+                if ($owned.Current.Name -like $titlePattern) { return $owned }
+            }
         }
         Start-Sleep -Milliseconds 500
     }

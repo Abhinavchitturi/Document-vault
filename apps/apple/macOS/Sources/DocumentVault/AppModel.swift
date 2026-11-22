@@ -54,6 +54,7 @@ final class AppModel {
     static let bundledEngine: URL? = release == nil ? nil
         : FileManager.default.homeDirectoryForCurrentUser.appending(path: "Library/Application Support/Document Vault/Engine")
 
+    var choosingFiles = false  // the Add Documents file chooser is open (from anywhere in the window)
     var engineProgress: EngineProgress?
     var engineProblem: String?
 

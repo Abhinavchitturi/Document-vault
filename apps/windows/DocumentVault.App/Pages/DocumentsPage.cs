@@ -140,42 +140,7 @@ public sealed class DocumentsPage : UserControl
         catch (Exception e) { await UI.Alert(XamlRoot, "Something went wrong", e.Message); }
     }
 
-    private async Task PickAsync()
-    {
-        var picker = new FileOpenPicker();
-        WinRT.Interop.InitializeWithWindow.Initialize(picker, WinRT.Interop.WindowNative.GetWindowHandle(App.Window!));
-        picker.FileTypeFilter.Add("*");
-        var files = await picker.PickMultipleFilesAsync();
-        await AddAsync(files.Select(f => f.Path).ToList());
-    }
+    private Task PickAsync() => Adding.PickAsync(XamlRoot);
 
-    private async Task AddAsync(IReadOnlyList<string> paths)
-    {
-        if (paths.Count == 0) return;
-        var progress = new ContentDialog
-        {
-            XamlRoot = XamlRoot, Title = "Adding documents…",
-            Content = UI.Stack(10, new ProgressBar { IsIndeterminate = true },
-                               UI.Text("Reading and filing them. Scans and photos take a little longer.", secondary: true)),
-        };
-        _ = progress.ShowAsync();
-        try
-        {
-            var results = await AppState.Current.Client!.UploadAsync(paths);
-            progress.Hide();
-            await App.Window!.Reload();
-            var lines = results.Select(r => r.Status switch
-            {
-                "added" => $"✓ {r.Filename}: filed as {r.Document?.Category.Label() ?? "a document"}",
-                "duplicate" => $"= {r.Filename}: already in the vault",
-                _ => $"✗ {r.Filename}: {r.Error ?? "couldn't be added"}",
-            });
-            await UI.Alert(XamlRoot, "Added to your vault", string.Join("\n", lines));
-        }
-        catch (Exception e)
-        {
-            progress.Hide();
-            await UI.Alert(XamlRoot, "Couldn't add them", e.Message);
-        }
-    }
+    private Task AddAsync(IReadOnlyList<string> paths) => Adding.AddAsync(XamlRoot, paths);
 }

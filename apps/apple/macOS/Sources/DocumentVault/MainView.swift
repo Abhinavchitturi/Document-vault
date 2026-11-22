@@ -11,6 +11,11 @@ struct MainView: View {
     @Environment(AppModel.self) private var model
     @State private var pane: Pane? = .dashboard
 
+    /// The types that have documents: the others appear once a document of that type is added.
+    private var usedTypes: [Category] {
+        Category.allCases.filter { category in model.documents.contains { $0.category == category } }
+    }
+
     var body: some View {
         NavigationSplitView {
             List(selection: $pane) {
@@ -20,11 +25,13 @@ struct MainView: View {
                     Label("All Documents", systemImage: "doc.on.doc").tag(Pane.documents)
                         .badge(model.documents.count)
                 }
-                Section("Types") {
-                    ForEach(Category.allCases, id: \.self) { category in
+                if !usedTypes.isEmpty {
+                    Section("Types") {
+                        ForEach(usedTypes, id: \.self) { category in
                         Label(category.label, systemImage: category.symbol)
                             .tag(Pane.category(category))
-                            .badge(model.documents.filter { $0.category == category }.count)
+                                .badge(model.documents.filter { $0.category == category }.count)
+                        }
                     }
                 }
             }
@@ -38,6 +45,7 @@ struct MainView: View {
             case .category(let category): DocumentsView(category: category)
             }
         }
+        .modifier(AddDocuments())
         .safeAreaInset(edge: .top, spacing: 0) {
             VStack(spacing: 0) {
                 UpdateBanner()

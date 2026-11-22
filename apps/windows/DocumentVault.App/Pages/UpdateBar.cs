@@ -93,12 +93,15 @@ public sealed class UpdateBar : UserControl
         {
             if (_waiting != file)
             {
+                var downloading = true;  // progress reports arrive late: none may overwrite what comes after
                 var progress = new Progress<(long done, long total)>(p =>
                 {
+                    if (!downloading) return;
                     _bar.Value = p.total > 0 ? (double)p.done / p.total * 100 : 0;
                     _text.Text = $"Downloading Document Vault {update.Version}: {p.done / 1_000_000:N0} of {p.total / 1_000_000:N0} MB";
                 });
-                await Updates.DownloadAsync(update, file, progress);
+                try { await Updates.DownloadAsync(update, file, progress); }
+                finally { downloading = false; }
             }
             _bar.Visibility = Visibility.Collapsed;
             if (!now)

@@ -50,7 +50,7 @@ try {
         Find-Like $win "How will this PC use Document Vault?*" 60 | Out-Null
         Shot "installer-question"
         Press (Find-Button $win "Next*")
-        $box = Top-Window "Setup" 20  # nothing chosen: it asks for an answer
+        $box = Top-Window "Setup" 20  # nothing chosen: it asks for an answer (a box the installer owns)
         Find-Like $box "Choose how this PC*" 10 | Out-Null
         Shot "installer-must-choose"
         Press (Find-Button $box "OK")
