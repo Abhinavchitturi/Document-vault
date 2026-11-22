@@ -153,6 +153,26 @@ The laptop then works with the centre's documents over your Wi-Fi, or from anywh
 stored on the laptop, and the connection only trusts the centre's own certificate. The centre has to be on, with
 Document Vault open. Either computer can switch roles later in Settings.
 
+### One vault on several computers (1.0)
+
+Keep the same vault on two (or more) computers, so it doesn't matter which one is off:
+
+1. On a computer that keeps the vault: **Settings → Computers that keep this vault → Add a computer that also keeps this
+   vault**. It shows a one-time code, the address and a security code.
+2. On the other computer: install Document Vault, choose **Keep the vault on this computer**, then on the sign-up screen
+   **Join a vault kept on another computer instead**. Type the address and the code, check the security code, and it
+   copies the vault (documents with their search data, family members and their passwords, paired devices).
+3. Sign in with the same name and password.
+
+From then on the computers keep each other up to date within seconds whenever they can reach each other (the same
+Wi-Fi, or Tailscale): adding, re-filing, editing and deleting on either one. A deletion stays a deletion; if both changed
+the same document while apart, the newer change wins. Connected laptops learn every computer that keeps the vault and
+use whichever one is on. The vault's encryption key only travels to a computer paired with the code and security code,
+over the encrypted connection between the two, never through any server. Each computer downloads its own private AI.
+
+In 1.0, only a new, empty vault can join another; phones stay with the computer they were paired with; with three or more
+computers, each catches up through the one it joined.
+
 ### Use it from anywhere with Tailscale
 
 At home, the phone reaches the vault over your Wi-Fi. To use it anywhere else (on mobile data, at work, travelling),
