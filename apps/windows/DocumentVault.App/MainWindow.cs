@@ -34,7 +34,11 @@ public sealed class MainWindow : Window
             _started = true;
             await StartAsync();
         };
-        Closed += async (_, _) => await AppState.Current.StopAsync();
+        Closed += async (_, _) =>
+        {
+            Pages.UpdateBar.InstallIfWaiting();  // "Update when I quit": the installer runs now, quietly, no reopening
+            await AppState.Current.StopAsync();
+        };
     }
 
     public void Show(UIElement page) => _host.Content = page;

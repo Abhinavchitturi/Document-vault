@@ -15,6 +15,7 @@ struct DocumentVaultApp: App {
                 .task { await model.start() }
                 .onReceive(NotificationCenter.default.publisher(for: NSApplication.willTerminateNotification)) { _ in
                     model.stop()  // the engine (and llama.cpp with it) stops with the app
+                    try? SelfUpdate.swapAfterQuit(reopen: false)  // "Update When I Quit": the new app goes in now
                 }
         }
         .defaultSize(width: 1180, height: 780)
