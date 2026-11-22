@@ -141,6 +141,8 @@ public final class RemoteVault: VaultTransport, @unchecked Sendable {
                 http?.allHeaderFields.forEach { if let k = $0.key as? String, let v = $0.value as? String { headers[k.lowercased()] = v } }
                 remember(url)
                 return VaultResponse(status: http?.statusCode ?? 0, headers: headers, body: data)
+            } catch let error as URLError where error.code == .timedOut && request.method == "GET" {
+                last = error  // only reading: another address (another computer that keeps the vault) may answer
             } catch let error as URLError where error.code == .timedOut {
                 // it reached the centre but no answer came in time: never send it again to another address (an
                 // upload would be added twice)

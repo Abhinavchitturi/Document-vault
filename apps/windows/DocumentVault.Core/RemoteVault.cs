@@ -142,6 +142,11 @@ public sealed class RemoteVault : IVaultTransport, IDisposable
             }
             catch (HttpRequestException e) { last = e; }
             catch (UriFormatException e) { last = e; }  // an address that can't be used: try the next one
+            catch (OperationCanceledException e) when (!cancel.IsCancellationRequested &&
+                                                       (!timer.IsCancellationRequested || request.Method == "GET"))
+            {
+                last = e;  // no connection in time (that computer is off), or only reading: the next address may answer
+            }
             catch (OperationCanceledException) when (!cancel.IsCancellationRequested)
             {
                 // it reached the centre but no answer came in time: never send it again to another address (an
