@@ -30,8 +30,7 @@ import subprocess
 from pathlib import Path
 
 PHONE_PORT = 8443
-TAILSCALE_CLI = ("tailscale", "/Applications/Tailscale.app/Contents/MacOS/Tailscale",
-                 r"C:\Program Files\Tailscale\tailscale.exe")
+TAILSCALE_CLI = ("tailscale", r"C:\Program Files\Tailscale\tailscale.exe")  # command-line tools only: never the Mac app
 TAILNET = ipaddress.ip_network("100.64.0.0/10")  # the range Tailscale gives devices
 
 
@@ -50,7 +49,19 @@ def lan_address() -> str | None:
 
 
 def tailscale_address() -> str | None:
-    """This Mac's Tailscale IPv4 address, if Tailscale is installed and connected."""
+    """This computer's Tailscale address, if Tailscale is on. Never starts Tailscale: it asks the network settings
+    which address this computer would use to reach a Tailscale address (no packet is sent), and only if that says
+    nothing, a Tailscale command-line tool already installed (not the Mac app, which would open)."""
+    s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    try:
+        s.connect(("100.100.100.100", 53))  # Tailscale's own address: routed through Tailscale only while it's on
+        address = s.getsockname()[0]
+        if ipaddress.ip_address(address) in TAILNET:
+            return address
+    except (OSError, ValueError):
+        pass
+    finally:
+        s.close()
     for cli in TAILSCALE_CLI:
         path = shutil.which(cli) or (cli if Path(cli).exists() else None)
         if not path:
