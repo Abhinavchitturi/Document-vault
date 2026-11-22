@@ -43,11 +43,19 @@ WINDOWS_TESSERACT = (  # where the Windows installers put it; neither is added t
 )
 
 
+def _runtimes() -> list[Path]:
+    """Where an app's engine may keep Tesseract: $VAULT_RUNTIME (the engine the native apps download), or next to
+    the code."""
+    runtime = os.environ.get("VAULT_RUNTIME")
+    return [Path(runtime), ROOT] if runtime else [ROOT]
+
+
 def tesseract_path() -> str | None:
-    """The tesseract program: the one bundled with the app's engine, else on PATH, else where Windows installs it."""
-    bundled = ROOT / "tesseract" / ("tesseract.exe" if os.name == "nt" else "tesseract")
-    if bundled.is_file():
-        return str(bundled)
+    """The tesseract program: the one in the app's engine, else on PATH, else where Windows installs it."""
+    for runtime in _runtimes():
+        bundled = runtime / "tesseract" / ("tesseract.exe" if os.name == "nt" else "tesseract")
+        if bundled.is_file():
+            return str(bundled)
     found = shutil.which("tesseract")
     if found:
         return found
@@ -64,7 +72,7 @@ def _pytesseract():
     path = tesseract_path()
     if path:
         pytesseract.pytesseract.tesseract_cmd = path
-    for extra in (ROOT / "tesseract" / "tessdata", ROOT / "data" / "tessdata"):  # bundled with the app, or added
+    for extra in (*(r / "tesseract" / "tessdata" for r in _runtimes()), ROOT / "data" / "tessdata"):  # the app's, or added
         if (extra / "eng.traineddata").is_file():
             os.environ.setdefault("TESSDATA_PREFIX", str(extra))
             break

@@ -29,8 +29,8 @@ Nothing is sent to a cloud AI service.
 
 | Device | Download | Requires |
 |:---:|:---:|:---:|
-| 💻 **Mac** | [**DocumentVault-macOS.dmg**](https://github.com/Abhinavchitturi/Document-vault/releases/download/v0.9.0-beta/DocumentVault-macOS.dmg) | macOS 14 or later, Apple Silicon |
-| 🪟 **Windows** | [**DocumentVault-Setup.exe**](https://github.com/Abhinavchitturi/Document-vault/releases/download/v0.9.0-beta/DocumentVault-Setup.exe) | Windows 10 or 11, 64-bit |
+| 💻 **Mac** | [**DocumentVault-macOS.dmg**](https://github.com/Abhinavchitturi/Document-vault/releases/latest/download/DocumentVault-macOS.dmg) | macOS 14 or later, Apple Silicon |
+| 🪟 **Windows** | [**DocumentVault-Setup.exe**](https://github.com/Abhinavchitturi/Document-vault/releases/latest/download/DocumentVault-Setup.exe) | Windows 10 or 11, 64-bit |
 | 📱 **Android phone** | [**DocumentVault-Android.apk**](https://github.com/Abhinavchitturi/Document-vault/releases/download/v0.9.0-beta/DocumentVault-Android.apk) | Android 7 or later |
 
 **Beta.** Native apps: SwiftUI on the Mac, WinUI on Windows, both following Apple's design. They keep the vault on your
@@ -44,6 +44,10 @@ administrator rights are needed. The first question is how this computer uses th
   own private Python and the scan reader, checked against a fingerprint built into the app). Then it offers the local
   AI as a one-click download (about 5 GB, once).
 - **Use the vault on another computer**: nothing else is downloaded and nothing is stored on this computer.
+
+**Updates:** the apps check for a new version when they open and every few hours. *Update* downloads it, checks it
+against the fingerprint GitHub publishes, installs it and reopens. The heavy engine is downloaded again only when it
+changed, which is rare: the vault's own code travels with the app.
 
 Your documents are kept apart from the program (`%LOCALAPPDATA%\Document Vault\Vault` on Windows,
 `~/Library/Application Support/Document Vault/Vault` on a Mac), so updating or uninstalling never touches them.
@@ -111,7 +115,7 @@ It downloads the vault to `~/Document-Vault`, sets everything up (AI models incl
 
 ### Windows (beta)
 
-Use [DocumentVault-Setup.exe](https://github.com/Abhinavchitturi/Document-vault/releases/download/v0.9.0-beta/DocumentVault-Setup.exe)
+Use [DocumentVault-Setup.exe](https://github.com/Abhinavchitturi/Document-vault/releases/latest/download/DocumentVault-Setup.exe)
 (above). For the browser version or development, there is also a one-command setup in PowerShell:
 
 ```powershell

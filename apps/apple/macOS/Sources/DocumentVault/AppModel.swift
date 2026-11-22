@@ -80,7 +80,12 @@ final class AppModel {
     init() {
         folder = Self.bundledEngine == nil ? Self.vaultFolder()
             : FileManager.default.homeDirectoryForCurrentUser.appending(path: "Library/Application Support/Document Vault/Vault")
-        if let earlier = UserDefaults.standard.string(forKey: "modeInstall"), earlier != Self.installIdentity {
+        if UserDefaults.standard.bool(forKey: "keepAnswerAcrossUpdate") {  // updated by the app itself: same answer
+            UserDefaults.standard.removeObject(forKey: "keepAnswerAcrossUpdate")
+            if UserDefaults.standard.string(forKey: "mode") != nil {
+                UserDefaults.standard.set(Self.installIdentity, forKey: "modeInstall")
+            }
+        } else if let earlier = UserDefaults.standard.string(forKey: "modeInstall"), earlier != Self.installIdentity {
             connections.save(nil)  // a newly installed copy starts fresh: asked again, paired again if it connects
             UserDefaults.standard.removeObject(forKey: "mode")
             UserDefaults.standard.removeObject(forKey: "modeInstall")
@@ -141,7 +146,8 @@ final class AppModel {
             try FileManager.default.createDirectory(at: logFile.deletingLastPathComponent(), withIntermediateDirectories: true)
             var environment: [String: String] = [:]
             if let bundled = Self.bundledEngine {
-                environment["PYTHONPATH"] = bundled.path
+                environment["PYTHONPATH"] = Bundle.main.resourceURL!.path  // the vault's code comes with the app
+                environment["VAULT_RUNTIME"] = bundled.path  // the engine it downloaded: Python, its packages, Tesseract
                 environment["PYTHONNOUSERSITE"] = "1"
                 environment["PYTHONDONTWRITEBYTECODE"] = "1"  // the app stays as it was signed (compiled at build)
             }

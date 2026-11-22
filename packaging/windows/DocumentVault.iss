@@ -45,6 +45,8 @@ Name: "{autoprograms}\Document Vault"; Filename: "{app}\App\DocumentVault.exe"; 
 Name: "{autodesktop}\Document Vault"; Filename: "{app}\App\DocumentVault.exe"; WorkingDir: "{app}\App"; Tasks: desktopicon
 
 [Run]
+; an update the app started (/UPDATE=1, quiet): open the app again when it's done
+Filename: "{app}\App\DocumentVault.exe"; WorkingDir: "{app}\App"; Flags: nowait; Check: IsUpdate
 Filename: "{app}\App\DocumentVault.exe"; Description: "Open Document Vault"; WorkingDir: "{app}\App"; \
   Flags: postinstall nowait skipifsilent
 
@@ -69,6 +71,11 @@ Type: filesandordirs; Name: "{app}\Engine"
 // documents).
 var
   RolePage: TInputOptionWizardPage;
+
+function IsUpdate(): Boolean;
+begin
+  Result := ExpandConstant('{param:UPDATE|0}') = '1';
+end;
 
 function ModeFile(): String;
 begin

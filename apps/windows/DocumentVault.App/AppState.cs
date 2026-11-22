@@ -80,7 +80,13 @@ public sealed class AppState
         // The engine's code is read from the app's Engine\ folder; it runs in the vault's folder, so everything it keeps
         // (data\index, data\logs, backups) lands there.
         Directory.CreateDirectory(Path.Combine(VaultHome, "data", "logs"));
-        var environment = BundledEngine is null ? null : new Dictionary<string, string> { ["PYTHONPATH"] = BundledEngine };
+        // the vault's code comes with the app (backend\ next to it); the engine (Python, its packages, Tesseract) was downloaded
+        var environment = BundledEngine is null ? null : new Dictionary<string, string>
+        {
+            ["PYTHONPATH"] = AppContext.BaseDirectory.TrimEnd('\\'),
+            ["VAULT_RUNTIME"] = BundledEngine,
+            ["PYTHONNOUSERSITE"] = "1",
+        };
         Engine = new EnginePipe(Python, VaultHome, environment: environment, logFile: LogFile);
         await Engine.WaitUntilReadyAsync();
         Client = new VaultClient(Engine, new ProtectedSessionStore());

@@ -35,9 +35,13 @@ public sealed class ShellPage : UserControl
         _nav.Resources["NavigationViewContentGridBorderBrush"] = new Microsoft.UI.Xaml.Media.SolidColorBrush(Microsoft.UI.Colors.Transparent);
         var layout = new Grid();
         layout.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+        layout.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
         layout.RowDefinitions.Add(new RowDefinition());
+        var update = new UpdateBar();
         var bar = new SearchReadyBar();
-        Grid.SetRow(_nav, 1);
+        Grid.SetRow(bar, 1);
+        Grid.SetRow(_nav, 2);
+        layout.Children.Add(update);
         layout.Children.Add(bar);
         layout.Children.Add(_nav);
         Content = layout;

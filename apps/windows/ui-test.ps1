@@ -108,7 +108,8 @@ if ($Python) {
     $engine = Join-Path $env:LOCALAPPDATA "Document Vault\Engine"
     Get-Process python -ErrorAction SilentlyContinue | Where-Object { $_.Path -like "$engine*" } | Stop-Process -Force
     $vaultHome = Join-Path $env:LOCALAPPDATA "Document Vault\Vault"
-    $env:PYTHONPATH = $engine
+    $env:PYTHONPATH = Split-Path $AppPath  # the vault's code comes with the app; the engine was downloaded
+    $env:VAULT_RUNTIME = $engine
     Push-Location $vaultHome
     & (Join-Path $engine "python\python.exe") -m backend.upload.ingest "$samples\samples\pdfs" "$samples\samples\scans" --owner abhinav
     $ingested = $LASTEXITCODE

@@ -1,7 +1,11 @@
-# Build the vault's engine: a private Python with the vault's packages, the engine's code, and Tesseract (the scan
-# reader) with English, page-orientation and Hindi, so a person installs nothing else (no Git, Node, Python or winget).
-# It is packed as DocumentVault-Engine-Windows.zip, a release file the app downloads only when the computer keeps the
-# vault, and the app gets engine.json (where to download it, its SHA-256) next to it. Run on Windows (CI does):
+# Build the vault's engine for Windows: a private Python with the vault's packages, and Tesseract (the scan reader)
+# with English, page-orientation and Hindi, so a person installs nothing else (no Git, Node, Python or winget). The
+# app downloads it only when the computer keeps the vault. The vault's own code isn't in it: that travels with the
+# app (copied here into -AppDir\backend), so most updates are just the app.
+#
+# The engine is named after what goes into it (requirements.txt and this script): DocumentVault-Engine-Windows-<id>.zip.
+# When a release already has that file, it is reused (downloaded here for the tests) instead of built again, and an
+# app update doesn't download the engine again. The app gets engine.json: where to download it and its SHA-256.
 #
 #   pwsh packaging\windows\build_engine.ps1 [-Out dist\engine] [-Tag v0.9.1] [-AppDir dist\windows-app]
 #
@@ -10,6 +14,7 @@
 param([string]$Out = "dist\engine", [string]$Tag = "v0.0.0-dev", [string]$AppDir = "")
 $ErrorActionPreference = "Stop"
 $ProgressPreference = "SilentlyContinue"  # Invoke-WebRequest is much faster without its progress bar
+$Repo = "Abhinavchitturi/Document-vault"
 
 $Pins = @{
     Python = @{
@@ -32,6 +37,26 @@ function Fetch($pin, [string]$file) {
     if ($got -ne $pin.Sha) { throw "$file doesn't match its pinned checksum ($got)" }
 }
 
+$inputs = [System.Text.Encoding]::UTF8.GetBytes((Get-Content -Raw requirements.txt) + (Get-Content -Raw $PSCommandPath))
+$id = [Convert]::ToHexStringLower([System.Security.Cryptography.SHA256]::HashData($inputs)).Substring(0, 12)
+$name = "DocumentVault-Engine-Windows-$id.zip"
+$zip = Join-Path (Split-Path $Out) $name
+New-Item -ItemType Directory -Force -Path (Split-Path $Out) | Out-Null
+Remove-Item -Force (Join-Path (Split-Path $Out) "engine-to-upload.txt") -ErrorAction SilentlyContinue
+
+# the same engine already on a release? (then the app's update doesn't download it again)
+$published = $null
+if (Get-Command gh -ErrorAction SilentlyContinue) {
+    $published = gh api "repos/$Repo/releases?per_page=50" --jq ".[] | select(.draft | not) | {tag: .tag_name, a: (.assets[] | select(.name == `"$name`"))} | [.tag, .a.browser_download_url, .a.digest, (.a.size|tostring)] | join(`" `")" 2>$null |
+        Select-Object -First 1
+}
+if ($published) {
+    $tagOf, $url, $digest, $bytes = $published -split " "
+    Write-Host "Reusing $name from $tagOf"
+    gh release download $tagOf --repo $Repo --pattern $name --dir (Split-Path $Out) --clobber
+    $sha = $digest -replace "^sha256:", ""
+    if ((Get-FileHash $zip -Algorithm SHA256).Hash.ToLowerInvariant() -ne $sha) { throw "$name doesn't match its published SHA-256" }
+} else {
 $work = Join-Path $env:RUNNER_TEMP "engine-build"
 if (-not $env:RUNNER_TEMP) { $work = Join-Path $env:TEMP "engine-build" }
 Remove-Item -Recurse -Force $Out, $work -ErrorAction SilentlyContinue
@@ -45,24 +70,20 @@ $python = Join-Path $Out "python\python.exe"
 if ($LASTEXITCODE -ne 0) { throw "pip install failed" }
 & $python -m pip uninstall --quiet -y pytest  # for the project's tests, not the app
 
-Write-Host "2. The engine's code"
-Copy-Item -Recurse backend (Join-Path $Out "backend")
-Get-ChildItem $Out -Recurse -Directory -Filter "__pycache__" | Remove-Item -Recurse -Force
-& $python -m compileall -q (Join-Path $Out "backend")  # compiled now, so the first start doesn't have to
-
-Write-Host "3. Tesseract, the scan reader"
+Write-Host "2. Tesseract, the scan reader"
 Fetch $Pins.Tesseract "$work\tesseract-setup.exe"
 7z x "$work\tesseract-setup.exe" "-o$Out\tesseract" -y | Out-Null
 Remove-Item -Recurse -Force (Join-Path $Out 'tesseract\$PLUGINSDIR') -ErrorAction SilentlyContinue
 if (-not (Test-Path (Join-Path $Out "tesseract\tesseract.exe"))) { throw "tesseract.exe isn't in the unpacked installer" }
 Fetch $Pins.Hindi (Join-Path $Out "tesseract\tessdata\hin.traineddata")
 
-Write-Host "4. Check that it all runs"
+Write-Host "3. Check that it all runs"
+$env:PYTHONPATH = (Get-Location).Path  # the vault's code, from this checkout
 & $python -c "import backend.api.app, backend.engine.bridge, torch, faiss; print('engine imports ok')"
 if ($LASTEXITCODE -ne 0) { throw "the engine doesn't import" }
 & (Join-Path $Out "tesseract\tesseract.exe") --list-langs
 if ($LASTEXITCODE -ne 0) { throw "tesseract doesn't run" }
-Write-Host "5. Leave out what only building software needs (C++ headers, link libraries, test suites, Tk)"
+Write-Host "4. Leave out what only building software needs (C++ headers, link libraries, test suites, Tk)"
 $site = Join-Path $Out "python\Lib\site-packages"
 $unused = @("$site\torch\include", "$site\torch\share", "$site\torch\test", "$Out\python\tcl",
             "$Out\python\Lib\tkinter", "$Out\python\Lib\idlelib", "$Out\python\Lib\test", "$Out\python\Lib\turtledemo")
@@ -73,17 +94,25 @@ if ($LASTEXITCODE -ne 0) { throw "the engine doesn't import after leaving files 
 $size = (Get-ChildItem $Out -Recurse -File | Measure-Object Length -Sum).Sum / 1MB
 Write-Host ("Engine ready in {0}: {1:N0} MB" -f $Out, $size)
 
-Write-Host "6. Pack it for the release, and tell the app where it is"
-$zip = Join-Path (Split-Path $Out) "DocumentVault-Engine-Windows.zip"
+Write-Host "5. Pack it for the release"
 Remove-Item -Force $zip -ErrorAction SilentlyContinue
 Add-Type -AssemblyName System.IO.Compression.FileSystem
 [System.IO.Compression.ZipFile]::CreateFromDirectory((Resolve-Path $Out).Path, [System.IO.Path]::GetFullPath($zip),
     [System.IO.Compression.CompressionLevel]::SmallestSize, $false)
 $sha = (Get-FileHash $zip -Algorithm SHA256).Hash.ToLowerInvariant()
 $bytes = (Get-Item $zip).Length
-Write-Host ("{0}: {1:N0} MB, sha256 {2}" -f $zip, ($bytes / 1MB), $sha)
+$url = "https://github.com/$Repo/releases/download/$Tag/$name"
+Set-Content -Encoding utf8NoBOM (Join-Path (Split-Path $Out) "engine-to-upload.txt") $zip  # new: CI puts it on the release
+}
+Write-Host ("{0}: {1:N0} MB, sha256 {2}" -f $name, ([long]$bytes / 1MB), $sha)
+
 if ($AppDir) {
-    @{ version = $Tag.TrimStart("v"); sha256 = $sha; size = $bytes
-       url = "https://github.com/Abhinavchitturi/Document-vault/releases/download/$Tag/DocumentVault-Engine-Windows.zip" } |
+    Write-Host "6. The vault's code goes with the app, compiled"
+    $code = Join-Path $AppDir "backend"
+    Remove-Item -Recurse -Force $code -ErrorAction SilentlyContinue
+    Copy-Item -Recurse backend $code
+    Get-ChildItem $code -Recurse -Directory -Filter "__pycache__" | Remove-Item -Recurse -Force
+    python -m compileall -q $code  # Python 3.11, like the engine's
+    @{ version = $id; sha256 = $sha; size = [long]$bytes; url = $url } |
         ConvertTo-Json | Set-Content -Encoding utf8NoBOM (Join-Path $AppDir "engine.json")
 }

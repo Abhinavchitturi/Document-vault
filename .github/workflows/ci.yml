@@ -81,9 +81,11 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Build DocumentVault-macOS.dmg (just the app) and the engine it downloads when the Mac keeps the vault
+        env:
+          GH_TOKEN: ${{ github.token }}  # to reuse an engine already on a release
         run: |
           sh packaging/macos/build_dmg.sh "${{ inputs.release || (startsWith(github.ref, 'refs/tags/v') && github.ref_name) || 'v0.0.0-dev' }}"
-          ls -lh dist/DocumentVault-macOS.dmg dist/DocumentVault-Engine-macOS.tar.xz
+          ls -lh dist/DocumentVault-macOS.dmg dist/DocumentVault-Engine-macOS-*.tar.xz
       - name: Open the DMG, set up the engine like the app does (check its SHA-256, unpack), and add the samples with it
         run: |
           hdiutil attach -nobrowse -mountpoint "$RUNNER_TEMP/dmg" dist/DocumentVault-macOS.dmg
@@ -92,11 +94,11 @@ jobs:
           app="$RUNNER_TEMP/Applications/Document Vault.app"
           codesign --verify "$app"
           want=$(python3 -c "import json,sys; print(json.load(open(sys.argv[1]))['sha256'])" "$app/Contents/Resources/engine.json")
-          got=$(shasum -a 256 dist/DocumentVault-Engine-macOS.tar.xz | cut -d' ' -f1)
+          got=$(shasum -a 256 dist/DocumentVault-Engine-macOS-*.tar.xz | cut -d' ' -f1)
           [ "$want" = "$got" ] || { echo "engine.json doesn't describe this engine"; exit 1; }
-          engine="$RUNNER_TEMP/Engine" && mkdir -p "$engine" && /usr/bin/tar -xJf dist/DocumentVault-Engine-macOS.tar.xz -C "$engine"
+          engine="$RUNNER_TEMP/Engine" && mkdir -p "$engine" && /usr/bin/tar -xJf dist/DocumentVault-Engine-macOS-*.tar.xz -C "$engine"
           mkdir -p "$RUNNER_TEMP/vault" && cd "$RUNNER_TEMP/vault"
-          export PYTHONPATH="$engine" PYTHONNOUSERSITE=1 PYTHONDONTWRITEBYTECODE=1 VAULT_KEYCHAIN=off
+          export PYTHONPATH="$app/Contents/Resources" VAULT_RUNTIME="$engine" PYTHONNOUSERSITE=1 PYTHONDONTWRITEBYTECODE=1 VAULT_KEYCHAIN=off
           export VAULT_KEY_DIR="$RUNNER_TEMP/keys" VAULT_DATABASE_URL="sqlite:///data/index/vault.db"
           "$engine/python/bin/python3" -c "from backend.parser import ocr; p = ocr.tesseract_path(); print(p); assert '/Engine/' in p"
           "$engine/python/bin/python3" -m backend.upload.ingest "$GITHUB_WORKSPACE/samples/pdfs" "$GITHUB_WORKSPACE/samples/scans" --owner abhinav
@@ -106,7 +108,10 @@ jobs:
           path: dist/DocumentVault-macOS.dmg
       - name: Attach to the release (only after the DMG and the engine passed the test above)
         if: startsWith(github.ref, 'refs/tags/v') || inputs.release != ''
-        run: gh release upload "${{ inputs.release || github.ref_name }}" dist/DocumentVault-macOS.dmg dist/DocumentVault-Engine-macOS.tar.xz --clobber
+        run: |
+          files="dist/DocumentVault-macOS.dmg"
+          [ -f dist/engine-to-upload.txt ] && files="$files $(cat dist/engine-to-upload.txt)"  # a new engine only
+          gh release upload "${{ inputs.release || github.ref_name }}" $files --clobber
         env:
           GH_TOKEN: ${{ github.token }}
 
@@ -133,10 +138,15 @@ jobs:
           $env:VAULT_TEST_PYTHON = (Get-Command python).Source
           dotnet test apps/windows/DocumentVault.Core.Tests
       - name: Build the app
-        run: dotnet publish apps/windows/DocumentVault.App -c Release -r win-x64 -p:Platform=x64 -o dist/windows-app
+        shell: pwsh
+        run: |
+          $version = "${{ inputs.release || (startsWith(github.ref, 'refs/tags/v') && github.ref_name) || 'v0.0.0-dev' }}".TrimStart('v')
+          dotnet publish apps/windows/DocumentVault.App -c Release -r win-x64 -p:Platform=x64 "-p:Version=$version" -o dist/windows-app
       - name: Build the engine, downloaded by the app only on a PC that keeps the vault (a private Python, the vault's packages, Tesseract)
         shell: pwsh
         run: ./packaging/windows/build_engine.ps1 -Out dist\engine -Tag "${{ inputs.release || (startsWith(github.ref, 'refs/tags/v') && github.ref_name) || 'v0.0.0-dev' }}" -AppDir dist\windows-app
+        env:
+          GH_TOKEN: ${{ github.token }}  # to reuse an engine already on a release
       - name: Build DocumentVault-Setup.exe (just the app)
         shell: pwsh
         run: |
@@ -158,13 +168,16 @@ jobs:
           Write-Host ("Installed. DocumentVault-Setup.exe is {0:N0} MB" -f $size)
       - name: Click through every screen of the installed app, with screenshots (it sets up its engine from this build)
         shell: powershell
-        env:
-          DOCUMENT_VAULT_ENGINE_ARCHIVE: ${{ github.workspace }}\dist\DocumentVault-Engine-Windows.zip
-        run: powershell -ExecutionPolicy Bypass -File apps/windows/ui-test.ps1 -AppPath "$env:LOCALAPPDATA\Programs\Document Vault\App\DocumentVault.exe" -Out screens
+        run: |
+          $env:DOCUMENT_VAULT_ENGINE_ARCHIVE = (Resolve-Path dist\DocumentVault-Engine-Windows-*.zip).Path
+          powershell -ExecutionPolicy Bypass -File apps/windows/ui-test.ps1 -AppPath "$env:LOCALAPPDATA\Programs\Document Vault\App\DocumentVault.exe" -Out screens
       - name: Attach the installer to the release (only after it installed and every screen passed)
         if: startsWith(github.ref, 'refs/tags/v') || inputs.release != ''
         shell: pwsh
-        run: gh release upload "${{ inputs.release || github.ref_name }}" dist/DocumentVault-Setup.exe dist/DocumentVault-Engine-Windows.zip --clobber
+        run: |
+          $files = @("dist/DocumentVault-Setup.exe")
+          if (Test-Path dist/engine-to-upload.txt) { $files += (Get-Content dist/engine-to-upload.txt) }  # a new engine only
+          gh release upload "${{ inputs.release || github.ref_name }}" @files --clobber
         env:
           GH_TOKEN: ${{ github.token }}
       - name: Collect the installed app's logs

@@ -38,7 +38,12 @@ struct MainView: View {
             case .category(let category): DocumentsView(category: category)
             }
         }
-        .safeAreaInset(edge: .top, spacing: 0) { SearchReadyBanner() }
+        .safeAreaInset(edge: .top, spacing: 0) {
+            VStack(spacing: 0) {
+                UpdateBanner()
+                SearchReadyBanner()
+            }
+        }
     }
 }
 
