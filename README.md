@@ -38,7 +38,7 @@ computer and talk to it over a private pipe, with no network port. The phone app
 
 **Windows:** run the installer, like any Windows app. Everything it needs is inside it (its own private Python and
 the scan reader), so it installs nothing else: no Git, Node, Python or command prompt, and no administrator rights.
-On the first start the app offers the local AI as a one-click download (about 5 GB, once). Your documents are kept in
+The installer first asks whether this PC keeps the vault (the centre) or only connects to the vault on another computer. If it keeps the vault, the app offers the local AI as a one-click download (about 5 GB, once). Your documents are kept in
 `%LOCALAPPDATA%\Document Vault\Vault`, apart from the program, so updating or uninstalling never touches them.
 
 **Mac:** the app needs the vault's engine and AI models first (about 6 GB, once): run the one-command setup under
