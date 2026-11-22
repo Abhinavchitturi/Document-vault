@@ -169,7 +169,7 @@ The answer model and its one-click download, theme (light/dark), your account an
 | `./vault update` | `git pull`, reinstall/rebuild only what changed, restart, say whether phones need a new app |
 | `./vault autostart on/off` | Start at login |
 
-Double-click `Start Vault.command` / `Stop Vault.command` in Finder. The Mac is kept awake while the vault runs.
+The Mac is kept awake while the vault runs.
 
 ---
 

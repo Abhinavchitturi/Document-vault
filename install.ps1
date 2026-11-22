@@ -196,7 +196,7 @@ if (-not $NoStart) {
         Start-Process "http://localhost:8000"
         Say "All set"
         Write-Host "Document Vault is running at http://localhost:8000 (choose a password on the first screen)."
-        Write-Host "Stop it with:  $Dir\vault.cmd stop     Start it again with:  $Dir\vault.cmd start   (or double-click Start Vault.bat)"
+        Write-Host "Stop it with:  $Dir\vault.cmd stop     Start it again with:  $Dir\vault.cmd start"
     } else {
         Write-Host "The vault did not start; see the messages above." -ForegroundColor Yellow
     }

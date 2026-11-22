@@ -20,7 +20,7 @@ The full reference for setting up, running and using the vault. For a short over
 | 10 | Reminders | ✅ Before expiries and due dates: phone notifications (even with the Mac off), Mac notifications, a calendar file, and the Dashboard; days, time and "Paid / Done" per person |
 | 11 | Security | ✅ Documents, scans, search index, file names and ID numbers encrypted on disk (AES-256), key in the macOS Keychain with a paper recovery key; encrypted one-file backups; an activity log of sign-ins and document access |
 | 12 | Family sharing | ✅ Whole-family mode (default): everyone sees every document not marked private; or each person's own plus documents shared with chosen members. Only the owner changes or deletes a document; every change in the activity log |
-| 13 | Deployment | ✅ `./vault start / stop / status / logs / update`, Start/Stop Vault in Finder: checks and starts the database, the local AI and Tailscale, runs in the background under macOS launchd (restarted after a crash, logs in `data/logs/`), optional start at login; `update` pulls, installs what changed and says whether phones need a new app |
+| 13 | Deployment | ✅ `./vault start / stop / status / logs / update`: checks and starts the database, the local AI and Tailscale, runs in the background under macOS launchd (restarted after a crash, logs in `data/logs/`), optional start at login; `update` pulls, installs what changed and says whether phones need a new app |
 
 ## Privacy
 - Built for a family, not for the public internet. The repository contains **code and fictional samples only**.
@@ -145,7 +145,6 @@ From the vault folder in Terminal:
 It checks the database, the local AI (answers), Tailscale (phones away from home) and the web pages,
 starts what's missing, runs the vault in the background with phone access on, and opens it in
 the browser. Closing Terminal doesn't stop it; it restarts by itself if it ever crashes.
-Or double-click **Start Vault.command** / **Stop Vault.command** in Finder.
 
 | Command | What it does |
 |---|---|

@@ -7,11 +7,9 @@
     ./vault update         git pull, install what changed, rebuild the pages, restart; says if phones need a new app
     ./vault autostart on   start the vault whenever you log in to the Mac (off: only when you start it)
 
-Or double-click "Start Vault.command" / "Stop Vault.command" in Finder.
 
 On Windows the command is `vault` (vault.cmd) and the vault runs as a hidden background process of yours
-(its process id is kept in data/run/vault.pid, its log in data/logs/vault.log); "Start Vault.bat" /
-"Stop Vault.bat" are the double-click versions, and `vault autostart on` starts it at sign-in through the
+(its process id is kept in data/run/vault.pid, its log in data/logs/vault.log), and `vault autostart on` starts it at sign-in through the
 Startup folder. There is no launchd there, so a crashed vault is not restarted by itself.
 
 The vault runs under launchd, the Mac's own service manager, as a LaunchAgent labelled
@@ -423,7 +421,7 @@ class WindowsVault(Vault):
             self.say("The vault will start by itself when you sign in to Windows.")
         else:
             self.startup_script.unlink(missing_ok=True)
-            self.say("The vault will only run when you start it (vault start, or Start Vault.bat).")
+            self.say("The vault will only run when you start it (vault start).")
         if running:
             self.say("It's running now; the change applies from the next start.")
 

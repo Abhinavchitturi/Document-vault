@@ -79,6 +79,12 @@ public class ConnectingToTheCentreComputer
             var refused = await Assert.ThrowsAsync<VaultException>(() => new VaultClient(impostor, new MemorySessionStore()).InfoAsync());
             Assert.Equal(VaultErrorKind.Engine, refused.Kind);
         }
+        catch (Exception e) when (File.Exists(Path.Combine(tmp, "centre.log")))
+        {
+            // the engine's log says why (it is deleted below): shown with the failure
+            var tail = string.Join("\n", File.ReadLines(Path.Combine(tmp, "centre.log")).TakeLast(60));
+            throw new Exception($"{e.Message}\n--- the centre's engine log ---\n{tail}", e);
+        }
         finally
         {
             try { Directory.Delete(tmp, recursive: true); } catch { /* files still closing */ }

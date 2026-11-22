@@ -84,12 +84,9 @@ def ensure(model_name: str = DEFAULT_MODEL) -> None:
             progress.done = _measured(model_name)
 
     threading.Thread(target=measure, name="measure-download", daemon=True).start()
-    from concurrent.futures import ThreadPoolExecutor
-
-    try:  # all at once: the small files don't wait for the big one
-        with ThreadPoolExecutor(max_workers=6) as pool:
-            for _ in pool.map(lambda name: hf_hub_download(model_name, name, revision=REVISION), FILES):
-                pass
+    try:  # one at a time: parallel downloads hung on Windows (the small ones take seconds anyway)
+        for name in sorted(FILES, key=FILES.get, reverse=True):  # the big one first: the bar moves at once
+            hf_hub_download(model_name, name, revision=REVISION)
     finally:
         finished.set()
     progress.done, progress.state = TOTAL, "loading"
