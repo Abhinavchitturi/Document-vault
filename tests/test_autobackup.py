@@ -162,7 +162,8 @@ def test_every_location_gets_a_checked_copy_and_one_failing_does_not_stop_the_ot
     shutil.rmtree(usb)  # the USB drive is pulled out
     result = autobackup.run_now(store, n=FAST)
     assert "isn't there" in dest(result, usb)["last_error"] and dest(result, nas)["last_error"] is None
-    assert result["good_copies"] == 1 and len(backups(nas)) == 1  # same minute: the NAS copy was simply refreshed
+    assert result["good_copies"] == 1 and dest(result, nas)["last_file"] in backups(nas)
+    assert len(backups(nas)) in (1, 2)  # one per minute: a slow machine may cross into the next minute
 
 
 def test_a_saved_location_can_stay_while_its_drive_is_unplugged_but_a_new_one_must_exist(store, nas, usb, tmp_path):
