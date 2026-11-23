@@ -25,7 +25,7 @@ from urllib.parse import quote
 
 from sqlalchemy import delete, func, insert, select
 
-from backend.database.schema import documents, sync_peers, users
+from backend.database.schema import documents, sync_peers, sync_stamps, users
 from backend.sync import records, stamps, transport
 
 logger = logging.getLogger(__name__)
@@ -116,17 +116,18 @@ class Sync:
     # ---------- the computer that joins ----------
 
     def can_join(self) -> bool:
-        """Only an empty vault joins another: nothing of its own would be lost or mixed in."""
+        """Only a vault with no documents joins another: nothing of its own would be lost or mixed in. Someone may
+        already have signed up on it: the other vault's people (and passwords) come over, a same name taking theirs."""
         with self.engine.connect() as conn:
             docs = conn.execute(select(func.count()).select_from(documents)).scalar()
-            signed = conn.execute(select(func.count()).where(users.c.password_hash.is_not(None))).scalar()
             peers = conn.execute(select(func.count()).select_from(sync_peers)).scalar()
-        return docs == 0 and signed == 0 and peers == 0
+        return docs == 0 and peers == 0
 
     def join(self, address: str, code: str, fingerprint: str) -> dict:
         """Join the vault kept on the computer at `address` (whose certificate the person checked: `fingerprint`)."""
         if not self.can_join():
-            raise SyncError("Only a new, empty vault can join another one.")
+            raise SyncError("Only a vault with no documents can join another one (this one has documents, or already "
+                            "keeps another vault).")
         if not self.fingerprint:
             raise SyncError("Start the vault with device access on, so the other computer can reach this one.")
         url = address if "://" in address else f"https://{address.strip()}"
@@ -144,6 +145,9 @@ class Sync:
             raise SyncError(str(e)) from e
         self.store.adopt_vault(answer["vault_id"], base64.b64decode(answer["key"]))
         with self.engine.begin() as conn:
+            # the vault joined wins: what this computer did before (its own sign-up, settings) isn't news to send back,
+            # and the other vault's people (a same name with their password) replace this one's
+            conn.execute(delete(sync_stamps))
             conn.execute(insert(sync_peers).values(
                 centre_id=answer["centre_id"], name=str(answer["name"])[:100],
                 urls=json.dumps([url, *[u for u in answer.get("urls", []) if u != url]][:8]),

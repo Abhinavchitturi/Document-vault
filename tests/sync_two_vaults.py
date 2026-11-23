@@ -92,6 +92,8 @@ def main() -> None:
 
             print("B: a second computer joins with the code", flush=True)
             b = Engine(Path(tmp) / "b", 8472)
+            # B was already set up (signed up, no documents yet): it joins from Settings, as an admin
+            assert b.ask("POST", "/api/auth/setup", json={"name": "abhinav", "password": "B's own long password"})[0] == 200
             status, probe = b.ask("GET", "/api/sync/probe?address=127.0.0.1:8471")
             assert status == 200 and probe["fingerprint"] == invite["fingerprint"], probe  # the security code matches
             status, joined = b.ask("POST", "/api/sync/join-vault",

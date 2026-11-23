@@ -80,6 +80,7 @@ public sealed class SettingsPage : UserControl
         }
 
         if (state.Remote is null) body.Children.Add(Computers(state));
+        body.Children.Add(Anywhere());
 
         var details = UI.Stack(6, UI.Subtitle("Vault"), UI.Caption("Loading…"));
         body.Children.Add(UI.Card(details));
@@ -110,6 +111,12 @@ public sealed class SettingsPage : UserControl
     {
         var list = UI.Stack(6, UI.Caption("Loading…"));
         var shown = UI.Stack(6);
+        // this PC's vault is still empty: it can join the one another computer keeps instead
+        var join = UI.Button("Join a vault kept on another computer…", () => App.Window!.Show(new JoinVaultPage()), accent: true)
+            .Id("JoinFromSettingsButton");
+        var joinNote = UI.Caption("Type the code the other computer shows (its Settings → Computers that keep this vault → Add a computer). " +
+                                  "This PC then keeps the same vault, with the same documents, people and passwords.");
+        join.Visibility = joinNote.Visibility = Visibility.Collapsed;
         async Task Load()
         {
             try
@@ -123,6 +130,7 @@ public sealed class SettingsPage : UserControl
                                    : peer.SyncedAt is { } at ? $"Up to date ({at.ToLocalTime():d MMM, HH:mm})" : "Catching up…")));
                 if (status.Peers.Count == 0)
                     list.Children.Add(UI.Caption("Only this PC keeps the vault. Add another computer, so either one can be off."));
+                if (status.CanJoin && state.User?.IsAdmin == true) join.Visibility = joinNote.Visibility = Visibility.Visible;
             }
             catch (Exception e) { list.Children.Clear(); list.Children.Add(UI.Caption(e.Message)); }
         }
@@ -133,8 +141,9 @@ public sealed class SettingsPage : UserControl
             {
                 var invite = await state.Client!.SyncInviteAsync();
                 shown.Children.Clear();
-                shown.Children.Add(UI.Text("On the other computer, install Document Vault, choose \"Keep the vault on this computer\", then " +
-                                           "\"Join a vault kept on another computer instead\", and type:"));
+                shown.Children.Add(UI.Text("On the other computer, open Document Vault → Settings → Computers that keep this vault → " +
+                                           "\"Join a vault kept on another computer\" (on a new install: choose \"Keep the vault on this " +
+                                           "computer\", then \"Join a vault kept on another computer instead\"), and type:"));
                 shown.Children.Add(UI.Caption("Code (works once, for 10 minutes)"));
                 shown.Children.Add(UI.Text(invite.Code, "TitleTextBlockStyle").Id("JoinCodeText"));
                 shown.Children.Add(UI.Caption("Address"));
@@ -148,6 +157,15 @@ public sealed class SettingsPage : UserControl
         return UI.Card(UI.Stack(8, UI.Subtitle("Computers that keep this vault"),
             UI.Text("Each one has every document, kept up to date with the others within seconds when they can reach each other " +
                     "(the same Wi-Fi, or Tailscale). Laptops and phones use whichever one is on.", secondary: true),
-            list, add, shown));
+            list, join, joinNote, add, shown));
     }
+
+    /// Tailscale: optional, to use the vault away from home.
+    private static UIElement Anywhere() =>
+        UI.Card(UI.Stack(8, UI.Subtitle("Use it from anywhere (optional)"),
+            UI.Text("Laptops, phones and the other computers that keep this vault reach this PC over your home Wi-Fi. To use the " +
+                    "vault from anywhere (work, travelling), you can also use Tailscale: a free, private connection between your own " +
+                    "devices. Install it on this PC and on the other device, sign in to both with the same account, and they find each " +
+                    "other wherever they are. It's optional: without it, everything works at home.", secondary: true),
+            new HyperlinkButton { Content = "Get Tailscale (tailscale.com/download)", NavigateUri = new Uri("https://tailscale.com/download") }));
 }

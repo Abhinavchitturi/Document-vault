@@ -1049,9 +1049,16 @@ def create_app(
     def sync_status() -> dict:
         return need_sync().status()
 
+    def may_join(request: Request) -> None:
+        """Before anyone signs up here, whoever is at this computer; after, an admin."""
+        user = getattr(request.state, "user", None)
+        if user is not None and not user["is_admin"]:
+            raise HTTPException(403, "Only an admin can join this computer to another vault.")
+
     @app.get("/api/sync/probe")
-    def sync_probe(address: str) -> dict:
+    def sync_probe(address: str, request: Request) -> dict:
         """The certificate of the computer at `address`, to show its security code before joining it."""
+        may_join(request)
         from backend.sync import transport
 
         url = address if "://" in address else f"https://{address.strip()}"
@@ -1068,6 +1075,7 @@ def create_app(
         """This new, empty vault joins the one kept on another computer, and copies it in the background."""
         from backend.sync.service import SyncError
 
+        may_join(request)
         try:
             answer = need_sync().join(req.address, req.code, req.fingerprint)
         except SyncError as e:

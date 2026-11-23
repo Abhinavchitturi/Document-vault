@@ -83,24 +83,33 @@ public sealed class DocumentsPage : UserControl
 
     private Grid Row(VaultDocument document)
     {
-        var grid = new Grid { ColumnSpacing = 14, Padding = new Thickness(4, 8, 4, 8), Tag = document };
+        // a calm card: the type's icon in a soft tile, the name, and one quiet line of details (no table, no columns)
+        var grid = new Grid
+        {
+            ColumnSpacing = 14, Padding = new Thickness(14, 10, 10, 10), Tag = document, CornerRadius = new CornerRadius(10),
+            Background = (Microsoft.UI.Xaml.Media.Brush)Application.Current.Resources["CardBackgroundFillColorDefaultBrush"],
+            Margin = new Thickness(0, 3, 0, 3),
+        };
         grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
         grid.ColumnDefinitions.Add(new ColumnDefinition());
-        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(120) });
-        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(110) });
-        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(80) });
-        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(40) });  // remove
-        var key = document.DueOn is { } due ? $"Due {UI.Date(due)}" : document.ExpiresOn is { } exp ? $"Expires {UI.Date(exp)}" : null;
-        var name = UI.Stack(0, UI.Text(document.Filename));
-        if (key is not null) name.Children.Add(UI.Caption(key));
-        var cells = new UIElement[] { UI.Glyph(document.Category.Glyph()), name, UI.Caption(document.Category.Label()),
-                                      UI.Caption(UI.Date(document.AddedAt)), UI.Caption(UI.Size(document.SizeBytes)) };
-        for (var i = 0; i < cells.Length; i++)
+        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });  // remove
+        var tile = new Border
         {
-            Grid.SetColumn((FrameworkElement)cells[i], i);
-            ((FrameworkElement)cells[i]).VerticalAlignment = VerticalAlignment.Center;
-            grid.Children.Add(cells[i]);
-        }
+            Width = 38, Height = 38, CornerRadius = new CornerRadius(9), VerticalAlignment = VerticalAlignment.Center,
+            Background = (Microsoft.UI.Xaml.Media.Brush)Application.Current.Resources["SubtleFillColorSecondaryBrush"],
+            Child = new FontIcon { Glyph = document.Category.Glyph(), FontSize = 16, HorizontalAlignment = HorizontalAlignment.Center,
+                                   VerticalAlignment = VerticalAlignment.Center },
+        };
+        var key = document.DueOn is { } due ? $"Due {UI.Date(due)}" : document.ExpiresOn is { } exp ? $"Expires {UI.Date(exp)}" : null;
+        var title = UI.Text(document.Filename);
+        title.FontWeight = UI.Semibold;
+        title.TextTrimming = TextTrimming.CharacterEllipsis;
+        var name = UI.Stack(2, title,
+            UI.Caption(string.Join("  ·  ", new[] { document.Category.Label(), key ?? $"Added {UI.Date(document.AddedAt)}", UI.Size(document.SizeBytes) })));
+        name.VerticalAlignment = VerticalAlignment.Center;
+        Grid.SetColumn(name, 1);
+        grid.Children.Add(tile);
+        grid.Children.Add(name);
 
         var menu = new MenuFlyout();
         var open = new MenuFlyoutItem { Text = "Open", Icon = UI.Glyph("") };
@@ -141,7 +150,7 @@ public sealed class DocumentsPage : UserControl
                         "Your original file, if you still have it, isn't touched.", "Remove"))
                     await Run(() => AppState.Current.Client!.DeleteAsync(document));
             };
-            Grid.SetColumn(trash, 5);
+            Grid.SetColumn(trash, 2);
             grid.Children.Add(trash);
         }
         return grid;

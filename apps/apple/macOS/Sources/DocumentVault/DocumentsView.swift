@@ -2,19 +2,17 @@ import SwiftUI
 import UniformTypeIdentifiers
 import VaultKit
 
-/// Every document (or one type), in a native table. Adding documents works from anywhere (AddDocuments.swift).
+/// Every document (or one type): a calm list, newest first. Click one to open it; the trash button (on hover) or the
+/// right-click menu removes it. Adding documents works from anywhere (AddDocuments.swift).
 struct DocumentsView: View {
     @Environment(AppModel.self) private var model
     @Environment(\.openWindow) private var openWindow
     let category: Category?
     @State private var search = ""
-    @State private var selection = Set<VaultDocument.ID>()
-    @State private var sortOrder = [KeyPathComparator(\VaultDocument.addedAt, order: .reverse)]
-    @State private var toDelete: [VaultDocument] = []
+    @State private var toDelete: VaultDocument?
 
     private var shown: [VaultDocument] {
-        let matching: [VaultDocument] = model.documents.filter(matches)
-        return matching.sorted(using: sortOrder)
+        model.documents.filter(matches).sorted { $0.addedAt > $1.addedAt }
     }
 
     private func matches(_ document: VaultDocument) -> Bool {
@@ -24,58 +22,19 @@ struct DocumentsView: View {
         return fields.contains { $0.localizedCaseInsensitiveContains(search) }
     }
 
-    /// The selected documents this person may remove: their own.
-    private func removable(_ ids: Set<VaultDocument.ID>) -> [VaultDocument] {
-        ids.compactMap(document).filter(\.mine)
-    }
-
-    private func document(_ id: VaultDocument.ID) -> VaultDocument? {
-        model.documents.first { $0.id == id }
-    }
-
     var body: some View {
-        Table(shown, selection: $selection, sortOrder: $sortOrder) {
-            TableColumn("Name", value: \.filename) { document in
-                HStack(spacing: 8) {
-                    Image(systemName: document.category.symbol).foregroundStyle(document.category.color)
-                    VStack(alignment: .leading, spacing: 1) {
-                        Text(document.filename)
-                        if let key = Format.keyFact(document) {
-                            Text(key.text).font(.caption).foregroundStyle(key.urgent ? .orange : .secondary)
-                        }
-                    }
+        ScrollView {
+            LazyVStack(spacing: 8) {
+                ForEach(shown) { document in
+                    DocumentCard(document: document,
+                                 open: { openWindow(id: "document", value: document.docId) },
+                                 remove: { toDelete = document })
                 }
             }
-            .width(min: 240, ideal: 380)
-            TableColumn("Type", value: \.category.label) { Text($0.category.label) }.width(110)
-            TableColumn("Added", value: \.addedAt) { Text(Format.date($0.addedAt)).monospacedDigit() }.width(110)
-            TableColumn("Size", value: \.sizeBytes) { Text(Format.size($0.sizeBytes)).monospacedDigit().foregroundStyle(.secondary) }
-                .width(80)
-        }
-        .contextMenu(forSelectionType: VaultDocument.ID.self) { ids in
-            if let id = ids.first, let document = self.document(id) {
-                Button("Open") { openWindow(id: "document", value: document.docId) }
-                if document.mine {
-                    Menu("Change Type") {
-                        ForEach(Category.allCases, id: \.self) { category in
-                            Button(category.label) { Task { await model.setCategory(document, category) } }
-                                .disabled(category == document.category)
-                        }
-                    }
-                    Divider()
-                    Button("Remove from Vault…", role: .destructive) { toDelete = removable(ids) }
-                }
-            }
-        } primaryAction: { ids in
-            ids.forEach { openWindow(id: "document", value: $0) }
-        }
-        .onDeleteCommand { toDelete = removable(selection) }  // the Delete key
-        .toolbar {
-            ToolbarItem {
-                Button("Remove from Vault", systemImage: "trash") { toDelete = removable(selection) }
-                    .help("Remove the selected documents from the vault (or press Delete)")
-                    .disabled(removable(selection).isEmpty)
-            }
+            .padding(.horizontal, 24)
+            .padding(.vertical, 18)
+            .frame(maxWidth: 900)
+            .frame(maxWidth: .infinity)
         }
         .searchable(text: $search, prompt: "Name, policy or reference number")
         .navigationTitle(category?.label ?? "All Documents")
@@ -89,17 +48,76 @@ struct DocumentsView: View {
                 } actions: {
                     Button("Add Documents") { model.choosingFiles = true }.buttonStyle(.borderedProminent)
                 }
+            } else if shown.isEmpty {
+                ContentUnavailableView.search(text: search)
             }
         }
-        .confirmationDialog(toDelete.count == 1 ? "Remove \(toDelete[0].filename) from the vault?"
-                                                : "Remove \(toDelete.count) documents from the vault?",
-                            isPresented: Binding(get: { !toDelete.isEmpty }, set: { if !$0 { toDelete = [] } })) {
+        .confirmationDialog("Remove \(toDelete?.filename ?? "") from the vault?",
+                            isPresented: Binding(get: { toDelete != nil }, set: { if !$0 { toDelete = nil } })) {
             Button("Remove", role: .destructive) {
-                let removing = toDelete
-                Task { for document in removing { await model.delete(document) } }
+                if let document = toDelete { Task { await model.delete(document) } }
             }
         } message: {
             Text("The vault's encrypted copy and its search data are deleted, on every computer that keeps this vault. Your original file, if you still have it, isn't touched.")
+        }
+    }
+}
+
+/// One document: its type's icon, its name, and one quiet line of details. The trash button shows on hover.
+struct DocumentCard: View {
+    @Environment(AppModel.self) private var model
+    let document: VaultDocument
+    let open: () -> Void
+    let remove: () -> Void
+    @State private var hovering = false
+
+    private var details: String {
+        var parts = [document.category.label]
+        if let key = Format.keyFact(document) { parts.append(key.text) } else { parts.append("Added \(Format.date(document.addedAt))") }
+        parts.append(Format.size(document.sizeBytes))
+        return parts.joined(separator: "  ·  ")
+    }
+
+    var body: some View {
+        HStack(spacing: 14) {
+            RoundedRectangle(cornerRadius: 9, style: .continuous)
+                .fill(document.category.color.opacity(0.15))
+                .frame(width: 38, height: 38)
+                .overlay(Image(systemName: document.category.symbol).foregroundStyle(document.category.color))
+            VStack(alignment: .leading, spacing: 3) {
+                Text(document.filename).font(.body.weight(.medium)).lineLimit(1)
+                Text(details).font(.caption)
+                    .foregroundStyle(Format.keyFact(document)?.urgent == true ? Color.orange : Color.secondary)
+                    .lineLimit(1)
+            }
+            Spacer(minLength: 12)
+            if document.mine {
+                Button(action: remove) { Image(systemName: "trash") }
+                    .buttonStyle(.borderless)
+                    .foregroundStyle(.secondary)
+                    .help("Remove from vault")
+                    .opacity(hovering ? 1 : 0)
+            }
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 10)
+        .background(RoundedRectangle(cornerRadius: 12, style: .continuous)
+            .fill(hovering ? Color.primary.opacity(0.07) : Color.primary.opacity(0.035)))
+        .contentShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .onHover { hovering = $0 }
+        .onTapGesture(perform: open)
+        .contextMenu {
+            Button("Open", action: open)
+            if document.mine {
+                Menu("Change Type") {
+                    ForEach(Category.allCases, id: \.self) { category in
+                        Button(category.label) { Task { await model.setCategory(document, category) } }
+                            .disabled(category == document.category)
+                    }
+                }
+                Divider()
+                Button("Remove from Vault…", role: .destructive, action: remove)
+            }
         }
     }
 }

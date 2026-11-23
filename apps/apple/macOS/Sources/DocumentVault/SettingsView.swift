@@ -49,6 +49,13 @@ struct VaultSettings: View {
                 ConnectAnotherDevice()
                 ComputersSettings()
             }
+            Section {
+                Text("Laptops, phones and the other computers that keep this vault reach this Mac over your home Wi-Fi. To use the vault from anywhere (work, travelling), you can also use Tailscale: a free, private connection between your own devices. Install it on this Mac and on the other device, sign in to both with the same account, and they find each other wherever they are. It's optional: without it, everything works at home.")
+                    .font(.callout)
+                Link("Get Tailscale (tailscale.com/download)", destination: URL(string: "https://tailscale.com/download")!)
+            } header: {
+                Text("Use It From Anywhere (Optional)")
+            }
             Section("Privacy") {
                 LabeledContent("Encryption key", value: settings?.keyKeptIn ?? "–")
                 LabeledContent("Vault folder", value: model.remote == nil ? model.folder.path : "On the other computer")

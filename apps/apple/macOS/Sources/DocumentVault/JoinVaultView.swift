@@ -1,3 +1,4 @@
+import AppKit
 import SwiftUI
 import VaultKit
 
@@ -112,6 +113,16 @@ struct ComputersSettings: View {
                         .font(.caption).foregroundStyle(.secondary)
                 }
             }
+            if model.user?.isAdmin == true, status?.canJoin == true {
+                // this Mac's vault is still empty: it can join the one another computer keeps instead
+                Button("Join a Vault Kept on Another Computer…") {
+                    NSApp.keyWindow?.close()  // Settings; the join screen opens in the main window
+                    model.phase = .joining
+                }
+                .buttonStyle(.borderedProminent)
+                Text("Type the code the other computer shows (its Settings → Computers That Keep This Vault → Add a Computer). This Mac then keeps the same vault, with the same documents, people and passwords.")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
             if model.user?.isAdmin == true {
                 Button("Add a Computer That Also Keeps This Vault") {
                     Task {
@@ -121,7 +132,7 @@ struct ComputersSettings: View {
             }
             if let invite {
                 VStack(alignment: .leading, spacing: 6) {
-                    Text("On the other computer, install Document Vault, choose “Keep the vault on this computer”, then “Join a vault kept on another computer instead”, and type:")
+                    Text("On the other computer, open Document Vault → Settings → Computers That Keep This Vault → Join a Vault Kept on Another Computer (on a new install: choose “Keep the vault on this computer”, then “Join a vault kept on another computer instead”), and type:")
                         .font(.callout)
                     LabeledContent("Code", value: invite.code).font(.title3.monospaced())
                     LabeledContent("Address", value: invite.urls.compactMap { URL(string: $0)?.host() }.joined(separator: "  or  "))
