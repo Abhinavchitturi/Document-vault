@@ -56,13 +56,7 @@ tar -xzf "$WORK/python.tar.gz" -C "$OUT"  # -> $OUT/python/bin/python3
 PY="$OUT/python/bin/python3"
 "$PY" -m pip install --quiet --no-warn-script-location --no-cache-dir -r requirements.txt
 "$PY" -m pip uninstall --quiet -y pytest  # for the project's tests, not the app
-# torch and faiss each bring their own copy of OpenMP (libomp), and two copies in one process crash it as soon as
-# both are used (adding documents). faiss uses torch's copy instead.
 SITE=$("$PY" -c "import sysconfig; print(sysconfig.get_paths()['purelib'])")
-if [ -f "$SITE/faiss/.dylibs/libomp.dylib" ] && [ -f "$SITE/torch/lib/libomp.dylib" ]; then
-  rm "$SITE/faiss/.dylibs/libomp.dylib"
-  ln -s ../../torch/lib/libomp.dylib "$SITE/faiss/.dylibs/libomp.dylib"
-fi
 
 echo "2. Tesseract, the scan reader, with its libraries"
 brew list tesseract >/dev/null 2>&1 || brew install tesseract
@@ -80,20 +74,20 @@ if otool -L "$OUT/tesseract/tesseract" "$OUT"/tesseract/lib/*.dylib | grep -E "/
 fi
 
 echo "3. Check that it all runs"
-PYTHONPATH="$PWD" "$PY" -c "import backend.api.app, backend.engine.bridge, torch, faiss; print('engine imports ok')"
+PYTHONPATH="$PWD" "$PY" -c "import backend.api.app, backend.engine.bridge, onnxruntime, faiss; print('engine imports ok')"
 "$PY" -c "
-import torch, faiss
-x = torch.randn(1000, 768).numpy()
+import numpy as np, onnxruntime, faiss
+x = np.random.rand(1000, 768).astype('float32')
 index = faiss.IndexFlatIP(768); index.add(x); index.search(x, 2)
-print('torch and faiss work together')"
+print('onnxruntime and faiss work together')"
 TESSDATA_PREFIX="$OUT/tesseract/tessdata" "$OUT/tesseract/tesseract" --list-langs
 VAULT_RUNTIME="$OUT" PYTHONPATH="$PWD" "$PY" -c "from backend.parser import ocr; p = ocr.tesseract_path(); print('the engine\'s tesseract:', p); assert p.startswith('$OUT') or '/engine' in p"
 echo "4. Leave out what only building software needs (C++ headers, static libraries, test suites, Tk)"
-rm -rf "$SITE/torch/include" "$SITE/torch/share" "$SITE/torch/test" "$OUT/python/lib/tcl"* "$OUT/python/lib/tk"* \
+rm -rf "$OUT/python/lib/tcl"* "$OUT/python/lib/tk"* \
        "$OUT/python/lib/python3.11/tkinter" "$OUT/python/lib/python3.11/idlelib" "$OUT/python/lib/python3.11/test" \
        "$OUT/python/lib/python3.11/turtledemo"
 find "$OUT" -name "*.a" -type f -delete
-PYTHONPATH="$PWD" "$PY" -c "import backend.api.app, backend.engine.bridge, torch, faiss; print('still imports ok')"
+PYTHONPATH="$PWD" "$PY" -c "import backend.api.app, backend.engine.bridge, onnxruntime, faiss; print('still imports ok')"
 echo "Engine ready in $OUT: $(du -sh "$OUT" | cut -f1)"
 
 echo "5. Pack it for the release"

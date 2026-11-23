@@ -54,8 +54,8 @@ administrator rights are needed. The first question is how this computer uses th
   own private Python and the scan reader, checked against a fingerprint built into the app). Then, in the background,
   it downloads the search model and the private AI (about 5 GB, once) by itself, with a progress bar at the top: the
   app works meanwhile, and the assistant answers as soon as the AI is there. It needs about 7 GB of free space.
-  The private AI fits the computer's memory: 16 GB or more gets the full model; a laptop with 8 GB gets a smaller one
-  (about 2 GB, so the rest of the computer stays quick); below 6 GB there's no private AI, and search still finds
+  The private AI fits the computer's memory: 16 GB or more gets the full model; a laptop with 6 or 8 GB gets a smaller one
+  (about 2 GB, so the rest of the computer stays quick); below that there's no private AI, and search still finds
   everything. Adding a document never waits for the AI: it's filed straight away, and the AI takes a closer look at its
   dates and amounts in the background.
 - **Use the vault on another computer**: nothing else is downloaded and nothing is stored on this computer.

@@ -7,10 +7,10 @@ segno             # QR codes for pairing phones (Phase 7)
 cryptography      # the phone listener's HTTPS certificate (also used by webauthn)
 keyring           # Phase 11: the vault key lives in the macOS Keychain
 
-# Embeddings and vector search (all run on this computer)
-sentence-transformers
-transformers
-torch
+# Embeddings and vector search (all run on this computer). The search model runs through ONNX Runtime: it loads
+# in about a second with little memory (PyTorch took a minute and over a GB on a 6 GB laptop), same vectors.
+onnxruntime
+tokenizers
 numpy
 faiss-cpu
 

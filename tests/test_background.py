@@ -34,30 +34,33 @@ def test_a_failure_is_reported_and_raised_on_use():
 
 def test_download_progress_is_measured_in_the_models_folder(tmp_path, monkeypatch):
     monkeypatch.setenv("VAULT_SEARCH_MODEL_DIR", str(tmp_path))
-    (tmp_path / "1_Pooling").mkdir(parents=True)
     assert not download.downloaded() and download._measured() == 0
     (tmp_path / ".cache" / "huggingface" / "download").mkdir(parents=True)
     (tmp_path / ".cache" / "huggingface" / "download" / "abc.incomplete").write_bytes(b"x" * 1000)  # part way
-    for name, size in download.FILES.items():
-        if name != "model.safetensors":
-            (tmp_path / name).write_bytes(b"x" * size)
-    small = download.TOTAL - download.FILES["model.safetensors"]
-    assert download._measured() == small + 1000
-    (tmp_path / "model.safetensors").write_bytes(b"")  # wrong size: not downloaded yet
+    (tmp_path / "tokenizer.json").write_bytes(b"x" * download.FILES["tokenizer.json"])
+    assert download._measured() == download.FILES["tokenizer.json"] + 1000
+    (tmp_path / "onnx").mkdir()
+    (tmp_path / "onnx" / "model.onnx").write_bytes(b"")  # wrong size: not downloaded yet
     assert not download.downloaded()
 
 
-def test_a_model_from_the_old_cache_is_moved_as_plain_files(tmp_path, monkeypatch):
-    """Versions before 1.0.7 kept it in the Hugging Face cache, whose links Windows refused to follow."""
-    monkeypatch.setenv("VAULT_SEARCH_MODEL_DIR", str(tmp_path / "model"))
-    monkeypatch.setenv("HF_HUB_CACHE", str(tmp_path / "hub"))
-    old = download._old_snapshot()
-    for name, size in download.FILES.items():
-        (old / name).parent.mkdir(parents=True, exist_ok=True)
-        (old / name).write_bytes(b"x" * size)
-    assert download.ensure() == tmp_path / "model" and download.downloaded()
-    assert not (tmp_path / "model" / "model.safetensors").is_symlink()
-    assert not old.exists()  # no second copy left behind
+def test_earlier_copies_are_removed_without_following_their_links(tmp_path, monkeypatch):
+    """Before 1.0.8 the model was PyTorch's, in the Hugging Face cache, whose links Windows refused to follow
+    ("[WinError 448] ... untrusted mount point") even to check a file was there."""
+    folder, hub = tmp_path / "model", tmp_path / "hub"
+    monkeypatch.setenv("VAULT_SEARCH_MODEL_DIR", str(folder))
+    monkeypatch.setenv("HF_HUB_CACHE", str(hub))
+    repo = hub / f"models--{download.DEFAULT_MODEL.replace('/', '--')}"
+    (repo / "snapshots" / download.REVISION).mkdir(parents=True)
+    (repo / "snapshots" / download.REVISION / "model.safetensors").symlink_to(tmp_path / "elsewhere")  # dangling
+    for name, size in download.FILES.items():  # this version's files, already here
+        (folder / name).parent.mkdir(parents=True, exist_ok=True)
+        (folder / name).write_bytes(b"x" * size)
+    (folder / "model.safetensors").write_bytes(b"old")  # 1.0.7's copy
+    (folder / "1_Pooling").mkdir()
+    assert download.ensure() == folder
+    assert not repo.exists() and not (folder / "model.safetensors").exists() and not (folder / "1_Pooling").exists()
+    assert download.downloaded()
 
 
 def test_the_apps_see_downloading_then_ready(tmp_path):

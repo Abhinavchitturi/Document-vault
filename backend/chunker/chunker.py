@@ -34,23 +34,27 @@ class SpanTokenizer(Protocol):
 
 
 class HFTokenizer:
-    """Wraps a Hugging Face fast tokenizer to produce character spans."""
+    """The search model's own tokenizer, producing character spans. The default model's is read from its
+    tokenizer.json (FileTokenizer); another model's through transformers (`pip install transformers`)."""
+
+    def __new__(cls, model_name: str = DEFAULT_TOKENIZER, revision: str | None = None):
+        from backend.embeddings.embedder import DEFAULT_MODEL
+
+        if model_name == DEFAULT_MODEL:
+            from backend.embeddings import download
+
+            return FileTokenizer(download.ensure(model_name) / "tokenizer.json", model_name)
+        return super().__new__(cls)
 
     def __init__(self, model_name: str = DEFAULT_TOKENIZER, revision: str | None = None):
-        from backend.embeddings import download
-        from backend.embeddings.embedder import DEFAULT_MODEL, prefer_offline, revision_for
+        from backend.embeddings.embedder import prefer_offline, revision_for
 
-        source, revision = model_name, revision or revision_for(model_name)
-        if model_name == DEFAULT_MODEL:  # its plain files (backend/embeddings/download.py)
-            source, revision = str(download.ensure(model_name)), None
-        else:
-            prefer_offline(model_name)
+        prefer_offline(model_name)
         from transformers import AutoTokenizer
 
         self.name = model_name
-        self._tok = AutoTokenizer.from_pretrained(source, use_fast=True, revision=revision)
-        # We only count tokens here; silence the "sequence longer than 512" warning.
-        self._tok.model_max_length = 10**9
+        self._tok = AutoTokenizer.from_pretrained(model_name, use_fast=True, revision=revision or revision_for(model_name))
+        self._tok.model_max_length = 10**9  # we only count tokens: no "sequence longer than 512" warning
 
     def spans(self, text: str) -> list[tuple[int, int]]:
         enc = self._tok(text, add_special_tokens=False, return_offsets_mapping=True)

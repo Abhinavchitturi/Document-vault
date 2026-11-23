@@ -195,6 +195,7 @@ def test_the_model_fits_the_computers_memory(monkeypatch):
     assert llamacpp.choose_model(32 * gb)["label"] == "llama3.1:8b"
     assert llamacpp.choose_model(int(15.7 * gb))["label"] == "llama3.1:8b"  # a "16 GB" laptop
     assert llamacpp.choose_model(int(7.8 * gb))["label"] == "llama3.2:3b"  # an "8 GB" laptop: the small one
+    assert llamacpp.choose_model(int(5.8 * gb))["label"] == "llama3.2:3b"  # a "6 GB" laptop too
     assert llamacpp.choose_model(4 * gb) is None  # too little for any
     assert llamacpp.choose_model(None)["label"] == "llama3.1:8b"  # can't tell: as before
     monkeypatch.setenv("VAULT_AI_MODEL", "small")
@@ -210,7 +211,7 @@ def test_too_little_memory_says_so_and_offers_no_download(monkeypatch, tmp_path)
     server = llamacpp.LlamaServer(log=tmp_path / "log")
     assert server.model is None and not LocalAI(server).downloadable()
     ready, message = llamacpp.LlamaCppLLM(server=server).status()
-    assert not ready and "4 GB of memory" in message and "Searching still finds" in message
+    assert not ready and "4.0 GB of memory" in message and "Searching still finds" in message
 
 
 def test_a_new_model_replaces_the_one_used_before(tmp_path, monkeypatch, pretend):

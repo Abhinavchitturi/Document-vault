@@ -74,7 +74,7 @@ MODELS = {
     },
 }
 LARGE_FROM_GB = 14  # a "16 GB" computer reports a little under 16
-SMALL_FROM_GB = 6
+SMALL_FROM_GB = 5  # a "6 GB" laptop reports a little under 6 (the search model needs little now: ONNX)
 
 
 def total_memory() -> int | None:
@@ -121,7 +121,7 @@ def too_little_memory() -> str | None:
     if MODEL is not None:
         return None
     memory = total_memory() or 0
-    return (f"This computer has {memory / 2**30:.0f} GB of memory and the private AI needs at least {SMALL_FROM_GB} GB, "
+    return (f"This computer has {memory / 2**30:.1f} GB of memory and the private AI needs a computer with 6 GB or more, "
             "so it isn't used here. Searching still finds your documents and shows the matching passages.")
 
 

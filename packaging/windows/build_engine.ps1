@@ -81,17 +81,17 @@ Fetch $Pins.Hindi (Join-Path $Out "tesseract\tessdata\hin.traineddata")
 
 Write-Host "3. Check that it all runs"
 $env:PYTHONPATH = (Get-Location).Path  # the vault's code, from this checkout
-& $python -c "import backend.api.app, backend.engine.bridge, torch, faiss; print('engine imports ok')"
+& $python -c "import backend.api.app, backend.engine.bridge, onnxruntime, faiss; print('engine imports ok')"
 if ($LASTEXITCODE -ne 0) { throw "the engine doesn't import" }
 & (Join-Path $Out "tesseract\tesseract.exe") --list-langs
 if ($LASTEXITCODE -ne 0) { throw "tesseract doesn't run" }
 Write-Host "4. Leave out what only building software needs (C++ headers, link libraries, test suites, Tk)"
 $site = Join-Path $Out "python\Lib\site-packages"
-$unused = @("$site\torch\include", "$site\torch\share", "$site\torch\test", "$Out\python\tcl",
+$unused = @("$Out\python\tcl",
             "$Out\python\Lib\tkinter", "$Out\python\Lib\idlelib", "$Out\python\Lib\test", "$Out\python\Lib\turtledemo")
 Remove-Item -Recurse -Force $unused -ErrorAction SilentlyContinue
 Get-ChildItem $Out -Recurse -File -Include *.lib, *.pdb, *.a | Remove-Item -Force
-& $python -c "import backend.api.app, backend.engine.bridge, torch, faiss; print('still imports ok')"
+& $python -c "import backend.api.app, backend.engine.bridge, onnxruntime, faiss; print('still imports ok')"
 if ($LASTEXITCODE -ne 0) { throw "the engine doesn't import after leaving files out" }
 $size = (Get-ChildItem $Out -Recurse -File | Measure-Object Length -Sum).Sum / 1MB
 Write-Host ("Engine ready in {0}: {1:N0} MB" -f $Out, $size)

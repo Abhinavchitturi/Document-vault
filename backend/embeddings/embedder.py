@@ -1,7 +1,7 @@
 """Turn chunks and queries into normalized embedding vectors.
 
 Default: Snowflake Arctic Embed M v1.5 (Snowflake, US; Apache 2.0; 109M params,
-768-dim, ~440 MB). The vault avoids models from Chinese developers, so BGE is out.
+768-dim, ~440 MB), run through ONNX Runtime. The vault avoids models from Chinese developers, so BGE is out.
 
 Arctic Embed and e5 are asymmetric retrievers: queries and passages are encoded
 with different prefixes, and leaving the query prefix off measurably hurts recall.
@@ -69,26 +69,60 @@ def prefer_offline(model_name: str) -> bool:
     return False
 
 
+class OnnxModel:
+    """The default search model through ONNX Runtime: its ONNX file and tokenizer.json, CLS pooling (what the
+    model's sentence-transformers setup does), so its vectors match PyTorch's (cosine 0.99999+)."""
+
+    def __init__(self, folder: Path):
+        import onnxruntime as ort
+        from tokenizers import Tokenizer
+
+        options = ort.SessionOptions()
+        options.log_severity_level = 3  # errors only
+        self.session = ort.InferenceSession(str(folder / "onnx" / "model.onnx"), options,
+                                            providers=["CPUExecutionProvider"])
+        self.inputs = {i.name for i in self.session.get_inputs()}
+        self.tokenizer = Tokenizer.from_file(str(folder / "tokenizer.json"))
+        self.tokenizer.enable_truncation(512)
+        self.tokenizer.enable_padding(pad_id=0, pad_token="[PAD]")
+
+    def encode(self, texts: list[str], batch_size: int = 8, normalize_embeddings: bool = True,
+               convert_to_numpy: bool = True, show_progress_bar: bool = False) -> np.ndarray:
+        if not texts:
+            return np.zeros((0, 768), dtype=np.float32)
+        order = sorted(range(len(texts)), key=lambda i: len(texts[i]))  # alike lengths together: less padding
+        parts = []
+        for start in range(0, len(order), batch_size):
+            batch = [texts[i] for i in order[start:start + batch_size]]
+            enc = self.tokenizer.encode_batch(batch)
+            feed = {"input_ids": np.array([e.ids for e in enc], dtype=np.int64),
+                    "attention_mask": np.array([e.attention_mask for e in enc], dtype=np.int64),
+                    "token_type_ids": np.array([e.type_ids for e in enc], dtype=np.int64)}
+            hidden = self.session.run(None, {k: v for k, v in feed.items() if k in self.inputs})[0]
+            parts.append(hidden[:, 0])  # the [CLS] token
+        vecs = np.concatenate(parts).astype(np.float32)
+        out = np.empty_like(vecs)
+        out[order] = vecs
+        if normalize_embeddings:
+            out /= np.maximum(np.linalg.norm(out, axis=1, keepdims=True), 1e-12)
+        return out
+
+
 class Embedder:
-    def __init__(self, model_name: str = DEFAULT_MODEL, device: str | None = None, batch_size: int = 64,
+    def __init__(self, model_name: str = DEFAULT_MODEL, device: str | None = None, batch_size: int = 8,
                  revision: str | None = None):
-        source, revision = model_name, revision or revision_for(model_name)
+        self.model_name = model_name
+        self.batch_size = batch_size
         if model_name == DEFAULT_MODEL:  # the pinned files, downloaded once (every caller: the apps, the scripts)
             from backend.embeddings import download
 
-            source, revision = str(download.ensure(model_name)), None  # plain files in a folder: nothing to fetch
-            os.environ["HF_HUB_OFFLINE"] = "1"
-            os.environ["TRANSFORMERS_OFFLINE"] = "1"
-        else:
+            self.model = OnnxModel(download.ensure(model_name))
+        else:  # another model, for experiments: needs `pip install sentence-transformers`
             prefer_offline(model_name)
-        from sentence_transformers import SentenceTransformer
+            from sentence_transformers import SentenceTransformer
 
-        self.model_name = model_name
-        self.batch_size = batch_size
-        # device=None picks cuda/mps/cpu; `revision` pins another model's version
-        self.model = SentenceTransformer(source, device=device, revision=revision)
+            self.model = SentenceTransformer(model_name, device=device, revision=revision or revision_for(model_name))
         self.query_prefix, self.passage_prefix = model_prefixes(model_name)
-
     def _encode(self, texts: list[str], prefix: str) -> np.ndarray:
         vecs = self.model.encode(
             [prefix + t for t in texts],
