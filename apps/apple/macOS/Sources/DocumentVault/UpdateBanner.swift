@@ -21,7 +21,8 @@ struct UpdateBanner: View {
     }
 
     var body: some View {
-        Group {
+        VStack(spacing: 0) {  // a real view even when empty: an empty Group never ran its .task, so nothing was checked
+            Color.clear.frame(height: 0)  // always there, so the checks below always run
             if let update, !hidden {
                 HStack(spacing: 12) {
                     Image(systemName: "arrow.down.app.fill").foregroundStyle(Color.vault).font(.title3)
