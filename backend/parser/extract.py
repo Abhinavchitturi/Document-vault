@@ -25,6 +25,12 @@ from backend.parser.ocr import OcrPage, OcrUnavailableError, ocr_available, read
 TEXT_SUFFIXES = {".txt", ".md"}
 IMAGE_SUFFIXES = {".png", ".jpg", ".jpeg", ".webp", ".tif", ".tiff", ".heic", ".heif"}  # HEIC: iPhones, many Androids
 SUPPORTED_SUFFIXES = {".pdf", ".docx"} | TEXT_SUFFIXES | IMAGE_SUFFIXES
+# Archives are never taken: the vault keeps documents and photos, each one read and searchable on its own.
+ARCHIVE_SUFFIXES = {".zip", ".7z", ".rar", ".tar", ".gz", ".tgz", ".bz2", ".xz", ".zst", ".cab", ".iso", ".dmg"}
+_ARCHIVE_STARTS = (b"7z\xbc\xaf\x27\x1c", b"Rar!\x1a\x07", b"\x1f\x8b", b"\xfd7zXZ\x00", b"BZh", b"\x28\xb5\x2f\xfd",
+                   b"MSCF")
+ARCHIVE_MESSAGE = ("Zip and other archive files can't be added. Unzip it first, then add the PDFs, Word files or "
+                   "photos inside.")
 
 MIN_PAGE_CHARS = 25  # a PDF page with less text than this is treated as a scan
 OCR_RENDER_SCALE = 3  # render scanned PDF pages at 216 dpi before OCR
@@ -80,10 +86,29 @@ def sniff(path: str | Path) -> str | None:
     return None
 
 
+def is_archive(path: str | Path) -> bool:
+    """A zip (not a Word or other Office file), 7-Zip, RAR, gzip, xz, bzip2, zstd or cabinet file, from its contents."""
+    with open(path, "rb") as f:
+        head = f.read(512)
+    if head.startswith(_ARCHIVE_STARTS) or head[257:262] == b"ustar":
+        return True
+    if head[:4] == b"PK\x03\x04":
+        import zipfile
+
+        try:
+            with zipfile.ZipFile(path) as z:
+                return "[Content_Types].xml" not in z.namelist()  # Office files are zips with this inside
+        except zipfile.BadZipFile:
+            return False
+    return False
+
+
 def file_type(path: str | Path, name: str = "") -> str:
     """The suffix to read a file as: its contents first, then its name. Raises UnsupportedFileError."""
-    found = sniff(path)
     suffix = Path(name or str(path)).suffix.lower()
+    if suffix in ARCHIVE_SUFFIXES or is_archive(path):
+        raise UnsupportedFileError(ARCHIVE_MESSAGE)
+    found = sniff(path)
     if found == ".txt" and suffix and suffix not in TEXT_SUFFIXES:
         found = None  # text-looking bytes in a ".xlsx" / ".csv"…: not a document we read
     if found:

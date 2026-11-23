@@ -20,7 +20,8 @@ class LocalAI:
 
     def downloadable(self) -> bool:
         """Is there something to download here (and a build of llama.cpp for this computer)?"""
-        return llamacpp.binary_for_this_computer() is not None and not llamacpp.installed()
+        return (llamacpp.MODEL is not None and llamacpp.binary_for_this_computer() is not None
+                and not llamacpp.installed())
 
     def status(self) -> dict:
         with self._lock:
@@ -50,7 +51,8 @@ class LocalAI:
                     self._state.update(state="failed", error=problem)
                 logger.warning("Not downloading the local AI: %s", problem)
                 return
-            logger.info("Downloading the local AI by itself (about %d GB, once)", llamacpp.MODEL["size"] // 10**9)
+            logger.info("Downloading the local AI by itself (%s, about %.0f GB, once)", llamacpp.MODEL["label"],
+                        llamacpp.MODEL["size"] / 10**9)
             self.start_download()
 
         threading.Thread(target=run, name="download-ai-soon", daemon=True).start()

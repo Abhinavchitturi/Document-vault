@@ -61,6 +61,47 @@ public sealed record Source(int Rank, double Score, string ChunkId, string DocId
 
 public sealed record UploadResult(string Filename, string Status, VaultDocument? Document, string? Error, string? Code);
 
+/// What the vault takes: PDFs, Word (.docx) files, photos and plain text. Archives (zip, 7z, rar…) and other files are
+/// turned away before they're sent; a file with no extension (as chat apps send them) is sent, and the vault checks it.
+public static class AcceptedFiles
+{
+    public static readonly string[] Extensions =
+        [".pdf", ".docx", ".txt", ".md", ".png", ".jpg", ".jpeg", ".webp", ".tif", ".tiff", ".heic", ".heif"];
+    private static readonly HashSet<string> Archives = new(StringComparer.OrdinalIgnoreCase)
+        { ".zip", ".7z", ".rar", ".tar", ".gz", ".tgz", ".bz2", ".xz", ".zst", ".cab", ".iso" };
+
+    public static bool Accepts(string path)
+    {
+        var ext = Path.GetExtension(path);
+        return ext.Length == 0 || Extensions.Contains(ext, StringComparer.OrdinalIgnoreCase);
+    }
+
+    public static string Reason(string path) => Path.GetExtension(path) switch
+    {
+        var e when Archives.Contains(e) =>
+            "Zip and other archive files can't be added. Unzip it first, then add the PDFs, Word files or photos inside.",
+        var e when e.Equals(".doc", StringComparison.OrdinalIgnoreCase) =>
+            "This is an old Word (.doc) file. Open it and save it as PDF or .docx, then add that.",
+        _ => "Only PDFs, Word (.docx) files, photos and text files can be added. Save or print it as PDF, then add that.",
+    };
+
+    /// Files to send (a folder's documents, inside it too) and the ones turned away, each with why.
+    public static (List<string> Send, List<UploadResult> Refused) Sort(IEnumerable<string> paths)
+    {
+        var send = new List<string>();
+        var refused = new List<UploadResult>();
+        foreach (var path in paths)
+        {
+            if (Directory.Exists(path))
+                send.AddRange(Directory.EnumerateFiles(path, "*", SearchOption.AllDirectories)
+                    .Where(f => Extensions.Contains(Path.GetExtension(f), StringComparer.OrdinalIgnoreCase)));
+            else if (Accepts(path)) send.Add(path);
+            else refused.Add(new UploadResult(Path.GetFileName(path), "error", null, Reason(path), null));
+        }
+        return (send, refused);
+    }
+}
+
 public sealed record ChatTurn(string Role, string Content);
 
 /// What the centre computer shows to connect another device: a one-time code, its addresses, its certificate.

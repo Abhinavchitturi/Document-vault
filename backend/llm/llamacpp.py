@@ -19,6 +19,7 @@ import os
 import platform
 import subprocess
 import sys
+import threading
 import urllib.error
 import urllib.request
 from pathlib import Path
@@ -31,7 +32,6 @@ class LLMUnavailableError(RuntimeError):
 
 PORT = 8091
 HOST = f"http://127.0.0.1:{PORT}"
-CONTEXT = 8192  # tokens: the question, up to a few documents' passages and the answer
 
 # A llama.cpp build from https://github.com/ggml-org/llama.cpp/releases, pinned with GitHub's SHA-256 of each file.
 BUILD = "b12142"
@@ -50,15 +50,79 @@ BINARIES = {  # (sys.platform, machine) -> (file, sha256)
     ("linux", "aarch64"): ("llama-b12142-bin-ubuntu-arm64.tar.gz",
                            "d0ed8f1a21b4e19b6c588a3ba31488808c2c025ab80f9d56e199e984133be66a"),
 }
-# Llama 3.1 8B Instruct as one GGUF file (4-bit, Q4_K_M), pinned to a repository commit.
-MODEL = {
-    "label": "llama3.1:8b",
-    "file": "Meta-Llama-3.1-8B-Instruct-Q4_K_M.gguf",
-    "url": "https://huggingface.co/bartowski/Meta-Llama-3.1-8B-Instruct-GGUF/resolve/"
-           "bf5b95e96dac0462e2a09145ec66cae9a3f12067/Meta-Llama-3.1-8B-Instruct-Q4_K_M.gguf",
-    "size": 4920739232,
-    "sha256": "7b064f5842bf9532c91456deda288a1b672397a54fa729aa665952863033557c",
+# The answer model, one GGUF file (4-bit, Q4_K_M) pinned to a repository commit. Which one depends on the computer's
+# memory: the 8B model needs about 6 GB of it while it runs, which a laptop with 8 GB doesn't have to spare (everything
+# else slows to a crawl while it swaps), so smaller computers get the 3B model (about 2.5 GB). Below 6 GB, none.
+MODELS = {
+    "large": {
+        "label": "llama3.1:8b",
+        "file": "Meta-Llama-3.1-8B-Instruct-Q4_K_M.gguf",
+        "url": "https://huggingface.co/bartowski/Meta-Llama-3.1-8B-Instruct-GGUF/resolve/"
+               "bf5b95e96dac0462e2a09145ec66cae9a3f12067/Meta-Llama-3.1-8B-Instruct-Q4_K_M.gguf",
+        "size": 4920739232,
+        "sha256": "7b064f5842bf9532c91456deda288a1b672397a54fa729aa665952863033557c",
+        "context": 8192,  # tokens: the question, up to a few documents' passages and the answer
+    },
+    "small": {
+        "label": "llama3.2:3b",
+        "file": "Llama-3.2-3B-Instruct-Q4_K_M.gguf",
+        "url": "https://huggingface.co/bartowski/Llama-3.2-3B-Instruct-GGUF/resolve/"
+               "5ab33fa94d1d04e903623ae72c95d1696f09f9e8/Llama-3.2-3B-Instruct-Q4_K_M.gguf",
+        "size": 2019377696,
+        "sha256": "6c1a2b41161032677be168d354123594c0e6e67d2b9227c84f296ad037c728ff",
+        "context": 4096,  # less memory for the conversation, on a computer that has little
+    },
 }
+LARGE_FROM_GB = 14  # a "16 GB" computer reports a little under 16
+SMALL_FROM_GB = 6
+
+
+def total_memory() -> int | None:
+    """This computer's memory (RAM) in bytes, or None if it can't be told."""
+    try:
+        if sys.platform == "win32":
+            import ctypes
+
+            class Status(ctypes.Structure):
+                _fields_ = [("length", ctypes.c_ulong), ("load", ctypes.c_ulong), ("total", ctypes.c_ulonglong),
+                            ("free", ctypes.c_ulonglong), ("page_total", ctypes.c_ulonglong),
+                            ("page_free", ctypes.c_ulonglong), ("virtual_total", ctypes.c_ulonglong),
+                            ("virtual_free", ctypes.c_ulonglong), ("extended", ctypes.c_ulonglong)]
+
+            status = Status(length=ctypes.sizeof(Status))
+            return int(status.total) if ctypes.windll.kernel32.GlobalMemoryStatusEx(ctypes.byref(status)) else None
+        if sys.platform == "darwin":
+            out = subprocess.run(["sysctl", "-n", "hw.memsize"], capture_output=True, text=True, timeout=5).stdout
+            return int(out.strip())
+        return os.sysconf("SC_PAGE_SIZE") * os.sysconf("SC_PHYS_PAGES")
+    except (OSError, ValueError, AttributeError, subprocess.SubprocessError):
+        return None
+
+
+def choose_model(memory: int | None = None) -> dict | None:
+    """The answer model for this computer: by its memory, or $VAULT_AI_MODEL (large | small | none). None: too little
+    memory for any (search still works; answers are left out)."""
+    chosen = os.environ.get("VAULT_AI_MODEL", "").strip().lower()
+    if chosen in MODELS:
+        return MODELS[chosen]
+    if chosen == "none":
+        return None
+    memory = total_memory() if memory is None else memory
+    if memory is None or memory >= LARGE_FROM_GB * 2**30:
+        return MODELS["large"]
+    return MODELS["small"] if memory >= SMALL_FROM_GB * 2**30 else None
+
+
+MODEL = choose_model()
+
+
+def too_little_memory() -> str | None:
+    """Why this computer can't run the private AI (too little memory), or None."""
+    if MODEL is not None:
+        return None
+    memory = total_memory() or 0
+    return (f"This computer has {memory / 2**30:.0f} GB of memory and the private AI needs at least {SMALL_FROM_GB} GB, "
+            "so it isn't used here. Searching still finds your documents and shows the matching passages.")
 
 
 def llm_dir() -> Path:
@@ -77,6 +141,8 @@ def server_path() -> Path | None:
 
 
 def model_path() -> Path | None:
+    if MODEL is None:
+        return None
     path = llm_dir() / "models" / MODEL["file"]
     return path if path.is_file() and path.stat().st_size == MODEL["size"] else None
 
@@ -92,13 +158,20 @@ class LlamaServer:
         self.log, self.port = log, port
         self.server, self.model = server or server_path(), model or model_path()
         self.process: subprocess.Popen | None = None
+        self._lock = threading.Lock()
+        self._stopped = False
 
     def start(self) -> None:
+        with self._lock:
+            if not self._stopped:
+                self._start()
+
+    def _start(self) -> None:
         if not (self.server and self.model):
             raise LLMUnavailableError("The local AI isn't downloaded. Run: python -m backend.llm.setup")
         self.log.parent.mkdir(parents=True, exist_ok=True)
         command = [str(self.server), "--model", str(self.model), "--host", "127.0.0.1", "--port", str(self.port),
-                   "--ctx-size", str(CONTEXT), "--n-gpu-layers", "99"]  # all layers on the GPU where there is one
+                   "--ctx-size", str(MODEL["context"]), "--n-gpu-layers", "99"]  # all layers on the GPU where there is one
         flags = 0x08000000 if sys.platform == "win32" else 0  # CREATE_NO_WINDOW
         self._stop_leftover()
         with open(self.log, "ab") as out:
@@ -137,12 +210,23 @@ class LlamaServer:
             pass
 
     def stop(self) -> None:
+        with self._lock:
+            self._stopped = True  # the vault is closing: a start that was still waiting doesn't happen
+            self._stop()
+
+    def _stop(self) -> None:
         if self.process and self.process.poll() is None:
             self.process.terminate()
             try:
                 self.process.wait(timeout=10)
             except subprocess.TimeoutExpired:
                 self.process.kill()
+        if self.process:
+            try:  # stopped cleanly: nothing left over for the next start to look for (tasklist is slow on Windows)
+                if self._pidfile().read_text().strip() == str(self.process.pid):
+                    self._pidfile().unlink()
+            except OSError:
+                pass
 
     def exited(self) -> int | None:
         """The exit code if llama-server stopped by itself (out of memory, a bad file), else None."""
@@ -152,10 +236,10 @@ class LlamaServer:
 class LlamaCppLLM:
     """The answer model, through llama-server's OpenAI-style API: plain answers, streamed answers, and JSON."""
 
-    def __init__(self, model: str = MODEL["label"], host: str = HOST, timeout: float = 180, server: LlamaServer | None = None):
+    def __init__(self, model: str | None = None, host: str = HOST, timeout: float = 180, server: LlamaServer | None = None):
         if not host.startswith(("http://127.0.0.1:", "http://localhost:")):
             raise ValueError(f"llama.cpp must run on this computer (localhost), got {host!r}")
-        self.model = model
+        self.model = model or (MODEL["label"] if MODEL else "none")
         self.host = host.rstrip("/")
         self.timeout = timeout
         self.server = server
@@ -168,9 +252,12 @@ class LlamaCppLLM:
         return [self.model]
 
     def status(self) -> tuple[bool, str]:
+        if self.server and (problem := too_little_memory()):
+            return False, problem
         if self.server and not (self.server.server and self.server.model):
+            size = f"about {MODEL['size'] / 1e9:.0f} GB" if MODEL else ""
             return False, ("The local AI isn't downloaded yet. Run the setup again, or in the vault folder: "
-                           "python -m backend.llm.setup (about 5 GB, once).")
+                           f"python -m backend.llm.setup ({size}, once).")
         if self.server and self.server.exited() is not None:
             return False, (f"The local AI stopped (code {self.server.exited()}). Restart the vault; "
                            f"if it keeps stopping, see {self.server.log}.")
@@ -182,6 +269,8 @@ class LlamaCppLLM:
                 return False, "The answer model is loading. Answers start in a moment."
             return False, f"The local AI answered with an error ({e.code})."
         except (urllib.error.URLError, ConnectionError, TimeoutError):
+            if self.server and self.server.process is None:  # it starts once the search model is ready
+                return False, "The answer model is starting. Answers start in a moment."
             return False, "The local AI isn't running. Restart the vault."
         return (True, f"Answers ready ({self.model}, llama.cpp on this computer)") if ok else (False, "The local AI isn't ready.")
 

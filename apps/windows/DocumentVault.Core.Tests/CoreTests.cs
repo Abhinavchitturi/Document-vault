@@ -100,3 +100,21 @@ public class TheRealEngine
         }
     }
 }
+
+public class AcceptedFilesTests
+{
+    [Fact]
+    public void TakesDocumentsAndPhotosButNotArchives()
+    {
+        var folder = Directory.CreateTempSubdirectory("vault-accept-").FullName;
+        File.WriteAllText(Path.Combine(folder, "inside.pdf"), "%PDF-1.4");
+        File.WriteAllText(Path.Combine(folder, "inside.zip"), "PK");
+        var (send, refused) = AcceptedFiles.Sort(["Bike.PDF", "Scan.jpeg", "Aadhaar", "Letter.docx", "family.zip",
+                                                  "old.7z", "Old Letter.doc", "sheet.xlsx", folder]);
+        Assert.Equal(["Bike.PDF", "Scan.jpeg", "Aadhaar", "Letter.docx", Path.Combine(folder, "inside.pdf")], send);
+        Assert.Equal(["family.zip", "old.7z", "Old Letter.doc", "sheet.xlsx"], refused.Select(r => r.Filename));
+        Assert.All(refused, r => Assert.Equal("error", r.Status));
+        Assert.Contains("Unzip it first", refused[0].Error);
+        Assert.Contains(".docx", refused[2].Error);
+    }
+}

@@ -53,6 +53,7 @@ class EmptyDocumentError(ValueError):
 class IngestResult:
     document: dict
     created: bool  # False if this exact file was already in the library
+    text: str = ""  # the document's text (for the private AI's closer look afterwards, backend/extract/refine.py)
 
 
 def file_sha256(path: Path) -> str:
@@ -172,7 +173,7 @@ def ingest_file(
         if existing is None:
             raise
         return IngestResult(existing, created=False)
-    return IngestResult(document, created=True)
+    return IngestResult(document, created=True, text=full_text)
 
 
 def iter_files(paths: list[Path]):

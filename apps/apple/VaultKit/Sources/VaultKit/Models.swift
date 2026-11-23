@@ -200,6 +200,55 @@ public struct UploadResult: Codable, Sendable {
     public let document: VaultDocument?
     public let error: String?
     public let code: String?  // "password_required" / "wrong_password": a locked PDF
+
+    public init(filename: String, status: String, document: VaultDocument? = nil, error: String? = nil, code: String? = nil) {
+        self.filename = filename; self.status = status; self.document = document; self.error = error; self.code = code
+    }
+}
+
+/// What the vault takes: PDFs, Word (.docx) files, photos and plain text. Archives (zip, 7z, rar…) and other files are
+/// turned away before they're sent; a file with no extension (as chat apps send them) is sent, and the vault checks it.
+public enum AcceptedFiles {
+    public static let extensions: Set<String> = ["pdf", "docx", "txt", "md", "png", "jpg", "jpeg", "webp", "tif", "tiff",
+                                                 "heic", "heif"]
+    public static let archives: Set<String> = ["zip", "7z", "rar", "tar", "gz", "tgz", "bz2", "xz", "zst", "cab", "iso", "dmg"]
+
+    public static func accepts(_ url: URL) -> Bool {
+        let ext = url.pathExtension.lowercased()
+        return ext.isEmpty || extensions.contains(ext)
+    }
+
+    /// Why a file isn't taken, in a sentence.
+    public static func reason(_ url: URL) -> String {
+        if archives.contains(url.pathExtension.lowercased()) {
+            return "Zip and other archive files can't be added. Unzip it first, then add the PDFs, Word files or photos inside."
+        }
+        if url.pathExtension.lowercased() == "doc" {
+            return "This is an old Word (.doc) file. Open it and save it as PDF or .docx, then add that."
+        }
+        return "Only PDFs, Word (.docx) files, photos and text files can be added. Save or print it as PDF, then add that."
+    }
+
+    /// Files to send (a folder's documents, inside it too) and the ones turned away, each with why.
+    public static func sort(_ urls: [URL]) -> (send: [URL], refused: [UploadResult]) {
+        var send: [URL] = [], refused: [UploadResult] = []
+        for url in urls {
+            var isFolder: ObjCBool = false
+            if FileManager.default.fileExists(atPath: url.path, isDirectory: &isFolder), isFolder.boolValue {
+                let inside = FileManager.default.enumerator(at: url, includingPropertiesForKeys: [.isRegularFileKey],
+                                                            options: [.skipsHiddenFiles])
+                while let file = inside?.nextObject() as? URL {
+                    if (try? file.resourceValues(forKeys: [.isRegularFileKey]).isRegularFile) == true,
+                       extensions.contains(file.pathExtension.lowercased()) { send.append(file) }
+                }
+            } else if accepts(url) {
+                send.append(url)
+            } else {
+                refused.append(UploadResult(filename: url.lastPathComponent, status: "error", error: reason(url)))
+            }
+        }
+        return (send, refused)
+    }
 }
 
 public struct ChatTurn: Codable, Sendable {

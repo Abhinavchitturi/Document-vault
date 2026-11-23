@@ -128,7 +128,8 @@ def _with_files(tmp_path, monkeypatch, pretend, server_bytes=b"#!/bin/sh\necho l
     monkeypatch.setattr(llamacpp, "binary_for_this_computer",
                         lambda: (archive, hashlib.sha256(packed.getvalue()).hexdigest()))
     monkeypatch.setattr(llamacpp, "MODEL", {"label": "test", "file": "model.gguf", "url": f"{pretend}/model.gguf",
-                                            "size": len(model_bytes), "sha256": hashlib.sha256(model_bytes).hexdigest()})
+                                            "size": len(model_bytes), "sha256": hashlib.sha256(model_bytes).hexdigest(),
+                                            "context": 2048})
     return model_bytes
 
 
@@ -183,7 +184,43 @@ def test_the_vault_reports_the_local_ai_when_it_is_downloaded(tmp_path, monkeypa
 def test_every_supported_computer_has_a_pinned_build():
     for (system, machine), (name, digest) in llamacpp.BINARIES.items():
         assert llamacpp.BUILD in name and len(digest) == 64
-    assert len(llamacpp.MODEL["sha256"]) == 64 and llamacpp.MODEL["url"].startswith("https://huggingface.co/")
+    for model in llamacpp.MODELS.values():
+        assert len(model["sha256"]) == 64 and model["url"].startswith("https://huggingface.co/") and model["context"]
+        assert model["file"] in model["url"]
+
+
+def test_the_model_fits_the_computers_memory(monkeypatch):
+    monkeypatch.delenv("VAULT_AI_MODEL", raising=False)
+    gb = 2**30
+    assert llamacpp.choose_model(32 * gb)["label"] == "llama3.1:8b"
+    assert llamacpp.choose_model(int(15.7 * gb))["label"] == "llama3.1:8b"  # a "16 GB" laptop
+    assert llamacpp.choose_model(int(7.8 * gb))["label"] == "llama3.2:3b"  # an "8 GB" laptop: the small one
+    assert llamacpp.choose_model(4 * gb) is None  # too little for any
+    assert llamacpp.choose_model(None)["label"] == "llama3.1:8b"  # can't tell: as before
+    monkeypatch.setenv("VAULT_AI_MODEL", "small")
+    assert llamacpp.choose_model(64 * gb)["label"] == "llama3.2:3b"
+    assert llamacpp.total_memory() > 1 * gb  # this computer's, read for real
+
+
+def test_too_little_memory_says_so_and_offers_no_download(monkeypatch, tmp_path):
+    from backend.llm.local_ai import LocalAI
+
+    monkeypatch.setattr(llamacpp, "MODEL", None)
+    monkeypatch.setattr(llamacpp, "total_memory", lambda: 4 * 2**30)
+    server = llamacpp.LlamaServer(log=tmp_path / "log")
+    assert server.model is None and not LocalAI(server).downloadable()
+    ready, message = llamacpp.LlamaCppLLM(server=server).status()
+    assert not ready and "4 GB of memory" in message and "Searching still finds" in message
+
+
+def test_a_new_model_replaces_the_one_used_before(tmp_path, monkeypatch, pretend):
+    model_bytes = _with_files(tmp_path, monkeypatch, pretend)
+    models = llamacpp.llm_dir() / "models"
+    models.mkdir(parents=True, exist_ok=True)
+    old = models / llamacpp.MODELS["large"]["file"]
+    old.write_bytes(b"the 8B model, too big for this computer")
+    setup.install_model(say=lambda *a, **k: None)
+    assert (models / "model.gguf").read_bytes() == model_bytes and not old.exists()
 
 
 def test_one_click_download_from_the_app(tmp_path, monkeypatch, pretend):
@@ -215,7 +252,7 @@ def test_one_click_download_from_the_app(tmp_path, monkeypatch, pretend):
                      frontend_dir=None, local_ai=LocalAI(server))
     admin = signed_in(app, "abhinav")
     status = admin.get("/api/info").json()["llm_status"]
-    assert not status["ready"] and status["can_download"] and "5 GB" in status["message"]
+    assert not status["ready"] and status["can_download"] and "GB, once" in status["message"]
     assert admin.get("/api/ai/download").json()["state"] == "idle"
 
     assert admin.post("/api/ai/download").json()["state"] == "downloading"

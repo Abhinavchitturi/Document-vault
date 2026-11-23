@@ -117,6 +117,8 @@ def install_model(say=print, opener=urllib.request.urlopen, progress=None) -> Pa
     if found:
         return found
     model = llamacpp.MODEL
+    if model is None:
+        raise SetupError(llamacpp.too_little_memory())
     say(f"Downloading the answer model {model['label']} ({model['size'] / 1e9:.1f} GB, once)")
     target = llamacpp.llm_dir() / "models" / model["file"]
     pending = target.with_name(target.name + ".unchecked")
@@ -126,6 +128,10 @@ def install_model(say=print, opener=urllib.request.urlopen, progress=None) -> Pa
         pending.unlink()
         raise SetupError("The model download didn't match its published checksum, so it was deleted. Run the setup again.")
     pending.replace(target)
+    for other in llamacpp.MODELS.values():  # the model this computer used before (more memory, or less): not needed now
+        if other["file"] != model["file"]:
+            for leftover in target.parent.glob(other["file"] + "*"):
+                leftover.unlink(missing_ok=True)
     return target
 
 

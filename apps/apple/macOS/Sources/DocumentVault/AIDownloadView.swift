@@ -23,7 +23,7 @@ struct AIDownloadView: View {
                     }
                 } else if model.user?.isAdmin == true {
                     HStack(spacing: 10) {
-                        Button { start() } label: { Label("Download the AI (about 5 GB)", systemImage: "arrow.down.circle.fill") }
+                        Button { start() } label: { Label("Download the private AI", systemImage: "arrow.down.circle.fill") }
                             .buttonStyle(.borderedProminent)
                         Text("Once. After that it works offline, on this Mac.").font(.caption).foregroundStyle(.secondary)
                     }

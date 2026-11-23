@@ -10,6 +10,10 @@ struct AddDocuments: ViewModifier {
     @State private var results: [UploadResult] = []
     @State private var adding = false
 
+    /// PDFs, Word files, photos and text: nothing else can be picked (no zips).
+    static let types: [UTType] = [.pdf, .png, .jpeg, .webP, .tiff, .heic, .heif, .plainText]
+        + ["org.openxmlformats.wordprocessingml.document", "net.daringfireball.markdown"].compactMap { UTType($0) }
+
     func body(content: Content) -> some View {
         @Bindable var model = model
         content
@@ -30,7 +34,7 @@ struct AddDocuments: ViewModifier {
                 add(urls)
                 return true
             } isTargeted: { dropping = $0 }
-            .fileImporter(isPresented: $model.choosingFiles, allowedContentTypes: [.pdf, .image, .plainText, .item],
+            .fileImporter(isPresented: $model.choosingFiles, allowedContentTypes: Self.types,
                           allowsMultipleSelection: true) { result in
                 if case .success(let urls) = result { add(urls) }
             }

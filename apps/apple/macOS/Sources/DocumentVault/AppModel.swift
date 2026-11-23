@@ -281,10 +281,12 @@ final class AppModel {
 
     func add(_ files: [URL], password: String? = nil) async -> [UploadResult] {
         guard let client else { return [] }
+        let (send, refused) = AcceptedFiles.sort(files)  // zips and other files are turned away here, not sent
+        guard !send.isEmpty else { return refused }
         do {
-            let results = try await client.upload(files, password: password)
+            let results = try await client.upload(send, password: password)
             await reload()
-            return results
+            return results + refused
         } catch {
             report(error)
             return []

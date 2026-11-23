@@ -290,7 +290,9 @@ def _llm_status(llm, local_ai=None) -> dict:
     ready, message = check() if check else (True, f"Answers ready ({llm.name})")
     can_download = bool(local_ai) and not ready and local_ai.downloadable()
     if can_download:
-        message = "The local AI isn't downloaded yet (about 5 GB, once)."
+        from backend.llm import llamacpp
+
+        message = f"The local AI isn't downloaded yet (about {llamacpp.MODEL['size'] / 1e9:.1f} GB, once)."
     return {"ready": ready, "message": message, "can_download": can_download}
 
 
@@ -320,8 +322,14 @@ def create_app(
     """
     app = FastAPI(title="Secure Digital Document Vault", docs_url=None, redoc_url=None, openapi_url=None)
     accounts = accounts or Accounts(store.engine)
-    classifier = Classifier(embedder, llm)  # Phase 8: sorts uploads marked "auto"
-    facts_reader = FactsReader(llm)  # Phase 9: expiry, due date, amount, reference, issuer (Needle 3 if installed)
+    # Adding a document never waits for the private AI (minutes per file on a computer without a fast graphics chip):
+    # the quick readers file it at once, and the AI takes a closer look afterwards, in the background.
+    classifier = Classifier(embedder)  # Phase 8: sorts uploads marked "auto" (keywords and meaning)
+    facts_reader = FactsReader()  # Phase 9: expiry, due date, amount, reference, issuer (Needle 3 if installed)
+    from backend.extract.refine import Refiner
+    from backend.upload.ingest import passage_texts as _passage_texts
+
+    refiner = Refiner(llm, embedder, _passage_texts)
     reminders = Reminders(store.engine)  # Phase 10
     keys = Passkeys(store.engine, passkey_hosts)
     devices = devices or Devices(store.engine)
@@ -768,6 +776,7 @@ def create_app(
                     continue
             if result.created:
                 audit("document_added", request, user, document_id=result.document["doc_id"], detail=name)
+                refiner.add(mine, result.document["doc_id"], name, result.text)
             results.append({"filename": name, "status": "added" if result.created else "duplicate",
                             "document": _public(result.document)})
         return results
@@ -1314,10 +1323,22 @@ def start_vault(args: argparse.Namespace):
         from backend.llm import llamacpp
 
         llama_server = llamacpp.LlamaServer(log=Path(args.index_dir).parent / "logs" / "llama-server.log")
-        try:
-            llama_server.start()
-        except (OSError, LLMUnavailableError) as e:  # not downloaded yet, or it won't start: the apps say why
-            logger.warning("llama.cpp didn't start: %s", e)
+
+        def start_llama():  # after the search model: loading both at once slowed opening (and swapped, with little memory)
+            try:
+                embedder.wait()
+            except Exception:  # noqa: BLE001 (shown on its own)
+                pass
+            if not llama_server.server or not llama_server.model:
+                return  # not downloaded yet (or too little memory): the apps say why
+            try:
+                llama_server.start()
+            except (OSError, LLMUnavailableError) as e:  # it won't start: the apps say why
+                logger.warning("llama.cpp didn't start: %s", e)
+
+        import threading
+
+        threading.Thread(target=start_llama, name="start-llama", daemon=True).start()
         llm = llamacpp.LlamaCppLLM(server=llama_server)
     from backend.llm.local_ai import LocalAI
 

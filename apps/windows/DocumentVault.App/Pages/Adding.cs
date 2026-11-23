@@ -14,7 +14,7 @@ public static class Adding
     {
         var picker = new FileOpenPicker();
         WinRT.Interop.InitializeWithWindow.Initialize(picker, WinRT.Interop.WindowNative.GetWindowHandle(App.Window!));
-        picker.FileTypeFilter.Add("*");
+        foreach (var ext in AcceptedFiles.Extensions) picker.FileTypeFilter.Add(ext);  // no zips or other files
         var files = await picker.PickMultipleFilesAsync();
         await AddAsync(root, files.Select(f => f.Path).ToList());
     }
@@ -22,6 +22,12 @@ public static class Adding
     public static async Task AddAsync(XamlRoot root, IReadOnlyList<string> paths)
     {
         if (paths.Count == 0) return;
+        var (send, refused) = AcceptedFiles.Sort(paths);  // zips and other files are turned away here, not sent
+        if (send.Count == 0)
+        {
+            await UI.Alert(root, "Couldn't add them", string.Join("\n", refused.Select(r => $"✗ {r.Filename}: {r.Error}")));
+            return;
+        }
         var progress = new ContentDialog
         {
             XamlRoot = root, Title = "Adding documents…",
@@ -31,7 +37,7 @@ public static class Adding
         _ = progress.ShowAsync();
         try
         {
-            var results = await AppState.Current.Client!.UploadAsync(paths);
+            var results = (await AppState.Current.Client!.UploadAsync(send)).Concat(refused).ToList();
             progress.Hide();
             await App.Window!.Reload();
             var lines = results.Select(r => r.Status switch

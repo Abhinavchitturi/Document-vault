@@ -33,7 +33,7 @@ public sealed class AIDownloadPanel : UserControl
         }
         else if (state.User?.IsAdmin == true)
         {
-            var button = UI.Button("Download the AI (about 5 GB)", async () => await StartAsync(), accent: true).Id("DownloadAIButton");
+            var button = UI.Button("Download the private AI", async () => await StartAsync(), accent: true).Id("DownloadAIButton");
             _panel.Children.Add(UI.Row(10, button, UI.Caption("Once. After that it works offline, on this computer.")));
         }
         else
