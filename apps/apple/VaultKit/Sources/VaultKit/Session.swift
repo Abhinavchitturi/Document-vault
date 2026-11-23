@@ -25,6 +25,9 @@ public struct KeychainSessionStore: SessionStore {
         var q = query
         q[kSecReturnData as String] = true
         q[kSecMatchLimit as String] = kSecMatchLimitOne
+        // Never ask: an item an earlier copy of the app saved makes macOS ask "wants to use your confidential
+        // information" (and the app waits on it). Without asking, it's simply not found.
+        q[kSecUseAuthenticationUI as String] = kSecUseAuthenticationUIFail
         var item: CFTypeRef?
         guard SecItemCopyMatching(q as CFDictionary, &item) == errSecSuccess, let data = item as? Data else { return nil }
         return String(data: data, encoding: .utf8)
@@ -40,9 +43,41 @@ public struct KeychainSessionStore: SessionStore {
     }
 }
 
-/// The connection to the centre computer (its addresses, certificate and this device's key), in the Keychain.
+/// A file only this Mac user can read (in Application Support/Document Vault). The app isn't signed with an Apple
+/// Developer ID, so each new copy is a different app to the Keychain, which then asks for the password and holds the
+/// app until it's answered; a private file doesn't. What an earlier version kept in the Keychain is picked up once
+/// (without asking) and moved here.
+public struct FileSessionStore: SessionStore {
+    let file: URL
+    let earlier: KeychainSessionStore
+
+    public init(name: String = "session") {
+        let folder = FileManager.default.homeDirectoryForCurrentUser.appending(path: "Library/Application Support/Document Vault")
+        file = folder.appending(path: name)
+        earlier = KeychainSessionStore(service: "Document Vault app", account: name)
+    }
+
+    public func load() -> String? {
+        if let data = try? Data(contentsOf: file) { return String(data: data, encoding: .utf8) }
+        guard let moved = earlier.load() else { return nil }
+        save(moved)
+        return moved
+    }
+
+    public func save(_ value: String?) {
+        guard let value else {
+            try? FileManager.default.removeItem(at: file)
+            return
+        }
+        let folder = file.deletingLastPathComponent()
+        try? FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
+        FileManager.default.createFile(atPath: file.path, contents: Data(value.utf8), attributes: [.posixPermissions: 0o600])
+    }
+}
+
+/// The connection to the centre computer (its addresses, certificate and this device's key), in a private file.
 public struct ConnectionStore: Sendable {
-    let store = KeychainSessionStore(service: "Document Vault app", account: "connection")
+    let store = FileSessionStore(name: "connection")
     public init() {}
 
     public func load() -> Connection? {

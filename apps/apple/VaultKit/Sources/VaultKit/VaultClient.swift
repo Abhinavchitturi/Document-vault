@@ -6,7 +6,7 @@ public final class VaultClient: Sendable {
     let session: SessionStore
     static let cookieName = "vault_session"
 
-    public init(transport: VaultTransport, session: SessionStore = KeychainSessionStore()) {
+    public init(transport: VaultTransport, session: SessionStore = FileSessionStore()) {
         self.transport = transport
         self.session = session
     }
