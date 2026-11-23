@@ -153,25 +153,41 @@ The laptop then works with the centre's documents over your Wi-Fi, or from anywh
 stored on the laptop, and the connection only trusts the centre's own certificate. The centre has to be on, with
 Document Vault open. Either computer can switch roles later in Settings.
 
-### One vault on several computers (1.0)
+### One vault on several computers
 
-Keep the same vault on two (or more) computers, so it doesn't matter which one is off:
+Keep the same vault on two (or more) computers, so it doesn't matter which one is off.
 
-1. On a computer that keeps the vault: **Settings → Computers that keep this vault → Add a computer that also keeps this
-   vault**. It shows a one-time code, the address and a security code.
-2. On the other computer: install Document Vault, choose **Keep the vault on this computer**, then on the sign-up screen
-   **Join a vault kept on another computer instead**. Type the address and the code, check the security code, and it
-   copies the vault (documents with their search data, family members and their passwords, paired devices).
-3. Sign in with the same name and password.
+**On the computer that already has your documents**
 
-From then on the computers keep each other up to date within seconds whenever they can reach each other (the same
-Wi-Fi, or Tailscale): adding, re-filing, editing and deleting on either one. A deletion stays a deletion; if both changed
-the same document while apart, the newer change wins. Connected laptops learn every computer that keeps the vault and
-use whichever one is on. The vault's encryption key only travels to a computer paired with the code and security code,
-over the encrypted connection between the two, never through any server. Each computer downloads its own private AI.
+1. Open **Settings → Computers That Keep This Vault → Add a Computer That Also Keeps This Vault** (Mac: the gear at the
+   bottom of the sidebar, or ⌘,).
+2. It shows a one-time **code** (for example `6FBD-GXJB`, valid for 10 minutes), this computer's **address** and a
+   **security code**. Leave it on screen.
 
-In 1.0, only a new, empty vault can join another; phones stay with the computer they were paired with; with three or more
-computers, each catches up through the one it joined.
+**On the other computer** (Document Vault installed, and its vault still has no documents)
+
+3. Open **Settings → Computers That Keep This Vault → Join a Vault Kept on Another Computer**.
+   - On a fresh install you can also do it straight away: choose **Keep the vault on this computer**, then on the
+     sign-up screen **Join a vault kept on another computer instead**.
+4. Type the **address** and the **code** from step 2, then **Join**.
+5. Check that the **security code** it shows matches the first computer's screen, then **It matches**. If it doesn't
+   match, cancel: something else answered at that address.
+6. It copies the vault, with a progress bar: documents with their search data, family members and their passwords,
+   paired laptops and phones.
+7. Sign in with the **same name and password** as on the first computer. (If you had already signed up on this
+   computer, the joined vault's name and password take over.)
+
+Both computers need Document Vault open and to be able to reach each other: the same Wi-Fi, or Tailscale (below).
+Settings then lists both computers and when each was last up to date.
+
+From then on the computers keep each other up to date within seconds whenever they can reach each other: adding,
+re-filing, editing and deleting on either one. A deletion stays a deletion; if both changed the same document while
+apart, the newer change wins. Connected laptops learn every computer that keeps the vault and use whichever one is on.
+The vault's encryption key only travels to a computer paired with the code and security code, over the encrypted
+connection between the two, never through any server. Each computer downloads its own private AI.
+
+Good to know: only a computer whose vault has no documents can join another (nothing of its own is mixed in); phones
+stay with the computer they were paired with; with three or more computers, each catches up through the one it joined.
 
 ### Use it from anywhere with Tailscale
 
