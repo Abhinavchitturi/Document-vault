@@ -47,11 +47,11 @@ struct MainView: View {
                 }
             }
             .modifier(AddDocuments())  // on the main area only: on the whole window it took the sidebar's clicks
-        }
-        .safeAreaInset(edge: .top, spacing: 0) {
-            VStack(spacing: 0) {
-                UpdateBanner()
-                SearchReadyBanner()
+            .safeAreaInset(edge: .top, spacing: 0) {  // above the main area: the content moves down, nothing is covered
+                VStack(spacing: 0) {
+                    UpdateBanner()
+                    SearchReadyBanner()
+                }
             }
         }
     }
