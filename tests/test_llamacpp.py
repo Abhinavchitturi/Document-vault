@@ -93,7 +93,8 @@ def test_answers_streaming_and_json(pretend):
     schema = {"type": "object", "properties": {"category": {"type": "string"}}}
     assert llm.generate_json("Classify.", "Electricity bill", schema) == {"category": "bill", "amount": 2486}
     assert Pretend.requests[-1]["response_format"]["json_schema"]["schema"] == schema
-    assert llm.name == "llama.cpp/llama3.1:8b" and llm.list_models() == ["llama3.1:8b"]
+    label = llamacpp.MODEL["label"] if llamacpp.MODEL else "none"  # by this computer's memory
+    assert llm.name == f"llama.cpp/{label}" and llm.list_models() == [label]
 
 
 def test_status_while_loading_and_when_not_running(pretend):
@@ -197,9 +198,11 @@ def test_the_model_fits_the_computers_memory(monkeypatch):
     assert llamacpp.choose_model(int(7.8 * gb))["label"] == "llama3.2:3b"  # an "8 GB" laptop: the small one
     assert llamacpp.choose_model(int(5.8 * gb))["label"] == "llama3.2:3b"  # a "6 GB" laptop too
     assert llamacpp.choose_model(4 * gb) is None  # too little for any
-    assert llamacpp.choose_model(None)["label"] == "llama3.1:8b"  # can't tell: as before
+    monkeypatch.setattr(llamacpp, "total_memory", lambda: None)
+    assert llamacpp.choose_model()["label"] == "llama3.1:8b"  # can't tell: as before
     monkeypatch.setenv("VAULT_AI_MODEL", "small")
     assert llamacpp.choose_model(64 * gb)["label"] == "llama3.2:3b"
+    monkeypatch.undo()
     assert llamacpp.total_memory() > 1 * gb  # this computer's, read for real
 
 
