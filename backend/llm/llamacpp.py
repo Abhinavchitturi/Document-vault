@@ -100,10 +100,41 @@ class LlamaServer:
         command = [str(self.server), "--model", str(self.model), "--host", "127.0.0.1", "--port", str(self.port),
                    "--ctx-size", str(CONTEXT), "--n-gpu-layers", "99"]  # all layers on the GPU where there is one
         flags = 0x08000000 if sys.platform == "win32" else 0  # CREATE_NO_WINDOW
+        self._stop_leftover()
         with open(self.log, "ab") as out:
             self.process = subprocess.Popen(command, cwd=self.server.parent, stdin=subprocess.DEVNULL, stdout=out,
                                             stderr=out, creationflags=flags)
+        self._pidfile().write_text(str(self.process.pid))
         logger.info("Started llama.cpp (%s) with %s on port %d", BUILD, self.model.name, self.port)
+
+    def _pidfile(self) -> Path:
+        return llm_dir() / "llama-server.pid"
+
+    def _stop_leftover(self) -> None:
+        """A llama-server an earlier engine started and couldn't stop (the app was forced to quit, or crashed)
+        still holds the port: stop it, so this one can start. Only ever our own (its program is in llm_dir)."""
+        try:
+            pid = int(self._pidfile().read_text().strip())
+        except (OSError, ValueError):
+            return
+        try:
+            if sys.platform == "win32":
+                found = subprocess.run(["tasklist", "/FI", f"PID eq {pid}", "/FO", "CSV", "/NH"], capture_output=True,
+                                       text=True, timeout=10).stdout
+                if "llama-server" in found.lower():
+                    subprocess.run(["taskkill", "/PID", str(pid), "/F"], capture_output=True, timeout=10)
+            else:
+                command = subprocess.run(["ps", "-o", "command=", "-p", str(pid)], capture_output=True, text=True,
+                                         timeout=10).stdout
+                if "llama-server" in command and str(llm_dir()) in command:
+                    os.kill(pid, 15)
+                    for _ in range(50):  # up to 5 s for it to let go of the port
+                        time.sleep(0.1)
+                        if subprocess.run(["ps", "-p", str(pid)], capture_output=True).returncode != 0:
+                            break
+            logger.info("Stopped a llama.cpp an earlier run left behind (pid %d)", pid)
+        except (OSError, subprocess.SubprocessError):
+            pass
 
     def stop(self) -> None:
         if self.process and self.process.poll() is None:
