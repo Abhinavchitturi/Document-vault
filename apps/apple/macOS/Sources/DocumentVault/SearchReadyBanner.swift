@@ -49,7 +49,7 @@ struct SearchReadyBanner: View {
             } else {
                 ProgressView { Text("Getting search ready…").font(.callout.weight(.semibold)) }.progressViewStyle(.linear)
             }
-            Text("You can look around meanwhile; searching, asking and adding documents start when it's ready.")
+            Text("You can add documents meanwhile; searching and asking start when it's ready.")
                 .font(.caption).foregroundStyle(.secondary)
         }
     }

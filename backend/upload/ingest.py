@@ -54,6 +54,7 @@ class IngestResult:
     document: dict
     created: bool  # False if this exact file was already in the library
     text: str = ""  # the document's text (for the private AI's closer look afterwards, backend/extract/refine.py)
+    searchable: bool = True  # False: kept, but its passages wait for the search model (embedded shortly)
 
 
 def file_sha256(path: Path) -> str:
@@ -125,6 +126,10 @@ def ingest_file(
 
     doc_id = uuid.uuid4().hex[:16]  # not derived from the file: two family members may upload the same one
     chunks = []
+    if not getattr(tokenizer, "ready", True):  # its file isn't here yet: count words instead of waiting
+        from backend.chunker.chunker import RegexTokenizer
+
+        tokenizer = RegexTokenizer()
     for page in pages:
         for span in chunk_text(page.text, tokenizer, chunk_size, overlap):
             chunks.append(
@@ -163,7 +168,9 @@ def ingest_file(
         "stored_as": stored_as,
         "added_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
     }
-    embeddings = embedder.encode_passages(passage_texts(chunks))
+    # The search model may still be loading (a slow computer, its first start): the document is kept now and its
+    # passages are embedded when the model is there (DocumentStore.fill_missing_vectors), instead of waiting.
+    embeddings = embedder.encode_passages(passage_texts(chunks)) if getattr(embedder, "ready", True) else None
     from sqlalchemy.exc import IntegrityError
 
     try:
@@ -173,7 +180,7 @@ def ingest_file(
         if existing is None:
             raise
         return IngestResult(existing, created=False)
-    return IngestResult(document, created=True, text=full_text)
+    return IngestResult(document, created=True, text=full_text, searchable=embeddings is not None or not chunks)
 
 
 def iter_files(paths: list[Path]):

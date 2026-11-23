@@ -101,8 +101,8 @@ class Classifier:
         self._descriptions: np.ndarray | None = None
 
     def meaning_scores(self, filename: str, text: str) -> dict[str, float] | None:
-        if self.embedder is None:
-            return None
+        if self.embedder is None or not getattr(self.embedder, "ready", True):
+            return None  # the search model is still loading: keywords now, the private AI looks again later
         if self._descriptions is None:
             self._descriptions = np.asarray(self.embedder.encode_queries(list(DESCRIPTIONS.values())), dtype=np.float32)
         head = f"{Path(filename).stem.replace('_', ' ')}\n{text[:1500]}"

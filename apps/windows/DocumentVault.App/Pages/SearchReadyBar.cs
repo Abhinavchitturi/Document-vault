@@ -11,7 +11,7 @@ public sealed class SearchReadyBar : UserControl
 {
     private readonly TextBlock _text = UI.Text("");
     private readonly ProgressBar _bar = new() { Maximum = 100, IsIndeterminate = true };
-    private readonly TextBlock _note = UI.Caption("You can look around meanwhile; searching, asking and adding documents start when it's ready.");
+    private readonly TextBlock _note = UI.Caption("You can add documents meanwhile; searching and asking start when it's ready.");
     private readonly StackPanel _actions = UI.Row(8);
 
     public SearchReadyBar()
@@ -52,10 +52,10 @@ public sealed class SearchReadyBar : UserControl
             }
             if (status.State == "downloading" && status.Total > 0)
                 Show($"Getting search ready: downloading the search model, {status.Done / 1_000_000:N0} of {status.Total / 1_000_000:N0} MB (once)",
-                     "You can look around meanwhile; searching, asking and adding documents start when it's ready.",
+                     "You can add documents meanwhile; searching and asking start when it's ready.",
                      (double)status.Done / status.Total * 100);
             else
-                Show("Getting search ready…", "You can look around meanwhile; searching, asking and adding documents start when it's ready.", -1);
+                Show("Getting search ready…", "You can add documents meanwhile; searching and asking start when it's ready.", -1);
             await Task.Delay(700);
         }
         return false;

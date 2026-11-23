@@ -72,18 +72,21 @@ def prefer_offline(model_name: str) -> bool:
 class Embedder:
     def __init__(self, model_name: str = DEFAULT_MODEL, device: str | None = None, batch_size: int = 64,
                  revision: str | None = None):
+        source, revision = model_name, revision or revision_for(model_name)
         if model_name == DEFAULT_MODEL:  # the pinned files, downloaded once (every caller: the apps, the scripts)
             from backend.embeddings import download
 
-            download.ensure(model_name)
-        prefer_offline(model_name)
+            source, revision = str(download.ensure(model_name)), None  # plain files in a folder: nothing to fetch
+            os.environ["HF_HUB_OFFLINE"] = "1"
+            os.environ["TRANSFORMERS_OFFLINE"] = "1"
+        else:
+            prefer_offline(model_name)
         from sentence_transformers import SentenceTransformer
 
-        revision = revision or revision_for(model_name)
         self.model_name = model_name
         self.batch_size = batch_size
-        # device=None picks cuda/mps/cpu; `revision` pins the model's version (the apps' engine)
-        self.model = SentenceTransformer(model_name, device=device, revision=revision)
+        # device=None picks cuda/mps/cpu; `revision` pins another model's version
+        self.model = SentenceTransformer(source, device=device, revision=revision)
         self.query_prefix, self.passage_prefix = model_prefixes(model_name)
 
     def _encode(self, texts: list[str], prefix: str) -> np.ndarray:

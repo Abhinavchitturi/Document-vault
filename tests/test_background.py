@@ -32,21 +32,32 @@ def test_a_failure_is_reported_and_raised_on_use():
     assert not thing.ready and "division" in thing.failure
 
 
-def test_download_progress_is_measured_from_the_cache(tmp_path, monkeypatch):
-    monkeypatch.setenv("HF_HUB_CACHE", str(tmp_path))
-    repo = tmp_path / f"models--{download.DEFAULT_MODEL.replace('/', '--')}"
-    snapshot = repo / "snapshots" / download.REVISION
-    (snapshot / "1_Pooling").mkdir(parents=True)
-    (repo / "blobs").mkdir()
-    assert not download.downloaded() and download._measured(download.DEFAULT_MODEL) == 0
-    (repo / "blobs" / "abc.incomplete").write_bytes(b"x" * 1000)  # the big file, part way
+def test_download_progress_is_measured_in_the_models_folder(tmp_path, monkeypatch):
+    monkeypatch.setenv("VAULT_SEARCH_MODEL_DIR", str(tmp_path))
+    (tmp_path / "1_Pooling").mkdir(parents=True)
+    assert not download.downloaded() and download._measured() == 0
+    (tmp_path / ".cache" / "huggingface" / "download").mkdir(parents=True)
+    (tmp_path / ".cache" / "huggingface" / "download" / "abc.incomplete").write_bytes(b"x" * 1000)  # part way
     for name, size in download.FILES.items():
         if name != "model.safetensors":
-            (snapshot / name).write_bytes(b"x" * size)
+            (tmp_path / name).write_bytes(b"x" * size)
     small = download.TOTAL - download.FILES["model.safetensors"]
-    assert download._measured(download.DEFAULT_MODEL) == small + 1000
-    (snapshot / "model.safetensors").write_bytes(b"")  # wrong size: not downloaded yet
+    assert download._measured() == small + 1000
+    (tmp_path / "model.safetensors").write_bytes(b"")  # wrong size: not downloaded yet
     assert not download.downloaded()
+
+
+def test_a_model_from_the_old_cache_is_moved_as_plain_files(tmp_path, monkeypatch):
+    """Versions before 1.0.7 kept it in the Hugging Face cache, whose links Windows refused to follow."""
+    monkeypatch.setenv("VAULT_SEARCH_MODEL_DIR", str(tmp_path / "model"))
+    monkeypatch.setenv("HF_HUB_CACHE", str(tmp_path / "hub"))
+    old = download._old_snapshot()
+    for name, size in download.FILES.items():
+        (old / name).parent.mkdir(parents=True, exist_ok=True)
+        (old / name).write_bytes(b"x" * size)
+    assert download.ensure() == tmp_path / "model" and download.downloaded()
+    assert not (tmp_path / "model" / "model.safetensors").is_symlink()
+    assert not old.exists()  # no second copy left behind
 
 
 def test_the_apps_see_downloading_then_ready(tmp_path):
@@ -93,3 +104,33 @@ def test_the_same_file_added_twice_at_once_counts_once(tmp_path, monkeypatch):
     second = ingest.ingest_file(doc, store, FakeEmbedder(), RegexTokenizer(), "auto")
     assert not second.created and second.document["doc_id"] == first.document["doc_id"]
     assert len(store.list_documents()) == 1
+
+
+def test_adding_a_document_never_waits_for_the_search_model(tmp_path):
+    """A slow computer's first minutes: the document is kept at once and becomes searchable when the model loads."""
+    from backend.api.app import create_app
+    from backend.chunker.chunker import RegexTokenizer
+    from backend.vector_store.store import DocumentStore
+    from tests.fakes import FakeEmbedder, signed_in
+
+    go = threading.Event()
+
+    def make():
+        go.wait(30)
+        return FakeEmbedder()
+
+    embedder = InBackground("search model", make, model_name="fake")
+    store = DocumentStore(tmp_path / "index")
+    client = signed_in(create_app(store, embedder, RegexTokenizer(), None, frontend_dir=None))
+    started = time.monotonic()
+    text = b"Two-wheeler insurance policy TW-778812. Premium Rs 2,450. Period 15 March 2026 to 14 March 2027."
+    [res] = client.post("/api/documents", files=[("files", ("bike.txt", text))], data={"category": "auto"}).json()
+    assert res["status"] == "added" and time.monotonic() - started < 5
+    assert store.missing_vectors  # kept, not yet searchable
+    go.set()
+    deadline = time.monotonic() + 10
+    while store.missing_vectors and time.monotonic() < deadline:
+        time.sleep(0.05)
+    assert not store.missing_vectors and store.num_vectors > 0
+    hits = client.get("/api/search", params={"q": "bike insurance"}).json()
+    assert any(h["filename"] == "bike.txt" for h in (hits if isinstance(hits, list) else hits.get("results", [])))

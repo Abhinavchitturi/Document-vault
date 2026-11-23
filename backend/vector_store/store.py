@@ -600,8 +600,9 @@ class DocumentStore:
         highest = conn.execute(select(func.max(document_chunks.c.id))).scalar()
         return 0 if highest is None else highest + 1
 
-    def add(self, document: dict, chunks: list[dict], embeddings: np.ndarray, model: str) -> None:
-        if len(chunks) != len(embeddings):
+    def add(self, document: dict, chunks: list[dict], embeddings: np.ndarray | None, model: str) -> None:
+        """`embeddings` None: the search model is still loading; fill_missing_vectors() adds them afterwards."""
+        if embeddings is not None and len(chunks) != len(embeddings):
             raise ValueError(f"{len(chunks)} chunks but {len(embeddings)} embeddings")
         with self._lock, self.engine.begin() as conn:
             stored_model = self._meta(conn, "embedding_model")
@@ -615,7 +616,7 @@ class DocumentStore:
             stamps.stamp(conn, "doc", document["doc_id"])
             if not stored_model:
                 self._set_meta(conn, "embedding_model", model)
-            if chunks:
+            if chunks and embeddings is not None:
                 vectors = np.ascontiguousarray(embeddings, dtype=np.float32)
                 if self.index is None:
                     self.index = _new_index(vectors.shape[1])
@@ -697,6 +698,38 @@ class DocumentStore:
             (self.files_dir / doc["stored_as"]).unlink(missing_ok=True)
             ocr_sidecar(self.files_dir / doc["stored_as"]).unlink(missing_ok=True)
             return True
+
+    def fill_missing_vectors(self, embed_passages) -> int:
+        """Embed the passages that have no vector yet (added while the search model was loading, or lost in a
+        crash), and only those. Returns how many."""
+        with self._lock:
+            with self.engine.connect() as conn:
+                rows = conn.execute(
+                    select(document_chunks.c.id, document_chunks.c.text, documents.c.name, documents.c.doc_type)
+                    .join(documents, documents.c.id == document_chunks.c.document_id)
+                    .order_by(document_chunks.c.id)
+                ).all()
+            missing = [r for r in rows if not self._has_vector(r.id)]
+            if not missing:
+                return 0
+            open_text = self.cipher.open_text
+            passages = [{"vid": r.id, "text": open_text(r.text), "filename": open_text(r.name), "category": r.doc_type}
+                        for r in missing]
+            vectors = np.ascontiguousarray(embed_passages(passages), dtype=np.float32)
+            if self.index is None:
+                self.index = _new_index(vectors.shape[1])
+            self.index.add_with_ids(vectors, np.array([p["vid"] for p in passages], dtype=np.int64))
+            self._save_index()  # the index is shared: every member's searches see them
+            return len(passages)
+
+    def _has_vector(self, vid: int) -> bool:
+        if self.index is None:
+            return False
+        try:
+            self.index.reconstruct(int(vid))
+            return True
+        except RuntimeError:
+            return False
 
     def reembed(self, embed_passages, model: str) -> None:
         """Rebuild every family member's vectors (new model, or repair) from the stored chunk text;

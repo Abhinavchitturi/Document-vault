@@ -47,6 +47,7 @@ import os
 import re
 import shutil
 import tempfile
+import threading
 import time
 from collections import Counter
 from contextlib import contextmanager
@@ -330,6 +331,26 @@ def create_app(
     from backend.upload.ingest import passage_texts as _passage_texts
 
     refiner = Refiner(llm, embedder, _passage_texts)
+    waiting_passages = threading.Event()  # documents added while the search model loads: embedded once it's there
+
+    def embed_waiting_passages():
+        while True:
+            waiting_passages.wait()
+            try:
+                embedder.wait()
+            except Exception:  # noqa: BLE001 (the search model's failure is shown on its own; tried at next start)
+                return
+            waiting_passages.clear()
+            try:
+                store.fill_missing_vectors(lambda chunks: embedder.encode_passages(_passage_texts(chunks)))
+            except Exception:  # noqa: BLE001
+                logger.exception("Couldn't embed the documents added while the search model was loading")
+
+    def embed_later():
+        if not getattr(embed_later, "started", False):
+            embed_later.started = True
+            threading.Thread(target=embed_waiting_passages, name="embed-waiting", daemon=True).start()
+        waiting_passages.set()
     reminders = Reminders(store.engine)  # Phase 10
     keys = Passkeys(store.engine, passkey_hosts)
     devices = devices or Devices(store.engine)
@@ -776,6 +797,8 @@ def create_app(
                     continue
             if result.created:
                 audit("document_added", request, user, document_id=result.document["doc_id"], detail=name)
+                if not result.searchable:
+                    embed_later()
                 refiner.add(mine, result.document["doc_id"], name, result.text)
             results.append({"filename": name, "status": "added" if result.created else "duplicate",
                             "document": _public(result.document)})
@@ -1312,9 +1335,18 @@ def start_vault(args: argparse.Namespace):
     if store.model and store.model != embedder.model_name:
         logger.info("Vault was embedded with %s; re-embedding with %s", store.model, embedder.model_name)
         store.reembed(lambda chunks: embedder.encode_passages(passage_texts(chunks)), embedder.model_name)
-    elif store.missing_vectors:
-        logger.warning("Some passages have no search vectors (interrupted save?); rebuilding them")
-        store.reembed(lambda chunks: embedder.encode_passages(passage_texts(chunks)), embedder.model_name)
+    else:  # passages kept while the search model was loading (or lost in a crash): embedded once it's there
+        import threading
+
+        def fill_vectors():
+            try:
+                embedder.wait()
+                if count := store.fill_missing_vectors(lambda chunks: embedder.encode_passages(passage_texts(chunks))):
+                    logger.info("Embedded %d passages added while the search model was loading", count)
+            except Exception as e:  # noqa: BLE001 (the search model's failure is shown on its own)
+                logger.warning("Couldn't embed the waiting passages yet: %s", e)
+
+        threading.Thread(target=fill_vectors, name="fill-vectors", daemon=True).start()
     if not ocr_available():
         logger.warning("Tesseract not found: photos and scanned PDFs can't be read. macOS: brew install tesseract")
 
@@ -1349,8 +1381,14 @@ def start_vault(args: argparse.Namespace):
 
     db_label = make_url(database_url(args.database_url)).render_as_string(hide_password=True)
     accounts, devices = Accounts(store.engine), Devices(store.engine)
-    def make_tokenizer():  # after the model: transformers can't be imported by two threads at once
-        embedder.wait()
+    def make_tokenizer():
+        if model_name == DEFAULT_MODEL:  # straight from its file, as soon as that's on disk: adding needn't wait
+            from backend.chunker.chunker import FileTokenizer
+            from backend.embeddings import download
+
+            download.tokenizer_here.wait()
+            return FileTokenizer(download.model_dir() / "tokenizer.json", model_name)
+        embedder.wait()  # after the model: transformers can't be imported by two threads at once
         return HFTokenizer(model_name)
 
     tokenizer = InBackground("tokenizer", make_tokenizer, name=model_name)

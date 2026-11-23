@@ -37,20 +37,40 @@ class HFTokenizer:
     """Wraps a Hugging Face fast tokenizer to produce character spans."""
 
     def __init__(self, model_name: str = DEFAULT_TOKENIZER, revision: str | None = None):
-        from backend.embeddings.embedder import prefer_offline, revision_for
+        from backend.embeddings import download
+        from backend.embeddings.embedder import DEFAULT_MODEL, prefer_offline, revision_for
 
-        prefer_offline(model_name)
-        revision = revision or revision_for(model_name)
+        source, revision = model_name, revision or revision_for(model_name)
+        if model_name == DEFAULT_MODEL:  # its plain files (backend/embeddings/download.py)
+            source, revision = str(download.ensure(model_name)), None
+        else:
+            prefer_offline(model_name)
         from transformers import AutoTokenizer
 
         self.name = model_name
-        self._tok = AutoTokenizer.from_pretrained(model_name, use_fast=True, revision=revision)
+        self._tok = AutoTokenizer.from_pretrained(source, use_fast=True, revision=revision)
         # We only count tokens here; silence the "sequence longer than 512" warning.
         self._tok.model_max_length = 10**9
 
     def spans(self, text: str) -> list[tuple[int, int]]:
         enc = self._tok(text, add_special_tokens=False, return_offsets_mapping=True)
         return [tuple(span) for span in enc["offset_mapping"]]
+
+
+class FileTokenizer:
+    """The same fast tokenizer read straight from its tokenizer.json (the `tokenizers` library, no transformers):
+    ready in a fraction of a second, so adding documents doesn't wait for the search model to load."""
+
+    def __init__(self, path, name: str):
+        from tokenizers import Tokenizer
+
+        self.name = name
+        self._tok = Tokenizer.from_file(str(path))
+        self._tok.no_truncation()
+        self._tok.no_padding()
+
+    def spans(self, text: str) -> list[tuple[int, int]]:
+        return [tuple(span) for span in self._tok.encode(text, add_special_tokens=False).offsets]
 
 
 class RegexTokenizer:
