@@ -18,23 +18,23 @@ struct MainView: View {
 
     var body: some View {
         NavigationSplitView {
-            List(selection: $pane) {  // the tags are Pane? like the selection: a plain Pane tag never matches it
+            List {  // rows are buttons: the list's own selection stopped taking clicks (1.0.x), buttons always do
                 Section {
-                    Label("Dashboard", systemImage: "house").tag(Pane?.some(.dashboard))
-                    Label("Ask", systemImage: "bubble.left.and.text.bubble.right").tag(Pane?.some(.chat))
-                    Label("All Documents", systemImage: "doc.on.doc").tag(Pane?.some(.documents))
-                        .badge(model.documents.count)
+                    SidebarRow(title: "Dashboard", symbol: "house", pane: .dashboard, selection: $pane)
+                    SidebarRow(title: "Ask", symbol: "bubble.left.and.text.bubble.right", pane: .chat, selection: $pane)
+                    SidebarRow(title: "All Documents", symbol: "doc.on.doc", pane: .documents, selection: $pane,
+                               count: model.documents.count)
                 }
                 if !usedTypes.isEmpty {
                     Section("Types") {
                         ForEach(usedTypes, id: \.self) { category in
-                        Label(category.label, systemImage: category.symbol)
-                            .tag(Pane?.some(.category(category)))
-                                .badge(model.documents.filter { $0.category == category }.count)
+                            SidebarRow(title: category.label, symbol: category.symbol, pane: .category(category), selection: $pane,
+                                       count: model.documents.filter { $0.category == category }.count)
                         }
                     }
                 }
             }
+            .listStyle(.sidebar)
             .navigationSplitViewColumnWidth(min: 200, ideal: 220)
             .safeAreaInset(edge: .bottom) { AccountBar() }
         } detail: {
@@ -103,5 +103,36 @@ extension Category {
         case .identity: .teal
         case .other: .gray
         }
+    }
+}
+
+/// One row of the sidebar: opens its page when clicked, highlighted while it's the page shown.
+struct SidebarRow: View {
+    let title: String
+    let symbol: String
+    let pane: Pane
+    @Binding var selection: Pane?
+    var count: Int? = nil
+
+    private var chosen: Bool { (selection ?? .dashboard) == pane }
+
+    var body: some View {
+        Button { selection = pane } label: {
+            HStack {
+                Label(title, systemImage: symbol)
+                Spacer()
+                if let count, count > 0 { Text("\(count)").font(.callout).foregroundStyle(.secondary).monospacedDigit() }
+            }
+            .padding(.vertical, 4)
+            .padding(.horizontal, 6)
+            .contentShape(Rectangle())  // the whole row, not just the words
+        }
+        .buttonStyle(.plain)
+        .listRowBackground(
+            RoundedRectangle(cornerRadius: 6, style: .continuous)
+                .fill(chosen ? Color.primary.opacity(0.1) : .clear)
+                .padding(.horizontal, 10)
+        )
+        .accessibilityAddTraits(chosen ? .isSelected : [])
     }
 }
