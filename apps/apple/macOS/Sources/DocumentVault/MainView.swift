@@ -18,18 +18,18 @@ struct MainView: View {
 
     var body: some View {
         NavigationSplitView {
-            List(selection: $pane) {
+            List(selection: $pane) {  // the tags are Pane? like the selection: a plain Pane tag never matches it
                 Section {
-                    Label("Dashboard", systemImage: "house").tag(Pane.dashboard)
-                    Label("Ask", systemImage: "bubble.left.and.text.bubble.right").tag(Pane.chat)
-                    Label("All Documents", systemImage: "doc.on.doc").tag(Pane.documents)
+                    Label("Dashboard", systemImage: "house").tag(Pane?.some(.dashboard))
+                    Label("Ask", systemImage: "bubble.left.and.text.bubble.right").tag(Pane?.some(.chat))
+                    Label("All Documents", systemImage: "doc.on.doc").tag(Pane?.some(.documents))
                         .badge(model.documents.count)
                 }
                 if !usedTypes.isEmpty {
                     Section("Types") {
                         ForEach(usedTypes, id: \.self) { category in
                         Label(category.label, systemImage: category.symbol)
-                            .tag(Pane.category(category))
+                            .tag(Pane?.some(.category(category)))
                                 .badge(model.documents.filter { $0.category == category }.count)
                         }
                     }

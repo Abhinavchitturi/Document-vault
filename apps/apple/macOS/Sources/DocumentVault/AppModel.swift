@@ -155,13 +155,39 @@ final class AppModel {
                 environment["PYTHONNOUSERSITE"] = "1"
                 environment["PYTHONDONTWRITEBYTECODE"] = "1"  // the app stays as it was signed (compiled at build)
             }
-            let engine = try EnginePipe(python: python, folder: folder, environment: environment, log: logFile)
-            self.engine = engine
-            try await engine.waitUntilReady()
-            client = VaultClient(transport: engine)
+            // Just after an update (or a quick reopen) the previous copy's engine can still be closing and holding the
+            // vault: wait for it (up to half a minute) instead of saying the vault is open elsewhere.
+            var attempt = 0
+            while true {
+                let engine = try EnginePipe(python: python, folder: folder, environment: environment, log: logFile)
+                self.engine = engine
+                do {
+                    try await engine.waitUntilReady()
+                    break
+                } catch let failure where attempt < 15 && failure.localizedDescription.contains("already open") {
+                    engine.stop()
+                    attempt += 1
+                    try await Task.sleep(for: .seconds(2))
+                }
+            }
+            client = VaultClient(transport: engine!)
             await checkSignIn()
+            watchAssistant()
         } catch {
             phase = .failed(error.localizedDescription)
+        }
+    }
+
+    /// The assistant starts a moment after the vault opens (its model loads): check again until it's ready, so
+    /// "The answer model is loading" doesn't stay on screen.
+    private func watchAssistant() {
+        Task {
+            for _ in 0..<60 {
+                try? await Task.sleep(for: .seconds(3))
+                guard let client, case .ready = phase else { return }
+                if let fresh = try? await client.info() { info = fresh }
+                if info?.llmStatus.ready == true || info?.llmStatus.canDownload == true { return }
+            }
         }
     }
 

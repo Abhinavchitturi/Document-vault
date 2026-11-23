@@ -87,8 +87,22 @@ public sealed class AppState
             ["VAULT_RUNTIME"] = BundledEngine,
             ["PYTHONNOUSERSITE"] = "1",
         };
-        Engine = new EnginePipe(Python, VaultHome, environment: environment, logFile: LogFile);
-        await Engine.WaitUntilReadyAsync();
+        // Just after an update (or a quick reopen) the previous copy's engine can still be closing and holding the vault:
+        // wait for it (up to half a minute) instead of saying the vault is open elsewhere.
+        for (var attempt = 0; ; attempt++)
+        {
+            Engine = new EnginePipe(Python, VaultHome, environment: environment, logFile: LogFile);
+            try
+            {
+                await Engine.WaitUntilReadyAsync();
+                break;
+            }
+            catch (VaultException e) when (attempt < 15 && e.Message.Contains("already open"))
+            {
+                await Engine.DisposeAsync();
+                await Task.Delay(2000);
+            }
+        }
         Client = new VaultClient(Engine, new ProtectedSessionStore());
     }
 

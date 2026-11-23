@@ -56,6 +56,23 @@ public sealed class ShellPage : UserControl
         layout.Children.Add(_nav);
         Adding.AcceptDrops(layout);
         Content = layout;
+        WatchAssistant();
+    }
+
+    /// The assistant starts a moment after the vault opens (its model loads): check again until it's ready, so
+    /// "Assistant offline" doesn't stay on screen.
+    private void WatchAssistant()
+    {
+        var checks = 0;
+        var timer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(3) };
+        timer.Tick += async (_, _) =>
+        {
+            var status = AppState.Current.Info?.LlmStatus;
+            if (++checks > 60 || status?.Ready == true || status?.CanDownload == true || !IsLoaded) { timer.Stop(); return; }
+            await App.Window!.Reload();
+        };
+        timer.Start();
+        Unloaded += (_, _) => timer.Stop();
     }
 
     private readonly NavigationViewItemHeader _typesHeader = new() { Content = "Types" };
