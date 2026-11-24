@@ -42,6 +42,8 @@ public sealed record SyncProbe(string Fingerprint, string Address);
 public sealed record SyncJoiningAnswer(SyncJoining? Joining);
 
 /// The search model: downloading (Done of Total bytes, the first start only), loading, ready or failed.
+/// GET /api/changes: moves whenever the vault changes, here or on another computer that keeps it.
+public sealed record Changes(long Revision);
 public sealed record SearchStatus(string State, long Done, long Total, string? Error);
 public sealed record Person(int Id, string Name);
 

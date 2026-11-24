@@ -129,6 +129,7 @@ final class AppModel {
             self.remote = remote
             client = VaultClient(transport: remote, session: MemorySessionStore())  // a paired device signs in with its key
             await checkSignIn()
+            watchChanges()
             // 1.0: remember every computer that keeps this vault, so this Mac still works when the paired one is off
             if let updated = try? await remote.refreshCentres() { connections.save(updated) }
             return
@@ -173,6 +174,7 @@ final class AppModel {
             client = VaultClient(transport: engine!)
             await checkSignIn()
             watchAssistant()
+            watchChanges()
         } catch {
             phase = .failed(error.localizedDescription)
         }
@@ -187,6 +189,21 @@ final class AppModel {
                 guard let client, case .ready = phase else { return }
                 if let fresh = try? await client.info() { info = fresh }
                 if info?.llmStatus.ready == true || info?.llmStatus.canDownload == true { return }
+            }
+        }
+    }
+
+    /// Documents added, changed or deleted on another computer that keeps this vault (or by the vault itself, such
+    /// as a re-sort): the lists reload within a few seconds, without reopening the app.
+    private func watchChanges() {
+        Task {
+            var seen: Int?
+            while true {
+                try? await Task.sleep(for: .seconds(3))
+                guard let client else { return }
+                guard case .ready = phase, let now = try? await client.changes().revision else { continue }
+                if let seen, seen != now { await reload() }
+                seen = now
             }
         }
     }

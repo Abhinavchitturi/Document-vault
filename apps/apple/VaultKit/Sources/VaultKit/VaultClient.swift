@@ -33,6 +33,7 @@ public final class VaultClient: Sendable {
 
     public func info() async throws -> Info { try await get("/api/info") }
     public func documents() async throws -> [VaultDocument] { try await get("/api/documents") }
+    public func changes() async throws -> Changes { try await get("/api/changes") }
     public func upcoming(days: Int = 90) async throws -> [Upcoming] { try await get("/api/upcoming?days=\(days)") }
     public func settings() async throws -> Settings { try await get("/api/settings") }
 

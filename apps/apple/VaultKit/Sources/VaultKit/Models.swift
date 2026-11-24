@@ -95,6 +95,11 @@ public struct SyncProbe: Codable, Sendable {
 }
 
 /// The search model: downloading (done of total bytes, the first start only), loading, ready or failed.
+/// GET /api/changes: moves whenever the vault changes, here or on another computer that keeps it.
+public struct Changes: Codable, Sendable {
+    public let revision: Int
+}
+
 public struct SearchStatus: Codable, Sendable {
     public let state: String
     public let done: Int

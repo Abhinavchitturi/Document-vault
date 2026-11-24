@@ -117,6 +117,7 @@ public sealed class VaultClient(IVaultTransport transport, ISessionStore session
 
     // ---- the search model (downloaded and loaded in the background on the first start)
 
+    public Task<Changes> ChangesAsync() => GetAsync<Changes>("/api/changes");
     public Task<SearchStatus> SearchStatusAsync() => GetAsync<SearchStatus>("/api/search/status");
 
     // ---- the local AI

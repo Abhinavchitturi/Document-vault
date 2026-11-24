@@ -137,3 +137,19 @@ def test_adding_a_document_never_waits_for_the_search_model(tmp_path):
     assert not store.missing_vectors and store.num_vectors > 0
     hits = client.get("/api/search", params={"q": "bike insurance"}).json()
     assert any(h["filename"] == "bike.txt" for h in (hits if isinstance(hits, list) else hits.get("results", [])))
+
+
+def test_the_apps_can_tell_when_to_reload(tmp_path):
+    """GET /api/changes moves when the vault changes (here, or copied from another computer)."""
+    from backend.api.app import create_app
+    from backend.chunker.chunker import RegexTokenizer
+    from backend.vector_store.store import DocumentStore
+    from tests.fakes import FakeEmbedder, signed_in
+
+    store = DocumentStore(tmp_path / "index")
+    client = signed_in(create_app(store, FakeEmbedder(), RegexTokenizer(), None, frontend_dir=None))
+    before = client.get("/api/changes").json()["revision"]
+    assert client.get("/api/changes").json()["revision"] == before  # nothing changed: nothing to reload
+    client.post("/api/documents", files=[("files", ("bill.txt", b"Electricity bill, amount due Rs 2,486"))],
+                data={"category": "auto"})
+    assert client.get("/api/changes").json()["revision"] != before

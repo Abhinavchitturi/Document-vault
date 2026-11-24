@@ -57,6 +57,31 @@ public sealed class ShellPage : UserControl
         Adding.AcceptDrops(layout);
         Content = layout;
         WatchAssistant();
+        WatchChanges();
+    }
+
+    /// Documents added, changed or deleted on another computer that keeps this vault (or by the vault itself, such
+    /// as a re-sort): the lists reload within a few seconds, without reopening the app.
+    private void WatchChanges()
+    {
+        long? seen = null;
+        var busy = false;
+        var timer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(3) };
+        timer.Tick += async (_, _) =>
+        {
+            if (busy || AppState.Current.Client is null) return;
+            busy = true;
+            try
+            {
+                var now = (await AppState.Current.Client.ChangesAsync()).Revision;
+                if (seen is not null && seen != now) await App.Window!.Reload();
+                seen = now;
+            }
+            catch { /* signed out or the engine restarting: try again next tick */ }
+            finally { busy = false; }
+        };
+        timer.Start();
+        Unloaded += (_, _) => timer.Stop();
     }
 
     /// The assistant starts a moment after the vault opens (its model loads): check again until it's ready, so
