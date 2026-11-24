@@ -21,6 +21,15 @@ _KEYWORDS = {
                  "pan card", "passport", "republic of india", "driving licence", "driving license", "voter",
                  "election commission", "date of birth", "dob", "father's name", "enrolment no", "government of india",
                  "आधार", "आयकर", "जन्म तिथि", "पहचान"],
+    # What a resume, a job letter, a payslip, a bank statement or a mark sheet says about itself. Without these,
+    # a finance professional's resume ("claims operations", "insurance partners", "credit policy") read as a policy.
+    "other": ["resume", "résumé", "curriculum vitae", "professional summary", "professional experience",
+              "work experience", "employment history", "education", "skills", "key skills", "certifications", "linkedin",
+              "mba", "b.tech", "bachelor of", "master of", "university", "responsibilities", "achievements",
+              "offer of employment", "offer letter", "appointment letter", "date of joining", "notice period",
+              "probation", "cost to company", "payslip", "pay slip", "salary slip", "net pay", "statement of account",
+              "opening balance", "closing balance", "mark sheet", "marksheet", "grade card", "semester",
+              "relieving letter", "experience letter"],
     "property": ["sale deed", "property", "registration", "sub-registrar", "khata", "carpet area", "flat no",
                  "property tax", "survey no", "stamp duty"],
 }

@@ -50,6 +50,39 @@ def resort(store, classifier: Classifier, embed_passages, apply: bool) -> list[d
     return report
 
 
+SORTER_VERSION = "2"  # raise when the sorter improves: each vault re-sorts once, by itself (resort_once)
+
+
+def resort_once(store, classifier: Classifier, embed_passages) -> list[dict]:
+    """After an update that improved the sorter: move automatically sorted documents it is now sure belong elsewhere
+    (a resume filed as insurance), once per vault. Nothing it's unsure about, nothing a person chose."""
+    from backend.upload.ingest import passage_texts
+
+    vault = store._vault
+    if vault._meta("sorter_version") == SORTER_VERSION:
+        return []
+    with store.engine.connect() as conn:
+        user_ids = conn.execute(select(users.c.id)).scalars().all()
+    moved = []
+    for user_id in user_ids:
+        view = store.for_user(user_id)
+        for doc in view.own_documents():
+            if doc.get("category_source") != "auto":
+                continue
+            chunks = view.chunks_of(doc["doc_id"])
+            text = "\n".join(c["text"] for c in sorted(chunks, key=lambda c: (c["page"], c["vid"])))
+            decision = classifier.classify(doc["filename"], text)
+            if decision.category == doc["category"] or decision.confidence < REVIEW_BELOW:
+                continue
+            was = doc["category"]
+            vectors = embed_passages(passage_texts([{**c, "category": decision.category} for c in chunks])) if chunks else None
+            view.update_category(doc["doc_id"], decision.category, vectors, source="auto", confidence=decision.confidence)
+            moved.append({"filename": doc["filename"], "from": was, "to": decision.category})
+            logger.info("Re-sorted %s: %s -> %s", doc["filename"], was, decision.category)
+    vault._put_meta("sorter_version", SORTER_VERSION)
+    return moved
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--apply", action="store_true", help="make the changes (default: only show them)")

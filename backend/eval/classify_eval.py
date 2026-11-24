@@ -3,7 +3,8 @@
     python -m backend.eval.classify_eval             # keywords, meaning, and both (no assistant)
     python -m backend.eval.classify_eval --with-llm  # also the full sorter, asking the local answer model when unsure
 
-Uses the fictional samples (samples/documents/<type>/*.md: the folder is the right answer).
+Uses the fictional samples (samples/documents/<type>/*.md, plus samples/sorting/<type>/*.md: look-alikes kept out of
+the search samples, such as a finance executive's resume; the folder is the right answer).
 File names are hidden by default ("document.pdf"), because real uploads are often called
 "scan001.jpg": the sorter must read the content. Writes results/classify_eval.json.
 """
@@ -20,8 +21,9 @@ from backend.parser.categories import CATEGORIES
 
 
 def load_samples(folder: Path) -> list[dict]:
+    folders = [folder] + ([folder.parent / "sorting"] if (folder.parent / "sorting").is_dir() else [])
     return [{"name": p.name, "category": p.parent.name, "text": p.read_text(encoding="utf-8")}
-            for p in sorted(folder.rglob("*.md")) if p.parent.name in CATEGORIES]
+            for f in folders for p in sorted(f.rglob("*.md")) if p.parent.name in CATEGORIES]
 
 
 def score(samples: list[dict], predict, hide_names: bool) -> dict:

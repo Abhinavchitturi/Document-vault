@@ -1343,6 +1343,10 @@ def start_vault(args: argparse.Namespace):
                 embedder.wait()
                 if count := store.fill_missing_vectors(lambda chunks: embedder.encode_passages(passage_texts(chunks))):
                     logger.info("Embedded %d passages added while the search model was loading", count)
+                from backend.classify.classifier import Classifier
+                from backend.classify.run import resort_once
+
+                resort_once(store, Classifier(embedder), embedder.encode_passages)
             except Exception as e:  # noqa: BLE001 (the search model's failure is shown on its own)
                 logger.warning("Couldn't embed the waiting passages yet: %s", e)
 

@@ -33,7 +33,7 @@ logger = logging.getLogger(__name__)
 REVIEW_BELOW = 60  # confidence under this: ask the person to check the type
 
 DESCRIPTIONS = {
-    "insurance": "An insurance policy or certificate: health, car, bike, life or home insurance, with a policy "
+    "insurance": "An insurance policy or certificate issued by an insurer to the insured: health, car, bike, life or home insurance, with a policy "
                  "number, premium, sum insured or IDV, policy period, insured persons and nominee, claims.",
     "warranty": "A warranty or guarantee card, or a purchase invoice for an appliance or gadget: product, model and "
                 "serial number, date of purchase, dealer, warranty period, service centre.",
@@ -43,8 +43,9 @@ DESCRIPTIONS = {
                 "carpet area, survey number, stamp duty.",
     "identity": "An identity document or ID card: Aadhaar, PAN card, passport, driving licence, voter ID; name, "
                 "date of birth, father's name, photo, an ID number such as a PAN or Aadhaar number.",
-    "other": "Some other personal document: a bank statement, letter, certificate, medical report, "
-             "school or office document.",
+    "other": "Some other personal document: a resume or CV (work experience, education, skills), a job offer or "
+             "appointment letter, a payslip, a bank statement, a letter, a mark sheet or degree certificate, a "
+             "medical report, a school or office document.",
 }
 
 ASSISTANT_SCHEMA = {

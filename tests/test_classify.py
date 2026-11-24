@@ -92,3 +92,27 @@ def test_resort_fixes_automatic_types_and_leaves_chosen_ones(tmp_path):
     assert store.get(kept["doc_id"])["category"] == "insurance"  # a person chose it
     assert all(c["category"] == "bill" for c in store.chunks_of(old["doc_id"]))
     assert passage_texts(store.chunks_of(old["doc_id"]))[0].startswith("bill (bill)")
+
+
+def test_a_resume_is_not_insurance():
+    """A finance executive's resume says claims, insurance, policy and premium: it's still a resume."""
+    resume = (SAMPLES.parent / "sorting" / "other" / "resume_svp_finance.md").read_text()
+    decision = Classifier().classify("Ramesh_Chitturi_Synchrony_SVP_Resume.docx", resume)
+    assert decision.category == "other"
+
+
+def test_an_improved_sorter_moves_sure_mistakes_once(tmp_path):
+    from backend.classify.run import resort_once
+
+    store = DocumentStore(tmp_path / "index", owner="abhinav")
+    emb, tok = FakeEmbedder(), RegexTokenizer()
+    (tmp_path / "cv.txt").write_text((SAMPLES.parent / "sorting" / "other" / "resume_svp_finance.md").read_text())
+    (tmp_path / "mine.txt").write_text((SAMPLES.parent / "sorting" / "other" / "resume_svp_finance.md").read_text() + " Mine.")
+    cv = ingest_file(tmp_path / "cv.txt", store, emb, tok, "insurance").document
+    store.update_category(cv["doc_id"], "insurance", source="auto", confidence=100)  # the old sorter's mistake
+    mine = ingest_file(tmp_path / "mine.txt", store, emb, tok, "insurance").document  # a person chose this
+    embed = emb.encode_passages
+    assert [m["to"] for m in resort_once(store, Classifier(), embed)] == ["other"]
+    assert store.get(cv["doc_id"])["category"] == "other" and store.get(mine["doc_id"])["category"] == "insurance"
+    store.update_category(cv["doc_id"], "insurance", source="auto", confidence=100)
+    assert resort_once(store, Classifier(), embed) == []  # once per vault
