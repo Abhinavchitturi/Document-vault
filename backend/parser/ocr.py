@@ -29,6 +29,7 @@ import logging
 import os
 import re
 import shutil
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 
@@ -224,20 +225,37 @@ def _is_word(token: str) -> bool:
     return sum(ch.isalnum() for ch in token) >= 2
 
 
+# Each Tesseract run is a program of its own, so the readings of one page run side by side (on a slow laptop a run
+# takes seconds). One thread each: several at once beat one spreading itself over the cores.
+os.environ.setdefault("OMP_THREAD_LIMIT", "1")
+_runs = ThreadPoolExecutor(max_workers=max(2, min(4, os.cpu_count() or 2)), thread_name_prefix="tesseract")
+
+
+def _both_readings(image, rotation: int, **options):
+    """Read as it is and with the lighting evened out (a phone's shadow or glare can hide most of a page while the few
+    words left read "confidently"), side by side."""
+    return [_runs.submit(_read, image, rotation, flatten=flatten, **options) for flatten in (False, True)]
+
+
 def read_image(image, rotation: int | None = None) -> OcrPage:
     """OCR one page image. `rotation` skips orientation detection when it's already known."""
     require_ocr()
+    from PIL import ImageOps
 
-    if rotation is None:
-        image, rotation = upright(image)
+    image = ImageOps.exif_transpose(image).convert("RGB")
+    if rotation is None:  # most pages are upright: read them that way while the orientation is checked
+        found = _runs.submit(_detect_rotation, image)
+        readings = _both_readings(image, 0, width=MIN_OCR_WIDTH)
+        rotation = found.result()
+        if rotation:
+            for r in readings:
+                r.cancel()
+            image = rotate(image, rotation)
+            readings = _both_readings(image, rotation, width=MIN_OCR_WIDTH)
     else:
-        from PIL import ImageOps
-
-        image = ImageOps.exif_transpose(image).convert("RGB")
-    image = rotate(image, rotation)
-    # Read as it is and with the lighting evened out (a phone's shadow or glare can hide most of a
-    # page while the few words left read "confidently"); the fuller, surer reading wins.
-    page = max((_read(image, rotation, MIN_OCR_WIDTH), _read(image, rotation, MIN_OCR_WIDTH, flatten=True)), key=_score)
+        image = rotate(image, rotation)
+        readings = _both_readings(image, rotation, width=MIN_OCR_WIDTH)
+    page = max((r.result() for r in readings), key=_score)  # the fuller, surer reading wins
     tries = []
     if image.width < RETRY_WIDTH:
         tries.append(dict(width=RETRY_WIDTH))  # small print (ID cards, receipts) reads better larger
@@ -246,8 +264,7 @@ def read_image(image, rotation: int | None = None) -> OcrPage:
     for options in tries:
         if (page.confidence or 0) >= GOOD_ENOUGH:
             break
-        for flatten in (False, True):
-            other = _read(image, rotation, flatten=flatten, **options)
+        for other in [r.result() for r in _both_readings(image, rotation, **options)]:
             if _score(other) > _score(page):
                 page = other
     return page

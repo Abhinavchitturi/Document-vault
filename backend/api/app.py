@@ -248,7 +248,7 @@ ASSISTANT_OFF = ("I'm not able to answer right now: the assistant on this comput
 ANSWER_FAILED = "I'm not able to answer that right now. Please try again."
 
 request_logger = logging.getLogger("vault.requests")
-QUIET_PATHS = {"/api/auth/status", "/api/info", "/api/devices", "/api/mobile/hello"}  # polled: not worth a line
+QUIET_PATHS = {"/api/auth/status", "/api/info", "/api/devices", "/api/mobile/hello", "/api/changes"}  # polled: not worth a line
 
 
 def _client(request: Request) -> str:
@@ -326,7 +326,9 @@ def create_app(
     # Adding a document never waits for the private AI (minutes per file on a computer without a fast graphics chip):
     # the quick readers file it at once, and the AI takes a closer look afterwards, in the background.
     classifier = Classifier(embedder)  # Phase 8: sorts uploads marked "auto" (keywords and meaning)
-    facts_reader = FactsReader()  # Phase 9: expiry, due date, amount, reference, issuer (Needle 3 if installed)
+    # Phase 9: expiry, due date, amount, reference, issuer. Adding reads them with the patterns (instant, no internet);
+    # the private AI reads them properly afterwards (backend/extract/refine.py).
+    facts_reader = FactsReader(prefer=os.environ.get("VAULT_FACTS_READER") or "rules")
     from backend.extract.refine import Refiner
     from backend.upload.ingest import passage_texts as _passage_texts
 
@@ -382,6 +384,9 @@ def create_app(
         started = time.perf_counter()
         response = await call_next(request)
         path = request.url.path
+        if (sync is not None and request.method in ("POST", "PUT", "PATCH", "DELETE") and response.status_code < 400
+                and path.startswith("/api/") and not path.startswith("/api/sync/")):
+            sync.tell_others()  # the other computers copy this change now
         if path.startswith("/api/") and path not in QUIET_PATHS:
             user = getattr(request.state, "user", None) or {}
             via = user.get("device_name") or ("phone" if mode == "phone" else "browser")
@@ -1046,6 +1051,17 @@ def create_app(
             raise HTTPException(400, str(e)) from e
         audit("computer_joined", request, None, detail=str(body.get("name", ""))[:100])
         return answer
+
+    @app.post("/api/sync/peer/changed")
+    def sync_changed() -> dict:
+        need_sync().nudge()  # another computer changed something: copy it now
+        return {"ok": True}
+
+    @app.get("/api/changes")
+    def changes(user: dict = Depends(current_user)) -> dict:
+        """Polled by the apps every few seconds: when `revision` moves (a change here or from another computer),
+        they reload their lists."""
+        return {"revision": vault_of(user).revision}
 
     @app.get("/api/sync/peer/manifest")
     def sync_manifest() -> dict:

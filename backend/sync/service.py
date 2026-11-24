@@ -59,6 +59,7 @@ class Sync:
         self._catching_up = threading.Lock()
         self._stop = threading.Event()
         self._wake = threading.Event()
+        self._tell = threading.Event()
         self.joining: dict | None = None  # {"state", "done", "total", "error"} while copying the vault
         with self.engine.begin() as conn:
             self.centre_id = stamps.centre_id(conn)
@@ -180,6 +181,26 @@ class Sync:
 
     def start(self) -> None:
         threading.Thread(target=self._loop, name="sync", daemon=True).start()
+        threading.Thread(target=self._telling, name="sync-tell", daemon=True).start()
+
+    def tell_others(self) -> None:
+        """Something changed here: the other computers copy it now, instead of at their next round."""
+        self._tell.set()
+
+    def _telling(self) -> None:
+        while not self._stop.is_set():
+            self._tell.wait()
+            if self._stop.wait(1):  # a moment, so several changes go as one
+                return
+            self._tell.clear()
+            for peer in self.peers(raw=True):
+                token = self.store.cipher.open_text(peer["token_out"])
+                for url in json.loads(peer["urls"]):
+                    try:
+                        transport.call(url, peer["fingerprint"], "POST", "/api/sync/peer/changed", token, timeout=5)
+                        break
+                    except Exception:  # noqa: BLE001 (off or away: it catches up on its own later)
+                        continue
 
     def stop(self) -> None:
         self._stop.set()

@@ -172,11 +172,14 @@ class LlamaServer:
         self.log.parent.mkdir(parents=True, exist_ok=True)
         command = [str(self.server), "--model", str(self.model), "--host", "127.0.0.1", "--port", str(self.port),
                    "--ctx-size", str(MODEL["context"]), "--n-gpu-layers", "99"]  # all layers on the GPU where there is one
-        flags = 0x08000000 if sys.platform == "win32" else 0  # CREATE_NO_WINDOW
+        # Below normal priority: on a small laptop its background reading of a new document must never slow down
+        # adding the next one, searching or the app itself. CREATE_NO_WINDOW | BELOW_NORMAL_PRIORITY_CLASS on Windows.
+        flags = 0x08000000 | 0x00004000 if sys.platform == "win32" else 0
+        lower = None if sys.platform == "win32" else (lambda: os.nice(5))
         self._stop_leftover()
         with open(self.log, "ab") as out:
             self.process = subprocess.Popen(command, cwd=self.server.parent, stdin=subprocess.DEVNULL, stdout=out,
-                                            stderr=out, creationflags=flags)
+                                            stderr=out, creationflags=flags, preexec_fn=lower)
         self._pidfile().write_text(str(self.process.pid))
         logger.info("Started llama.cpp (%s) with %s on port %d", BUILD, self.model.name, self.port)
 
@@ -258,6 +261,9 @@ class LlamaCppLLM:
             size = f"about {MODEL['size'] / 1e9:.0f} GB" if MODEL else ""
             return False, ("The local AI isn't downloaded yet. Run the setup again, or in the vault folder: "
                            f"python -m backend.llm.setup ({size}, once).")
+        if self.server and self.server.process is None:  # not started yet (it starts once the search model is ready):
+            # nothing to ask. On Windows, knocking on a port nobody listens on takes 2 seconds, every reload.
+            return False, "The answer model is starting. Answers start in a moment."
         if self.server and self.server.exited() is not None:
             return False, (f"The local AI stopped (code {self.server.exited()}). Restart the vault; "
                            f"if it keeps stopping, see {self.server.log}.")
