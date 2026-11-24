@@ -43,8 +43,16 @@ public sealed class UpdateBar : UserControl
             Child = row,
         }.Id("UpdateBar");
         _timer.Tick += async (_, _) => await CheckAsync();
-        Loaded += async (_, _) => { CleanUp(); _timer.Start(); await CheckAsync(); };
+        Loaded += async (_, _) => { CleanUp(); _timer.Start(); await CountOnce(); await CheckAsync(); };
         Unloaded += (_, _) => _timer.Stop();
+    }
+
+    /// One more computer with the app, counted once, ever (remembered in %LOCALAPPDATA%\Document Vault, which a
+    /// reinstall keeps). Not in development builds. Not reached: the next start tries again.
+    private static async Task CountOnce()
+    {
+        if (Version is null || Saved.Load("counted") is not null) return;
+        if (await Updates.CountThisComputerAsync()) Saved.Save("counted", "yes");
     }
 
     /// Installers of earlier updates, already installed: deleted.

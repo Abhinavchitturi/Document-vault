@@ -51,6 +51,7 @@ struct UpdateBanner: View {
         .task {
             SelfUpdate.cleanUp()
             guard let current = Self.version else { return }
+            await Updates.countThisComputerOnce()  // one more computer with the app (once per computer, ever)
             while !Task.isCancelled {
                 if update == nil { update = await Updates.check(current: current, asset: "DocumentVault-macOS.dmg") }
                 try? await Task.sleep(for: .seconds(3600))  // every hour

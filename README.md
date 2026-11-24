@@ -67,6 +67,10 @@ archives aren't taken: unzip them first and add the documents inside.
 against the fingerprint GitHub publishes, installs it and reopens. The heavy engine is downloaded again only when it
 changed, which is rare: the vault's own code travels with the app.
 
+**Counting computers:** the first time the app opens on a computer, it downloads a one-byte file from this project's
+GitHub releases, once, ever. GitHub counts that file's downloads, which is how many computers have the app. Nothing
+about you or your documents is sent, and it isn't repeated after reinstalling.
+
 Your documents are kept apart from the program (`%LOCALAPPDATA%\Document Vault\Vault` on Windows,
 `~/Library/Application Support/Document Vault/Vault` on a Mac), so updating or uninstalling never touches them.
 

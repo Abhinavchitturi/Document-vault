@@ -72,6 +72,24 @@ public static class Updates
         catch (Exception e) when (e is HttpRequestException or TaskCanceledException or JsonException) { return null; }
     }
 
+    /// How many computers have the app: each one downloads this one-byte file from GitHub once, ever, the first time the
+    /// app opens, and GitHub counts the file's downloads. Nothing about the person or their documents goes with it.
+    public const string NewComputer = "https://github.com/Abhinavchitturi/Document-vault/releases/download/counter/new-computer.txt";
+
+    /// True once GitHub has counted this computer (the caller remembers that, so it is never counted again).
+    public static async Task<bool> CountThisComputerAsync(HttpClient? http = null, CancellationToken cancel = default)
+    {
+        try
+        {
+            using var request = new HttpRequestMessage(HttpMethod.Get, NewComputer);
+            request.Headers.UserAgent.ParseAdd("DocumentVault-Updates");
+            http ??= new HttpClient { Timeout = TimeSpan.FromSeconds(20) };
+            using var answer = await http.SendAsync(request, cancel);
+            return answer.IsSuccessStatusCode;
+        }
+        catch (Exception e) when (e is HttpRequestException or TaskCanceledException) { return false; }
+    }
+
     /// Download the update to `to` with progress, and check it against GitHub's SHA-256.
     public static async Task DownloadAsync(AppUpdate update, string to, IProgress<(long done, long total)>? progress = null,
                                            HttpClient? http = null, CancellationToken cancel = default)

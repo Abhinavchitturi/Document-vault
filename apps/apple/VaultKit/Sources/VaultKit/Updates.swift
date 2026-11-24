@@ -69,6 +69,19 @@ public enum Updates {
         return newest(in: data, current: current, asset: asset)
     }
 
+    /// How many computers have the app: each one downloads this one-byte file from GitHub once, ever, the first time the
+    /// app opens, and GitHub counts the file's downloads. Nothing about the person or their documents goes with it.
+    public static let newComputer = URL(string: "https://github.com/Abhinavchitturi/Document-vault/releases/download/counter/new-computer.txt")!
+
+    /// Counts this computer, once (remembered in its preferences, which a reinstall keeps). Not reached: next start.
+    public static func countThisComputerOnce(defaults: UserDefaults = .standard) async {
+        let key = "countedThisComputer"
+        guard !defaults.bool(forKey: key) else { return }
+        guard let (_, response) = try? await URLSession.shared.data(for: URLRequest(url: newComputer, timeoutInterval: 20)),
+              (response as? HTTPURLResponse)?.statusCode == 200 else { return }
+        defaults.set(true, forKey: key)
+    }
+
     /// Download the update to `destination` and check it against GitHub's SHA-256; a file that doesn't match is deleted.
     public static func download(_ update: AppUpdate, to destination: URL) async throws {
         let (temporary, response) = try await URLSession.shared.download(from: update.url)
